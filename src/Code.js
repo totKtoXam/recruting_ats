@@ -1,4 +1,12 @@
 function doGet(event) {
+  if (
+    event &&
+    event.parameter &&
+    event.parameter.api
+  ) {
+    return handleApiGet_(event);
+  }
+
   ensureSchema_();
   ensureSpreadsheetMenuTrigger_();
 
@@ -16,6 +24,15 @@ function doGet(event) {
     event.parameter.page === 'admin'
       ? 'admin'
       : 'candidates';
+
+  template.initialDraftToken =
+    event &&
+    event.parameter &&
+    event.parameter.draft
+      ? String(
+          event.parameter.draft
+        )
+      : '';
 
   return template
     .evaluate()
