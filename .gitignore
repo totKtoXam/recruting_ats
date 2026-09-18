@@ -1,0 +1,8 @@
+node_modules/
+.clasp.json
+.clasprc.json
+.env
+.DS_Store
+.idea/
+.vscode/
+npm-debug.log*
