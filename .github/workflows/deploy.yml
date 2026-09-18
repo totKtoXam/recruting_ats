@@ -78,8 +78,8 @@ jobs:
           API_GAS_DEPLOYMENT_ID: ${{ secrets.API_GAS_DEPLOYMENT_ID }}
           API_WEB_APP_URL: ${{ vars.API_WEB_APP_URL }}
         run: |
-          if [ -z "$API_CLASP_JSON" ] || [ -z "$API_GAS_DEPLOYMENT_ID" ]; then
-            echo "Resume Intake API deploy skipped: API_CLASP_JSON / API_GAS_DEPLOYMENT_ID are not configured."
+          if [ -z "$API_CLASP_JSON" ]; then
+            echo "Resume Intake API push skipped: API_CLASP_JSON is not configured."
             exit 0
           fi
 
@@ -90,6 +90,12 @@ jobs:
 
           echo "Pushing API Apps Script sources..."
           npx clasp push --force
+
+          if [ -z "$API_GAS_DEPLOYMENT_ID" ]; then
+            echo "API sources pushed successfully."
+            echo "API_GAS_DEPLOYMENT_ID is not configured yet. Create the first Web App deployment manually, then add its Deployment ID as a repository secret."
+            exit 0
+          fi
 
           echo "Updating API Web App deployment..."
           npx clasp create-deployment \
