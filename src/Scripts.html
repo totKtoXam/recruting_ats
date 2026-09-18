@@ -1,6 +1,7 @@
 <script>
 let state={
   candidates:[],
+  archivedCandidates:[],
   vacancies:[],
   sources:[],
   responsibles:[],
@@ -13,6 +14,7 @@ let state={
   loaded:{
     references:false,
     candidates:false,
+    archivedCandidates:false,
     interviews:false
   }
 };
@@ -212,11 +214,36 @@ function applyRoute(){
   maybeOpenCandidateFromRoute();
 }
 
+function candidateById(id){
+  return [
+    ...state.candidates,
+    ...state.archivedCandidates
+  ].find(candidate=>
+    String(candidate.ID)===
+    String(id)
+  );
+}
+
 function maybeOpenCandidateFromRoute(){
   const route=getRoute();
-  if(!route.candidateId||!state.loaded.candidates||!state.loaded.references)return;
-  const candidate=state.candidates.find(c=>String(c.ID)===String(route.candidateId));
-  if(candidate&&!el('candidateModal').classList.contains('open')){
+
+  if(
+    !route.candidateId ||
+    !state.loaded.candidates ||
+    !state.loaded.references
+  ){
+    return;
+  }
+
+  const candidate=
+    candidateById(route.candidateId);
+
+  if(
+    candidate &&
+    !el('candidateModal')
+      .classList
+      .contains('open')
+  ){
     openCandidate(candidate,false);
   }
 }
@@ -251,6 +278,15 @@ function preloadAllData(){
     state.stats=data.stats||{};
     state.loaded.candidates=true;
     populateGlobalFilters();
+    render();
+    updateSyncStatus();
+    maybeOpenCandidateFromRoute();
+  }).catch(e=>showToast(e.message||String(e),'error'));
+
+  rpc('getArchivedCandidateData').then(data=>{
+    state.archivedCandidates=
+      data.archivedCandidates||[];
+    state.loaded.archivedCandidates=true;
     render();
     updateSyncStatus();
     maybeOpenCandidateFromRoute();
@@ -296,6 +332,19 @@ async function refreshCandidates(){
   render();
 }
 
+async function refreshArchivedCandidates(){
+  const data=
+    await rpc(
+      'getArchivedCandidateData'
+    );
+
+  state.archivedCandidates=
+    data.archivedCandidates||[];
+
+  state.loaded.archivedCandidates=true;
+  render();
+}
+
 async function refreshInterviews(){
   state.interviews=await rpc('getAllInterviews')||[];
   state.loaded.interviews=true;
@@ -303,7 +352,12 @@ async function refreshInterviews(){
 }
 
 async function refreshAll(){
-  await Promise.all([refreshReferences(),refreshCandidates(),refreshInterviews()]);
+  await Promise.all([
+    refreshReferences(),
+    refreshCandidates(),
+    refreshArchivedCandidates(),
+    refreshInterviews()
+  ]);
   updateSyncStatus();
 }
 
@@ -326,7 +380,77 @@ function populateGlobalFilters(){
   el('filterSource').innerHTML=option('','Все источники')+state.sources.map(s=>option(s['Source ID'],sourceOptionLabel(s),s['Source ID']===old.s)).join('');
 }
 
-function render(){renderStats();renderBoard()}
+function render(){
+  renderStats();
+  renderVacancyStats();
+  renderBoard();
+}
+
+function renderVacancyStats(){
+  const root=el('vacancyStats');
+
+  if(
+    !root ||
+    !state.loaded.candidates ||
+    !state.loaded.references
+  ){
+    return;
+  }
+
+  const counts={};
+
+  state.candidates.forEach(candidate=>{
+    const id=
+      candidate['Vacancy ID'];
+
+    if(!id)return;
+
+    counts[id]=
+      (counts[id]||0)+1;
+  });
+
+  const vacancies=
+    state.vacancies.filter(vacancy=>
+      vacancy['Статус']==='Открыта' ||
+      counts[vacancy['Vacancy ID']]
+    );
+
+  root.innerHTML=
+    vacancies.length
+      ? '<div class="vacancy-stats-label">Кандидатов по вакансиям</div>'+
+        '<div class="vacancy-stat-list">'+
+        vacancies.map(vacancy=>{
+          const count=
+            counts[
+              vacancy['Vacancy ID']
+            ]||0;
+
+          return '<button class="vacancy-stat-chip" onclick="filterByVacancy(\''+
+            escJs(
+              vacancy['Vacancy ID']
+            )+
+            '\')">'+
+            '<span>№'+
+            escapeHtml(
+              vacancy['№']||'—'
+            )+
+            ' · '+
+            escapeHtml(
+              vacancy['Вакансия']
+            )+
+            '</span>'+
+            '<b>'+count+'</b>'+
+          '</button>';
+        }).join('')+
+        '</div>'
+      : '';
+}
+
+function filterByVacancy(vacancyId){
+  el('filterVacancy').value=
+    vacancyId||'';
+  renderBoard();
+}
 
 function renderStats(){
   if(!state.loaded.candidates)return;
@@ -340,54 +464,409 @@ function renderStats(){
 }
 
 function filteredCandidates(){
-  const q=value('filterSearch').trim().toLowerCase();
-  const vacancy=value('filterVacancy'),responsible=value('filterResponsible'),source=value('filterSource');
-  const archived=el('filterArchived').checked;
+  const q=
+    value('filterSearch')
+      .trim()
+      .toLowerCase();
 
-  return state.candidates.filter(c=>{
-    if(archived!==!!c.archived)return false;
-    if(vacancy&&c['Vacancy ID']!==vacancy)return false;
-    if(responsible&&c['Responsible ID']!==responsible)return false;
-    if(source&&c['Source ID']!==source)return false;
+  const vacancy=
+    value('filterVacancy');
+
+  const responsible=
+    value('filterResponsible');
+
+  const source=
+    value('filterSource');
+
+  const archived=
+    el('filterArchived').checked;
+
+  const collection=
+    archived
+      ? state.archivedCandidates
+      : state.candidates;
+
+  return collection.filter(c=>{
+    if(
+      vacancy &&
+      c['Vacancy ID']!==vacancy
+    )return false;
+
+    if(
+      responsible &&
+      c['Responsible ID']!==responsible
+    )return false;
+
+    if(
+      source &&
+      c['Source ID']!==source
+    )return false;
+
     if(q){
-      const h=[fullNameOf(c),c['Телефон'],c['Email'],c['Telegram'],c['GitHub'],c['LinkedIn'],c['Вакансия'],c['Ответственный']].filter(Boolean).join(' ').toLowerCase();
-      if(!h.includes(q))return false;
+      const h=[
+        fullNameOf(c),
+        c['Телефон'],
+        c['Email'],
+        c['Telegram'],
+        c['GitHub'],
+        c['LinkedIn'],
+        c['Вакансия'],
+        c['Ответственный']
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      if(!h.includes(q)){
+        return false;
+      }
     }
+
     return true;
   });
 }
 
 function renderBoard(){
-  if(!state.loaded.candidates||!state.loaded.references)return;
-  const archived=el('filterArchived').checked;
-  const statuses=archived?['Отказ']:getStatuses();
-  const candidates=filteredCandidates();
+  if(
+    !state.loaded.candidates ||
+    !state.loaded.references
+  )return;
 
-  el('board').innerHTML=statuses.map(status=>{
-    const list=candidates.filter(c=>c['Статус']===status);
-    const collapsed=collapsedColumns.has(status);
+  const archived=
+    el('filterArchived').checked;
 
-    return '<section class="column column-'+statusKey(status)+' '+(collapsed?'collapsed':'')+'" data-status="'+escapeHtml(status)+'" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropCandidate(event)">'+
-      '<div class="column-title"><div>'+statusChip(status,true)+'<span class="column-count">'+list.length+'</span></div>'+
-      '<button class="icon-button" onclick="event.stopPropagation();toggleColumn(\''+escJs(status)+'\')">'+(collapsed?'›':'‹')+'</button></div>'+
-      '<div class="cards">'+list.map(renderCard).join('')+'</div></section>';
-  }).join('');
+  const candidates=
+    filteredCandidates();
+
+  let statuses;
+
+  if(archived){
+    const order=[
+      ...getStatuses(),
+      'Отказ'
+    ];
+
+    const existing=[
+      ...new Set(
+        candidates
+          .map(candidate=>
+            candidate['Статус']
+          )
+          .filter(Boolean)
+      )
+    ];
+
+    statuses=[
+      ...order.filter(status=>
+        existing.includes(status)
+      ),
+      ...existing.filter(status=>
+        !order.includes(status)
+      )
+    ];
+  }else{
+    statuses=getStatuses();
+  }
+
+  if(
+    archived &&
+    !statuses.length
+  ){
+    el('board').innerHTML=
+      '<div class="board-placeholder">Архив пуст.</div>';
+    return;
+  }
+
+  el('board').innerHTML=
+    statuses.map(status=>{
+      const list=
+        candidates.filter(c=>
+          c['Статус']===status
+        );
+
+      const collapsed=
+        collapsedColumns.has(status);
+
+      return '<section class="column column-'+
+        statusKey(status)+' '+
+        (collapsed?'collapsed':'')+
+        '" data-status="'+
+        escapeHtml(status)+
+        '" ondragover="dragOver(event)" '+
+        'ondragleave="dragLeave(event)" '+
+        'ondrop="dropCandidate(event)">'+
+        '<div class="column-title"><div>'+
+        statusChip(status,true)+
+        '<span class="column-count">'+
+        list.length+
+        '</span></div>'+
+        '<button class="column-toggle-button" '+
+        'onclick="event.stopPropagation();toggleColumn(\''+
+        escJs(status)+
+        '\')">'+
+        (collapsed
+          ? '<span>›</span><span>Показать</span>'
+          : '<span>‹</span><span>Скрыть</span>')+
+        '</button></div>'+
+        '<div class="cards">'+
+        list.map(renderCard).join('')+
+        '</div></section>';
+    }).join('');
 }
 
-function renderCard(c){
-  const pending=c._sync==='pending';
-  const resumeLabel=pending&&c._pendingResume?'Резюме загружается…':(c['Резюме']?'Резюме ↗':'Нет резюме');
+function renderResumeHistoryPopover(candidate){
+  const versions=
+    candidate.resumeVersions||[];
 
-  return '<article class="candidate-card card-'+statusKey(c['Статус'])+' '+(pending?'candidate-pending':'')+'" draggable="'+(!c.archived&&!pending)+'" data-id="'+escapeHtml(c.ID)+'" ondragstart="dragStart(event)" ondragend="dragEnd(event)" onclick="'+(pending?'':'openCandidateById(\''+escJs(c.ID)+'\')')+'">'+
-    '<div class="candidate-card-top"><div><div class="candidate-number">№'+escapeHtml(c['№']||'—')+' '+syncIcon(c._sync)+'</div><div class="candidate-name">'+escapeHtml(fullNameOf(c))+'</div></div>'+statusChip(c['Статус'],true)+'</div>'+
-    '<div class="candidate-meta-row"><span>☎</span><span>'+escapeHtml(c['Телефон']||'—')+'</span></div>'+
-    '<div class="candidate-meta-row"><span>◫</span><span>'+escapeHtml(c['Вакансия']||'—')+'</span></div>'+
-    '<div class="candidate-meta-row"><span>●</span><span>'+escapeHtml(c['Ответственный']||'—')+'</span></div>'+
-    (c['Источник']?'<div class="candidate-meta-row"><span>'+sourceIconHtml(c['Источник'])+'</span><span>'+escapeHtml(c['Источник'])+'</span></div>':'')+
+  if(versions.length<=1){
+    return '';
+  }
+
+  return '<details class="card-resume-history" onclick="event.stopPropagation()">'+
+    '<summary title="История резюме">◷</summary>'+
+    '<div class="card-resume-history-popover">'+
+      '<div class="card-resume-history-title">Версии резюме</div>'+
+      versions.map((version,index)=>
+        '<a href="'+
+        escapeHtml(version.url||'#')+
+        '" target="_blank" rel="noopener">'+
+          '<span class="resume-history-order">'+
+          (index+1)+
+          '</span>'+
+          '<span>'+
+            '<strong>'+
+            escapeHtml(
+              version.name||
+              'Резюме'
+            )+
+            '</strong>'+
+            '<small>'+
+            escapeHtml(
+              version.uploadedAt||
+              'Дата не указана'
+            )+
+            '</small>'+
+          '</span>'+
+        '</a>'
+      ).join('')+
+    '</div>'+
+  '</details>';
+}
+
+
+function renderCard(c){
+  const pending=
+    c._sync==='pending';
+
+  const versions=
+    c.resumeVersions||[];
+
+  const latest=
+    versions[0]||{
+      url:c['Резюме']||'',
+      name:'Резюме'
+    };
+
+  const resumeHtml=
+    latest.url && !pending
+      ? '<div class="card-resume-row">'+
+        '<a class="card-link" href="'+
+        escapeHtml(latest.url)+
+        '" target="_blank" rel="noopener" '+
+        'onclick="event.stopPropagation()">'+
+        'Последнее резюме ↗</a>'+
+        renderResumeHistoryPopover(c)+
+        '</div>'
+      : '<span class="muted">'+
+        escapeHtml(
+          pending&&c._pendingResume
+            ? 'Резюме загружается…'
+            : 'Нет резюме'
+        )+
+        '</span>';
+
+  return '<article class="candidate-card card-'+
+    statusKey(c['Статус'])+' '+
+    (pending?'candidate-pending':'')+
+    '" draggable="'+
+    (!c.archived&&!pending)+
+    '" data-id="'+
+    escapeHtml(c.ID)+
+    '" ondragstart="dragStart(event)" '+
+    'ondragend="dragEnd(event)" '+
+    'onclick="'+
+    (pending
+      ? ''
+      : 'openCandidateById(\''+
+        escJs(c.ID)+
+        '\')')+
+    '">'+
+
+    '<div class="candidate-card-top">'+
+      '<div>'+
+        '<div class="candidate-number">№'+
+        escapeHtml(c['№']||'—')+
+        ' '+syncIcon(c._sync)+
+        '</div>'+
+        '<div class="candidate-name">'+
+        escapeHtml(fullNameOf(c))+
+        '</div>'+
+      '</div>'+
+      statusChip(c['Статус'],true)+
+    '</div>'+
+
+    '<div class="candidate-meta-row"><span>☎</span><span>'+
+    escapeHtml(c['Телефон']||'—')+
+    '</span></div>'+
+
+    '<div class="candidate-meta-row"><span>◫</span><span>'+
+    escapeHtml(c['Вакансия']||'—')+
+    '</span></div>'+
+
+    '<div class="candidate-meta-row"><span>●</span><span>'+
+    escapeHtml(c['Ответственный']||'—')+
+    '</span></div>'+
+
+    (
+      c['Источник']
+        ? '<div class="candidate-meta-row"><span>'+
+          sourceIconHtml(c['Источник'])+
+          '</span><span>'+
+          escapeHtml(c['Источник'])+
+          '</span></div>'
+        : ''
+    )+
+
+    '<div class="card-resume-section">'+
+      resumeHtml+
+    '</div>'+
+
     '<div class="card-actions">'+
-      (c['Резюме']&&!pending?'<a class="card-link" href="'+escapeHtml(c['Резюме'])+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">'+resumeLabel+'</a>':'<span class="muted">'+escapeHtml(resumeLabel)+'</span>')+
-      (!c.archived&&!pending?'<button class="button button-ghost button-small danger-text" onclick="event.stopPropagation();archiveById(\''+escJs(c.ID)+'\',this)">Архив</button>':'')+
-    '</div></article>';
+      '<button class="button button-ghost button-small" '+
+      'onclick="event.stopPropagation();copyCandidatePreview(\''+
+      escJs(c.ID)+
+      '\',this)">⧉ Скопировать</button>'+
+      (
+        !c.archived&&!pending
+          ? '<button class="button button-ghost button-small danger-text" '+
+            'onclick="event.stopPropagation();archiveById(\''+
+            escJs(c.ID)+
+            '\',this)">Архив</button>'
+          : ''
+      )+
+    '</div>'+
+  '</article>';
+}
+
+
+function candidateCardUrl(candidateId){
+  return location.origin+
+    location.pathname+
+    '#/candidate/'+
+    encodeURIComponent(
+      candidateId
+    );
+}
+
+
+async function writeClipboardText(text){
+  if(
+    navigator.clipboard &&
+    navigator.clipboard.writeText
+  ){
+    await navigator.clipboard.writeText(
+      text
+    );
+    return;
+  }
+
+  const area=
+    document.createElement(
+      'textarea'
+    );
+
+  area.value=text;
+  area.style.position='fixed';
+  area.style.opacity='0';
+
+  document.body.appendChild(area);
+  area.select();
+  document.execCommand('copy');
+  area.remove();
+}
+
+
+async function copyCandidatePreview(id,button){
+  const candidate=
+    candidateById(id);
+
+  if(!candidate)return;
+
+  const latest=
+    (candidate.resumeVersions||[])[0];
+
+  const resumeUrl=
+    latest&&latest.url
+      ? latest.url
+      : candidate['Резюме']||'';
+
+  const lines=[
+    '№'+(candidate['№']||'—')+
+      ' · '+fullNameOf(candidate),
+    'Статус: '+
+      (candidate['Статус']||'—'),
+    'Телефон: '+
+      (candidate['Телефон']||'—'),
+    'Вакансия: '+
+      (candidate['Вакансия']||'—'),
+    'Ответственный: '+
+      (candidate['Ответственный']||'—')
+  ];
+
+  if(candidate['Источник']){
+    lines.push(
+      'Источник: '+
+      candidate['Источник']
+    );
+  }
+
+  lines.push(
+    'Резюме: '+
+      (resumeUrl||'—')
+  );
+
+  lines.push(
+    'Карточка: '+
+      candidateCardUrl(
+        candidate.ID
+      )
+  );
+
+  setButtonLoading(
+    button,
+    true,
+    'Копирование…'
+  );
+
+  try{
+    await writeClipboardText(
+      lines.join('\n')
+    );
+
+    showToast(
+      'Данные кандидата скопированы.'
+    );
+  }catch(error){
+    showToast(
+      'Не удалось скопировать данные.',
+      'error'
+    );
+  }finally{
+    setButtonLoading(
+      button,
+      false
+    );
+  }
 }
 
 function toggleColumn(status){collapsedColumns.has(status)?collapsedColumns.delete(status):collapsedColumns.add(status);renderBoard()}
@@ -481,7 +960,7 @@ function renderCandidateSourceIcon(){
 }
 
 function openCandidateById(id,setHash=true){
-  const c=state.candidates.find(x=>String(x.ID)===String(id));
+  const c=candidateById(id);
   if(!c)return;
   if(setHash)history.pushState(null,'','#/candidate/'+encodeURIComponent(id));
   openCandidate(c,false);
@@ -625,7 +1104,17 @@ function readResumeFile(){
 }
 
 function nextCandidateNumber(){
-  return state.candidates.reduce((max,c)=>Math.max(max,Number(c['№']||0)||0),0)+1;
+  return [
+    ...state.candidates,
+    ...state.archivedCandidates
+  ].reduce(
+    (max,c)=>
+      Math.max(
+        max,
+        Number(c['№']||0)||0
+      ),
+    0
+  )+1;
 }
 
 function buildOptimisticCandidate(payload,resumeFile,existing,tempId){
@@ -686,10 +1175,44 @@ async function saveCandidateForm(button){
     return;
   }
 
-  const existingId=value('candidateId');
-  const existing=existingId?state.candidates.find(c=>String(c.ID)===String(existingId)):null;
-  const snapshot=state.candidates.map(c=>({...c,resumeVersions:[...(c.resumeVersions||[])],links:[...(c.links||[])]}));
-  const tempId=existingId||('tmp_candidate_'+Date.now());
+  const existingId=
+    value('candidateId');
+
+  const existing=
+    existingId
+      ? candidateById(existingId)
+      : null;
+
+  const activeSnapshot=
+    state.candidates.map(c=>({
+      ...c,
+      resumeVersions:[
+        ...(c.resumeVersions||[])
+      ],
+      links:[
+        ...(c.links||[])
+      ]
+    }));
+
+  const archivedSnapshot=
+    state.archivedCandidates.map(c=>({
+      ...c,
+      resumeVersions:[
+        ...(c.resumeVersions||[])
+      ],
+      links:[
+        ...(c.links||[])
+      ]
+    }));
+
+  const targetCollection=
+    existing&&existing.archived
+      ? state.archivedCandidates
+      : state.candidates;
+
+  const tempId=
+    existingId||
+    ('tmp_candidate_'+Date.now());
 
   try{
     const resumeFile=await readResumeFile();
@@ -718,10 +1241,30 @@ async function saveCandidateForm(button){
       return;
     }
 
-    const optimistic=buildOptimisticCandidate(payload,resumeFile,existing,tempId);
-    const index=existing?state.candidates.indexOf(existing):-1;
-    if(index>=0)state.candidates[index]=optimistic;
-    else state.candidates.unshift(optimistic);
+    const optimistic=
+      buildOptimisticCandidate(
+        payload,
+        resumeFile,
+        existing,
+        tempId
+      );
+
+    const index=
+      existing
+        ? targetCollection.indexOf(
+            existing
+          )
+        : -1;
+
+    if(index>=0){
+      targetCollection[index]=
+        optimistic;
+    }else{
+      targetCollection.unshift(
+        optimistic
+      );
+    }
+
     render();
 
     resumeUploading=!!resumeFile;
@@ -729,10 +1272,46 @@ async function saveCandidateForm(button){
 
     await runUiTask({button,formId:'candidateWorkspace',label:resumeFile?'Загрузка…':'Сохранение…'},async()=>{
       const response=await rpc('saveCandidate',payload);
-      const currentIndex=state.candidates.findIndex(c=>String(c.ID)===String(tempId));
-      const saved={...response.candidate,_sync:'success'};
-      if(currentIndex>=0)state.candidates[currentIndex]=saved;
-      else state.candidates.unshift(saved);
+      const saved={
+        ...response.candidate,
+        _sync:'success'
+      };
+
+      const savedCollection=
+        saved.archived
+          ? state.archivedCandidates
+          : state.candidates;
+
+      const currentIndex=
+        savedCollection.findIndex(c=>
+          String(c.ID)===
+          String(tempId)
+        );
+
+      if(currentIndex>=0){
+        savedCollection[currentIndex]=
+          saved;
+      }else{
+        const otherCollection=
+          saved.archived
+            ? state.candidates
+            : state.archivedCandidates;
+
+        const otherIndex=
+          otherCollection.findIndex(c=>
+            String(c.ID)===
+            String(tempId)
+          );
+
+        if(otherIndex>=0){
+          otherCollection.splice(
+            otherIndex,
+            1
+          );
+        }
+
+        savedCollection.unshift(saved);
+      }
 
       state.stats=await rpc('getStats');
       render();
@@ -755,7 +1334,8 @@ async function saveCandidateForm(button){
       showToast(existing?'Карточка обновлена.':'Кандидат создан.');
 
       setTimeout(()=>{
-        const item=state.candidates.find(c=>c.ID===saved.ID);
+        const item=
+          candidateById(saved.ID);
         if(item&&item._sync==='success'){
           delete item._sync;
           renderBoard();
@@ -765,7 +1345,12 @@ async function saveCandidateForm(button){
   }catch(error){
     resumeUploading=false;
     renderSelectedResumeFile();
-    state.candidates=snapshot;
+    state.candidates=
+      activeSnapshot;
+
+    state.archivedCandidates=
+      archivedSnapshot;
+
     render();
     showToast(error&&error.message?error.message:String(error),'error');
   }
@@ -774,43 +1359,115 @@ async function saveCandidateForm(button){
 function archiveCurrentCandidate(button){if(currentCandidate)archiveById(currentCandidate.ID,button)}
 
 async function archiveById(id,button){
-  const ok=await showConfirm('Архивировать кандидата? Статус станет «Отказ», причина — «Архивация».','Архивация кандидата');
+  const ok=
+    await showConfirm(
+      'Архивировать кандидата? Текущий статус будет сохранён, а запись будет перенесена в лист «Архив кандидатов».',
+      'Архивация кандидата'
+    );
+
   if(!ok)return;
 
-  await runUiTask({button,label:'Архивация…'},async()=>{
-    await rpc('archiveCandidate',id);
-    const c=state.candidates.find(x=>x.ID===id);
-    if(c){c.archived=true;c['Статус']='Отказ';c['Причина отказа']='Архивация'}
-    state.stats=await rpc('getStats');
-    render();
-    if(currentCandidate&&currentCandidate.ID===id)closeCandidate();
-    showToast('Кандидат архивирован.');
-  }).catch(()=>{});
+  await runUiTask(
+    {
+      button,
+      label:'Архивация…'
+    },
+    async()=>{
+      const response=
+        await rpc(
+          'archiveCandidate',
+          id
+        );
+
+      const index=
+        state.candidates
+          .findIndex(candidate=>
+            String(candidate.ID)===
+            String(id)
+          );
+
+      if(index>=0){
+        state.candidates.splice(
+          index,
+          1
+        );
+      }
+
+      const archived={
+        ...response.candidate,
+        archived:true
+      };
+
+      const archiveIndex=
+        state.archivedCandidates
+          .findIndex(candidate=>
+            String(candidate.ID)===
+            String(id)
+          );
+
+      if(archiveIndex>=0){
+        state.archivedCandidates[
+          archiveIndex
+        ]=archived;
+      }else{
+        state.archivedCandidates
+          .unshift(archived);
+      }
+
+      state.stats=
+        await rpc('getStats');
+
+      render();
+
+      if(
+        currentCandidate &&
+        String(
+          currentCandidate.ID
+        )===String(id)
+      ){
+        closeCandidate();
+      }
+
+      showToast(
+        'Кандидат перенесён в архив.'
+      );
+    }
+  ).catch(()=>{});
 }
 
 async function copyCandidateLink(button){
-  if(!currentCandidate||!currentCandidate.ID)return;
-  const url=location.origin+location.pathname+'#/candidate/'+encodeURIComponent(currentCandidate.ID);
+  if(
+    !currentCandidate ||
+    !currentCandidate.ID
+  )return;
 
-  setButtonLoading(button,true,'Копирование…');
+  const url=
+    candidateCardUrl(
+      currentCandidate.ID
+    );
+
+  setButtonLoading(
+    button,
+    true,
+    'Копирование…'
+  );
+
   try{
-    if(navigator.clipboard&&navigator.clipboard.writeText){
-      await navigator.clipboard.writeText(url);
-    }else{
-      const area=document.createElement('textarea');
-      area.value=url;
-      area.style.position='fixed';
-      area.style.opacity='0';
-      document.body.appendChild(area);
-      area.select();
-      document.execCommand('copy');
-      area.remove();
-    }
-    showToast('Ссылка на кандидата скопирована.');
+    await writeClipboardText(url);
+
+    showToast(
+      'Ссылка на кандидата скопирована.'
+    );
   }catch(error){
-    showToast('Не удалось скопировать ссылку.','error');
+    showToast(
+      'Не удалось скопировать ссылку.',
+      'error'
+    );
   }finally{
-    setButtonLoading(button,false);
+    setButtonLoading(
+      button,
+      false
+    );
   }
 }
 
