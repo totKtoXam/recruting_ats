@@ -24,10 +24,9 @@ function getInterviews(candidateId) {
 }
 
 
-function getInterviewContext(
-  candidateId,
-  toStatus
-) {
+function getInterviewContext(input) {
+  const candidateId = input && input.candidateId;
+  const toStatus = input && input.toStatus;
   const candidate = findById_(
     APP_CONFIG.SHEETS.CANDIDATES,
     'ID',
