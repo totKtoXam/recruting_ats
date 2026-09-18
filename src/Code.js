@@ -1,12 +1,4 @@
 function doGet(event) {
-  if (
-    event &&
-    event.parameter &&
-    event.parameter.api
-  ) {
-    return handleApiGet_(event);
-  }
-
   ensureSchema_();
   ensureSpreadsheetMenuTrigger_();
 
