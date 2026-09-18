@@ -332,6 +332,12 @@ function saveTransitionInterview_(
       Utilities.getUuid(),
     'Candidate ID':
       candidate.ID,
+    'Фамилия кандидата':
+      candidate['Фамилия'] || '',
+    'Имя кандидата':
+      candidate['Имя'] || '',
+    'Отчество кандидата':
+      candidate['Отчество'] || '',
     'ФИО':
       candidate['ФИО'],
     'Vacancy ID':
@@ -353,6 +359,18 @@ function saveTransitionInterview_(
         ? template['Название']
         : '',
     'Дата': now,
+    'Фамилия интервьюера':
+      responsible
+        ? responsible['Фамилия'] || ''
+        : '',
+    'Имя интервьюера':
+      responsible
+        ? responsible['Имя'] || ''
+        : '',
+    'Отчество интервьюера':
+      responsible
+        ? responsible['Отчество'] || ''
+        : '',
     'Интервьюер':
       responsible
         ? responsible['ФИО']
