@@ -3,7 +3,9 @@ function getAllInterviews() {
     getSheet_(
       APP_CONFIG.SHEETS.INTERVIEWS
     )
-  ).map(interview => ({
+  )
+  .filter(interview => !isSoftDeleted_(interview))
+  .map(interview => ({
     ...interview,
     answers: parseJson_(
       interview['Вопросы и ответы'],
@@ -24,6 +26,7 @@ function getInterviews(candidateId) {
     )
   )
     .filter(interview =>
+      !isSoftDeleted_(interview) &&
       String(
         interview['Candidate ID']
       ) ===
@@ -363,7 +366,9 @@ function saveTransitionInterview_(
     'Результат':
       result,
     'Дата изменения':
-      now
+      now,
+    'Удален': false,
+    'Дата удаления': ''
   };
 
   upsertObject_(
@@ -437,4 +442,13 @@ function updateInterview(input) {
       answers
     }
   };
+}
+
+
+function deleteInterview(id) {
+  return softDeleteById_(
+    APP_CONFIG.SHEETS.INTERVIEWS,
+    'Interview ID',
+    id
+  );
 }
