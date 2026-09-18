@@ -1,0 +1,57 @@
+name: Deploy Apps Script
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: recruiting-ats-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Restore clasp credentials
+        shell: bash
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          CLASP_JSON: ${{ secrets.CLASP_JSON }}
+        run: |
+          test -n "$CLASPRC_JSON" || (echo "CLASPRC_JSON secret is missing" && exit 1)
+          test -n "$CLASP_JSON" || (echo "CLASP_JSON secret is missing" && exit 1)
+
+          printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+          printf '%s' "$CLASP_JSON" > ".clasp.json"
+          chmod 600 "$HOME/.clasprc.json" ".clasp.json"
+
+      - name: Validate clasp project
+        run: npx clasp show-file-status
+
+      - name: Push Apps Script sources
+        run: npx clasp push --force
+
+      - name: Update Web App deployment
+        env:
+          GAS_DEPLOYMENT_ID: ${{ secrets.GAS_DEPLOYMENT_ID }}
+        run: |
+          test -n "$GAS_DEPLOYMENT_ID" || (echo "GAS_DEPLOYMENT_ID secret is missing" && exit 1)
+
+          npx clasp create-deployment \
+            --deploymentId "$GAS_DEPLOYMENT_ID" \
+            --description "GitHub Actions: $GITHUB_SHA"
