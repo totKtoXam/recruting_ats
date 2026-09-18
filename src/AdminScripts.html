@@ -39,16 +39,18 @@ function adminTable(headers,rows){
 
 function adminActions(editFn,id,deleteFn,pending){
   if(pending){
-    return '<div class="table-actions">'+
-      '<button class="button button-ghost button-small" disabled>'+
-      '<span class="spinner spinner-dark"></span><span>Синхронизация</span>'+
-      '</button></div>';
+    return `<div class="table-actions">
+      <button class="button button-ghost button-small" disabled>
+        <span class="spinner spinner-dark"></span>
+        <span>Синхронизация</span>
+      </button>
+    </div>`;
   }
 
-  return '<div class="table-actions">'+
-    '<button class="button button-ghost button-small" onclick="'+editFn+'(\\''+escJs(id)+'\\')">Изменить</button>'+
-    '<button class="button button-ghost button-small danger-text" onclick="'+deleteFn+'(\\''+escJs(id)+'\\',this)">Удалить</button>'+
-    '</div>';
+  return `<div class="table-actions">
+    <button class="button button-ghost button-small" onclick="${editFn}('${escJs(id)}')">Изменить</button>
+    <button class="button button-ghost button-small danger-text" onclick="${deleteFn}('${escJs(id)}',this)">Удалить</button>
+  </div>`;
 }
 
 function setEntitySync(collectionName,id,status){
