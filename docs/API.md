@@ -1,99 +1,59 @@
-# Recruiting ATS API
+# Recruiting ATS Resume Intake API
 
-API работает через тот же Google Apps Script Web App.
+API вынесен в отдельный Apps Script Web App, чтобы основная ATS с персональными данными не становилась публичной.
 
-## Настройка
+Основная ATS остаётся `ANYONE` (только авторизованные Google-пользователи). API deployment использует `ANYONE_ANONYMOUS` и защищён `ATS_API_KEY`.
 
-Один раз открой Apps Script и выполни функцию:
+## 1. Отдельный Apps Script проект
 
-```text
-setupApiAccess
-```
+Код находится в `api-src/`.
 
-Она вернёт:
+Создай отдельный standalone Apps Script проект с `rootDir: api-src`. Содержимое его `.clasp.json` сохрани в GitHub Secret `API_CLASP_JSON`.
 
-```json
-{
-  "apiKey": "ats_...",
-  "webAppUrl": "https://script.google.com/macros/s/.../exec"
-}
-```
+## 2. Script Properties API проекта
 
-`apiKey` храни как секрет интеграции. URL Web App секретом не является.
+| Property | Значение |
+|---|---|
+| `SPREADSHEET_ID` | ID таблицы Recruiting ATS |
+| `CANDIDATES_FOLDER_ID` | ID папки кандидатов |
+| `UI_WEB_APP_URL` | URL основной ATS |
+| `ATS_API_KEY` | API key |
 
-## Получить справочники
+API key можно сгенерировать функцией `setupApiAccess()` в API-проекте.
 
-```http
-GET {WEB_APP_URL}?api=references&api_key={ATS_API_KEY}
-```
+## 3. Deployment
 
-Возвращаются активные вакансии, источники и ответственные. Это позволяет агенту не угадывать ID.
+Первый API deployment: Execute as Me; access — Anyone, включая anonymous (`ANYONE_ANONYMOUS`).
 
-## Создать предзаполненный черновик кандидата
+Deployment ID сохрани в GitHub Secret `API_GAS_DEPLOYMENT_ID`.
 
-```http
-POST {WEB_APP_URL}?api=candidate-draft&api_key={ATS_API_KEY}
-Content-Type: application/json
-```
+Сам API URL сохрани как Repository Variable `API_WEB_APP_URL`. GitHub Actions после этого будет обновлять API deployment вместе с основной ATS.
 
-Пример:
+## 4. Получить справочники
 
-```json
-{
-  "lastName": "Иванов",
-  "firstName": "Иван",
-  "middleName": "Иванович",
-  "phone": "+7 777 123 45 67",
-  "email": "ivan@example.com",
-  "telegram": "@ivan",
-  "github": "ivan-dev",
-  "linkedin": "ivan-ivanov",
-  "salary": 800000,
-  "vacancyId": "",
-  "sourceId": "",
-  "responsibleId": "",
-  "comment": "Данные извлечены из резюме",
-  "links": [
-    {
-      "name": "Portfolio",
-      "url": "https://example.com"
-    }
-  ],
-  "resume": {
-    "name": "Ivanov_Ivan.pdf",
-    "mimeType": "application/pdf",
-    "base64": "JVBERi0xLjc..."
-  }
-}
-```
+`GET {API_WEB_APP_URL}?api=references&api_key={ATS_API_KEY}`
 
-Ответ:
+Возвращает вакансии, источники и ответственных.
 
-```json
-{
-  "ok": true,
-  "draftToken": "...",
-  "draftUrl": "https://script.google.com/macros/s/.../exec?draft=...",
-  "webAppUrl": "https://script.google.com/macros/s/.../exec",
-  "expiresAt": "..."
-}
-```
+## 5. Создать предзаполненный черновик
 
-Пользователь открывает `draftUrl` и получает форму нового кандидата с предзаполненными данными. Резюме из API переносится в папку кандидата только после подтверждения и сохранения формы.
+`POST {API_WEB_APP_URL}?api=candidate-draft&api_key={ATS_API_KEY}`
 
-Черновик живёт 7 дней и после успешного создания кандидата помечается использованным.
+JSON body поддерживает: `lastName`, `firstName`, `middleName`, `phone`, `email`, `telegram`, `github`, `linkedin`, `salary`, `vacancyId`, `sourceId`, `responsibleId`, `comment`, `links` и опциональный `resume` с `name`, `mimeType`, `base64`.
 
-## Очистка старых черновиков
+Ответ содержит `draftUrl`. По нему основная ATS открывает форму нового кандидата и подставляет распарсенные данные. Оригинальный файл резюме, если передан API, переносится в папку кандидата только после нажатия «Сохранить».
 
-При необходимости вручную или по trigger:
+API не создаёт кандидата автоматически.
 
-```text
-cleanupExpiredCandidateDrafts
-```
+## 6. Skill
 
-## Безопасность
+Готовые файлы:
 
-- API key хранится только в Script Properties / секрете интеграции.
-- Не коммить API key в GitHub.
-- API не создаёт кандидата автоматически: он создаёт только черновик.
-- Пользователь должен открыть ссылку, проверить данные и нажать «Сохранить».
+- `skills/recruiting-ats-resume/SKILL.md`
+- `skills/recruiting-ats-resume/openapi.yaml`
+
+В `openapi.yaml` замени `REPLACE_WITH_DEPLOYMENT_ID` на Deployment ID именно API deployment. API key подключается как query API key `api_key`.
+
+## 7. Черновики
+
+Черновик живёт 7 дней и после успешного создания кандидата помечается использованным. Старые записи можно удалять функцией основной ATS `cleanupExpiredCandidateDrafts()`.
