@@ -7,12 +7,14 @@ const APP_CONFIG = Object.freeze({
     SOURCES: 'Источники',
     RESPONSIBLES: 'Ответственные',
     INTERVIEW_TEMPLATES: 'Шаблоны интервью',
+    CANDIDATE_DRAFTS: 'Черновики кандидатов',
     DICTS: 'Справочники'
   }),
 
   PROPERTIES: Object.freeze({
     SPREADSHEET_ID: 'SPREADSHEET_ID',
-    CANDIDATES_FOLDER_ID: 'CANDIDATES_FOLDER_ID'
+    CANDIDATES_FOLDER_ID: 'CANDIDATES_FOLDER_ID',
+    API_KEY: 'ATS_API_KEY'
   }),
 
   DEFAULT_STATUSES: Object.freeze([
@@ -50,6 +52,7 @@ const APP_CONFIG = Object.freeze({
   }),
 
   MAX_RESUME_BYTES: 10 * 1024 * 1024,
+  DRAFT_TTL_DAYS: 7,
 
   // Bootstrap values for the current installation.
   // Google access permissions still protect the underlying resources.
