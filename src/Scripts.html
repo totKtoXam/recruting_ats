@@ -20,6 +20,8 @@ let state={
 };
 
 let currentCandidate=null;
+let currentCandidateDraft=null;
+let draftLoadStarted=false;
 let pendingTransition=null;
 let currentInterviews=[];
 let editingInterview=null;
@@ -271,6 +273,7 @@ function preloadAllData(){
     if(typeof renderAdminAll==='function')renderAdminAll();
     updateSyncStatus();
     maybeOpenCandidateFromRoute();
+    maybeLoadInitialDraft();
   }).catch(e=>showToast(e.message||String(e),'error'));
 
   rpc('getCandidateData').then(data=>{
@@ -299,6 +302,150 @@ function preloadAllData(){
     updateSyncStatus();
   }).catch(e=>showToast(e.message||String(e),'error'));
 }
+
+function maybeLoadInitialDraft(){
+  const token=
+    String(
+      window.__INITIAL_DRAFT_TOKEN__ ||
+      new URLSearchParams(
+        location.search
+      ).get('draft') ||
+      ''
+    ).trim();
+
+  if(
+    !token ||
+    draftLoadStarted ||
+    !state.loaded.references
+  ){
+    return;
+  }
+
+  draftLoadStarted=true;
+
+  rpc(
+    'getCandidateDraft',
+    token
+  )
+    .then(draft=>{
+      currentCandidateDraft=draft;
+
+      openCandidate(null);
+
+      el('candidateDraftToken').value=
+        draft.token;
+
+      applyCandidateDraft(
+        draft
+      );
+
+      showToast(
+        'Резюме разобрано. Проверьте предзаполненные данные перед сохранением.'
+      );
+    })
+    .catch(error=>{
+      showToast(
+        error&&error.message
+          ? error.message
+          : String(error),
+        'error'
+      );
+    });
+}
+
+
+function applyCandidateDraft(draft){
+  const data=
+    draft&&draft.data
+      ? draft.data
+      : {};
+
+  el('candidateLastName').value=
+    data.lastName||'';
+
+  el('candidateFirstName').value=
+    data.firstName||'';
+
+  el('candidateMiddleName').value=
+    data.middleName||'';
+
+  el('candidatePhone').value=
+    data.phone||'+7 ';
+
+  if(data.phone){
+    maskKzPhone(
+      el('candidatePhone')
+    );
+  }
+
+  el('candidateEmail').value=
+    data.email||'';
+
+  el('candidateTelegram').value=
+    data.telegram||'';
+
+  el('candidateGithub').value=
+    data.github||'';
+
+  el('candidateLinkedin').value=
+    data.linkedin||'';
+
+  el('candidateSalary').value=
+    formatMoney(
+      data.salary||''
+    );
+
+  el('candidateComment').value=
+    data.comment||'';
+
+  if(
+    data.vacancyId &&
+    [
+      ...el('candidateVacancy').options
+    ].some(option=>
+      option.value===
+      String(data.vacancyId)
+    )
+  ){
+    el('candidateVacancy').value=
+      data.vacancyId;
+  }
+
+  if(
+    data.sourceId &&
+    [
+      ...el('candidateSource').options
+    ].some(option=>
+      option.value===
+      String(data.sourceId)
+    )
+  ){
+    el('candidateSource').value=
+      data.sourceId;
+  }
+
+  if(
+    data.responsibleId &&
+    [
+      ...el('candidateResponsible').options
+    ].some(option=>
+      option.value===
+      String(data.responsibleId)
+    )
+  ){
+    el('candidateResponsible').value=
+      data.responsibleId;
+  }
+
+  renderCandidateLinks(
+    data.links||[]
+  );
+
+  renderSocialPreviews();
+  renderCandidateSourceIcon();
+  renderSelectedResumeFile();
+}
+
 
 function updateSyncStatus(){
   const loaded=Object.values(state.loaded).filter(Boolean).length;
@@ -976,6 +1123,14 @@ function openCandidate(candidate){
   if(!state.loaded.references){showToast('Справочники ещё загружаются.','error');return}
 
   currentCandidate=candidate||null;
+
+  if(
+    candidate ||
+    !currentCandidateDraft
+  ){
+    currentCandidateDraft=null;
+    el('candidateDraftToken').value='';
+  }
   const isNew=!candidate;
   const status=isNew?'Новый':candidate['Статус'];
 
@@ -1028,9 +1183,27 @@ function openCandidate(candidate){
 }
 
 function closeCandidate(){
-  el('candidateModal').classList.remove('open');
+  el('candidateModal')
+    .classList
+    .remove('open');
+
   currentCandidate=null;
-  if(getRoute().candidateId)history.replaceState(null,'','#/candidates');
+  currentCandidateDraft=null;
+  el('candidateDraftToken').value='';
+
+  if(
+    getRoute().candidateId ||
+    new URLSearchParams(
+      location.search
+    ).get('draft')
+  ){
+    history.replaceState(
+      null,
+      '',
+      location.pathname+
+      '#/candidates'
+    );
+  }
 }
 
 function setLink(id,url,label){
@@ -1056,17 +1229,66 @@ function linkRow(name='',url=''){return '<div class="link-item"><input class="ot
 function addCandidateLink(){el('candidateLinks').insertAdjacentHTML('beforeend',linkRow())}
 function collectLinks(){return [...document.querySelectorAll('#candidateLinks .link-item')].map(row=>({name:row.querySelector('.other-link-name').value,url:row.querySelector('.other-link-url').value}))}
 
-function renderSelectedResumeFile(uploading=resumeUploading){
-  const file=el('candidateResumeFile').files[0];
-  const root=el('candidateResumeSelected');
+function renderSelectedResumeFile(
+  uploading=resumeUploading
+){
+  const file=
+    el('candidateResumeFile')
+      .files[0];
+
+  const root=
+    el('candidateResumeSelected');
+
   if(!file){
+    const draftResume=
+      currentCandidateDraft &&
+      currentCandidateDraft.resume;
+
+    if(draftResume){
+      root.innerHTML=
+        '<a class="resume-version selected-file" href="'+
+        escapeHtml(
+          draftResume.url||'#'
+        )+
+        '" target="_blank" rel="noopener">'+
+          '<span class="resume-ok">✓</span>'+
+          '<div>'+
+            '<strong>'+
+            escapeHtml(
+              draftResume.name||
+              'Резюме'
+            )+
+            '</strong>'+
+            '<small>Из API · будет добавлено при сохранении кандидата</small>'+
+          '</div>'+
+          '<span class="resume-open">↗</span>'+
+        '</a>';
+
+      return;
+    }
+
     root.innerHTML='';
     return;
   }
-  root.innerHTML='<div class="resume-version selected-file">'+
-    (uploading?'<span class="spinner spinner-dark"></span>':'<span class="resume-ok">✓</span>')+
-    '<div><strong>'+escapeHtml(file.name)+'</strong><small>'+(uploading?'Загрузка в Google Drive…':'Готово к загрузке · '+formatBytes(file.size))+'</small></div>'+
-  '</div>';
+
+  root.innerHTML=
+    '<div class="resume-version selected-file">'+
+      (
+        uploading
+          ? '<span class="spinner spinner-dark"></span>'
+          : '<span class="resume-ok">✓</span>'
+      )+
+      '<div><strong>'+
+        escapeHtml(file.name)+
+      '</strong><small>'+
+        (
+          uploading
+            ? 'Загрузка в Google Drive…'
+            : 'Готово к загрузке · '+
+              formatBytes(file.size)
+        )+
+      '</small></div>'+
+    '</div>';
 }
 
 function formatBytes(bytes){
@@ -1316,6 +1538,8 @@ async function saveCandidateForm(button){
       state.stats=await rpc('getStats');
       render();
       currentCandidate=saved;
+      currentCandidateDraft=null;
+      el('candidateDraftToken').value='';
       el('candidateId').value=saved.ID;
       el('candidateTitle').textContent=fullNameOf(saved);
       el('candidateNumberLabel').textContent='№'+(saved['№']||'—');
@@ -1330,7 +1554,13 @@ async function saveCandidateForm(button){
       el('candidateNumberLabel').textContent='№'+(saved['№']||'—');
       el('shareCandidateButton').hidden=false;
       el('archiveCandidateButton').hidden=!!saved.archived;
-      history.replaceState(null,'','#/candidate/'+encodeURIComponent(saved.ID));
+      history.replaceState(
+        null,
+        '',
+        location.pathname+
+        '#/candidate/'+
+        encodeURIComponent(saved.ID)
+      );
       showToast(existing?'Карточка обновлена.':'Кандидат создан.');
 
       setTimeout(()=>{
