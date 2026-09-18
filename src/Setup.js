@@ -48,6 +48,10 @@ function ensureSchema_() {
     'Причина отказа'
   ];
 
+  schemas[APP_CONFIG.SHEETS.ARCHIVED_CANDIDATES] = [
+    ...schemas[APP_CONFIG.SHEETS.CANDIDATES]
+  ];
+
   schemas[APP_CONFIG.SHEETS.INTERVIEWS] = [
     'Interview ID',
     'Candidate ID',
@@ -149,6 +153,7 @@ function ensureSchema_() {
   migrateInterviewNameColumns_();
   migrateSequenceNumbers_();
   migrateResumeVersions_();
+  migrateArchivedCandidates_();
 }
 
 
@@ -323,6 +328,11 @@ function migrateFullNameColumns_() {
   );
 
   migrateFullNameSheet_(
+    APP_CONFIG.SHEETS.ARCHIVED_CANDIDATES,
+    'ФИО'
+  );
+
+  migrateFullNameSheet_(
     APP_CONFIG.SHEETS.RESPONSIBLES,
     'ФИО'
   );
@@ -463,6 +473,10 @@ function migrateSequenceNumbers_() {
       id: 'ID'
     },
     {
+      sheet: APP_CONFIG.SHEETS.ARCHIVED_CANDIDATES,
+      id: 'ID'
+    },
+    {
       sheet: APP_CONFIG.SHEETS.VACANCIES,
       id: 'Vacancy ID'
     },
@@ -536,9 +550,18 @@ function migrateSequenceNumbers_() {
 
 
 function migrateResumeVersions_() {
-  const sheet = getSheet_(
+  migrateResumeVersionsForSheet_(
     APP_CONFIG.SHEETS.CANDIDATES
   );
+
+  migrateResumeVersionsForSheet_(
+    APP_CONFIG.SHEETS.ARCHIVED_CANDIDATES
+  );
+}
+
+
+function migrateResumeVersionsForSheet_(sheetName) {
+  const sheet = getSheet_(sheetName);
 
   if (sheet.getLastRow() < 2) {
     return;
@@ -598,5 +621,108 @@ function migrateResumeVersions_() {
 
   if (changed) {
     range.setValues(values);
+  }
+}
+
+
+function migrateArchivedCandidates_() {
+  const activeSheet = getSheet_(
+    APP_CONFIG.SHEETS.CANDIDATES
+  );
+
+  if (activeSheet.getLastRow() < 2) {
+    return;
+  }
+
+  const archiveSheet = getSheet_(
+    APP_CONFIG.SHEETS.ARCHIVED_CANDIDATES
+  );
+
+  const activeHeaders =
+    getHeaders_(activeSheet);
+
+  const archiveHeaders =
+    getHeaders_(archiveSheet);
+
+  const archivedIndex =
+    activeHeaders.indexOf('Архивирован');
+
+  const idIndex =
+    activeHeaders.indexOf('ID');
+
+  if (
+    archivedIndex < 0 ||
+    idIndex < 0
+  ) {
+    return;
+  }
+
+  const existingArchiveIds =
+    new Set(
+      rowsToObjects_(archiveSheet)
+        .map(row =>
+          String(row.ID || '')
+        )
+        .filter(Boolean)
+    );
+
+  const values = activeSheet
+    .getRange(
+      2,
+      1,
+      activeSheet.getLastRow() - 1,
+      activeHeaders.length
+    )
+    .getValues();
+
+  for (
+    let index = values.length - 1;
+    index >= 0;
+    index--
+  ) {
+    const row = values[index];
+
+    const archived =
+      String(
+        row[archivedIndex] || ''
+      ).toLowerCase() === 'true';
+
+    if (!archived) {
+      continue;
+    }
+
+    const candidateId =
+      String(row[idIndex] || '');
+
+    if (
+      candidateId &&
+      !existingArchiveIds.has(
+        candidateId
+      )
+    ) {
+      const entity =
+        objectFromRow_(
+          activeHeaders,
+          row
+        );
+
+      archiveSheet.appendRow(
+        archiveHeaders.map(
+          header =>
+            entity[header] !==
+            undefined
+              ? entity[header]
+              : ''
+        )
+      );
+
+      existingArchiveIds.add(
+        candidateId
+      );
+    }
+
+    activeSheet.deleteRow(
+      index + 2
+    );
   }
 }
