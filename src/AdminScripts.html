@@ -1,161 +1,154 @@
 <script>
 function renderAdminAll(){
   if(!state.loaded.references){
-    renderAdminLoading();
+    ['vacancyList','sourceList','responsibleList'].forEach(id=>{
+      if(el(id))el(id).innerHTML='<div class="empty-state compact">Данные загружаются в фоне…</div>';
+    });
     return;
   }
-
-  renderResponsibleStages();
-  renderTemplateSelects();
   renderVacancies();
   renderSources();
   renderResponsibles();
-  renderTemplates();
+  renderResponsibleStageOptions();
+  renderTemplateStageOptions();
+  renderVacancyTemplatesForSelected();
 }
 
-function renderAdminLoading(){
-  const ids=[
-    'vacancyList',
-    'sourceList',
-    'responsibleList',
-    'templateList'
-  ];
-
-  ids.forEach(id=>{
-    if(el(id)){
-      el(id).innerHTML=
-        '<div class="muted">'+
-        'Данные загружаются в фоне…'+
-        '</div>';
-    }
-  });
+async function refreshAdminPage(button){
+  await runUiTask({button,pageId:'viewAdmin'},async()=>{
+    await refreshAll();
+    showToast('Справочники обновлены.');
+  }).catch(()=>{});
 }
 
 function showAdminTab(name,button){
-  document
-    .querySelectorAll(
-      '.admin-page-section'
-    )
-    .forEach(section=>
-      section.classList.remove(
-        'active'
-      )
-    );
+  document.querySelectorAll('.admin-page-section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.admin-tabs .tab').forEach(t=>t.classList.remove('active'));
+  el('admin-'+name).classList.add('active');
+  if(button)button.classList.add('active');
+}
 
-  document
-    .querySelectorAll(
-      '.admin-tabs .tab'
-    )
-    .forEach(tab=>
-      tab.classList.remove(
-        'active'
-      )
-    );
+function adminTable(headers,rows){
+  return '<div class="table-scroll"><table class="admin-table"><thead><tr>'+
+    headers.map(h=>'<th>'+escapeHtml(h)+'</th>').join('')+
+    '</tr></thead><tbody>'+
+    (rows.length?rows.map(row=>'<tr class="'+(row._class||'')+'">'+row.cells.map(cell=>'<td>'+(cell&&cell.html!==undefined?cell.html:escapeHtml(cell??''))+'</td>').join('')+'</tr>').join(''):
+      '<tr><td colspan="'+headers.length+'" class="empty-cell">Нет данных</td></tr>')+
+    '</tbody></table></div>';
+}
 
-  el('admin-'+name)
-    .classList
-    .add('active');
+function adminActions(editFn,id,deleteFn,pending){
+  return '<div class="table-actions">'+
+    '<button class="button button-ghost button-small" '+(pending?'disabled ':'')+'onclick="'+editFn+'(\''+escJs(id)+'\')">Изменить</button>'+
+    '<button class="button button-ghost button-small danger-text" '+(pending?'disabled ':'')+'onclick="'+deleteFn+'(\''+escJs(id)+'\',this)">Удалить</button>'+
+    '</div>';
+}
 
-  if(button){
-    button.classList.add('active');
+function setEntitySync(collectionName,id,status){
+  const item=state[collectionName].find(x=>entityId(collectionName,x)===id);
+  if(item)item._sync=status;
+}
+
+function entityId(collectionName,item){
+  const keys={
+    vacancies:'Vacancy ID',
+    sources:'Source ID',
+    responsibles:'Responsible ID',
+    interviewTemplates:'Template ID'
+  };
+  return item[keys[collectionName]];
+}
+
+function clearSyncLater(collectionName,id){
+  setTimeout(()=>{
+    const item=state[collectionName].find(x=>entityId(collectionName,x)===id);
+    if(item&&item._sync==='success'){
+      delete item._sync;
+      renderAdminAll();
+    }
+  },1800);
+}
+
+async function optimisticSave({collectionName,idKey,payload,localEntity,rpcName,responseKey,button,formId,onSuccess}){
+  const snapshot=state[collectionName].map(x=>({...x,stages:x.stages?[...x.stages]:x.stages,questions:x.questions?[...x.questions]:x.questions}));
+  const existingId=payload.id||'';
+  const localId=existingId||('tmp_'+Date.now()+'_'+Math.random().toString(36).slice(2,7));
+  const existing=state[collectionName].find(x=>x[idKey]===existingId);
+  const optimistic={...(existing||{}),...localEntity,[idKey]:localId,_sync:'pending',_temp:!existingId};
+
+  if(existing){
+    const index=state[collectionName].indexOf(existing);
+    state[collectionName][index]=optimistic;
+  }else{
+    state[collectionName].unshift(optimistic);
+  }
+  renderAdminAll();
+
+  try{
+    await runUiTask({button,formId},async()=>{
+      const response=await rpc(rpcName,payload);
+      const serverEntity=response[responseKey];
+      const index=state[collectionName].findIndex(x=>x[idKey]===localId);
+      const normalized={...serverEntity,_sync:'success'};
+      if(collectionName==='responsibles')normalized.stages=localEntity.stages||[];
+      if(collectionName==='interviewTemplates')normalized.questions=localEntity.questions||[];
+      if(index>=0)state[collectionName][index]=normalized;
+      renderAdminAll();
+      if(onSuccess)onSuccess(normalized,localId);
+      clearSyncLater(collectionName,serverEntity[idKey]);
+    });
+  }catch(error){
+    state[collectionName]=snapshot;
+    renderAdminAll();
   }
 }
 
-function actionButtons(
-  editFn,
-  id,
-  deleteFn
-){
-  return (
-    '<div class="table-actions">'+
-      '<button class="button button-small" '+
-      'onclick="'+editFn+'(\''+
-      escJs(id)+
-      '\')">Изменить</button>'+
-      '<button class="button button-small button-danger" '+
-      'onclick="'+deleteFn+'(\''+
-      escJs(id)+
-      '\')">Удалить</button>'+
-    '</div>'
-  );
-}
+async function optimisticDelete({collectionName,id,rpcName,button,onSuccess}){
+  const snapshot=state[collectionName].map(x=>({...x}));
+  const item=state[collectionName].find(x=>entityId(collectionName,x)===id);
+  if(!item)return;
+  item._sync='pending';
+  renderAdminAll();
 
-function table(
-  headers,
-  rows
-){
-  return (
-    '<div class="table-scroll">'+
-      '<table class="admin-table">'+
-        '<thead><tr>'+
-          headers
-            .map(header=>
-              '<th>'+
-              escapeHtml(header)+
-              '</th>'
-            )
-            .join('')+
-        '</tr></thead>'+
-        '<tbody>'+
-          (
-            rows.length
-              ? rows
-                  .map(row=>
-                    '<tr>'+
-                    row
-                      .map((cell,index)=>
-                        '<td>'+
-                        (
-                          index===
-                          row.length-1
-                            ? cell
-                            : escapeHtml(
-                                cell
-                              )
-                        )+
-                        '</td>'
-                      )
-                      .join('')+
-                    '</tr>'
-                  )
-                  .join('')
-              : '<tr><td colspan="'+
-                headers.length+
-                '" class="empty-cell">'+
-                'Нет данных'+
-                '</td></tr>'
-          )+
-        '</tbody>'+
-      '</table>'+
-    '</div>'
-  );
+  try{
+    await runUiTask({button},async()=>{
+      await rpc(rpcName,id);
+      item._sync='success';
+      renderAdminAll();
+      setTimeout(()=>{
+        state[collectionName]=state[collectionName].filter(x=>entityId(collectionName,x)!==id);
+        if(onSuccess)onSuccess();
+        renderAdminAll();
+      },500);
+    });
+  }catch(error){
+    state[collectionName]=snapshot;
+    renderAdminAll();
+  }
 }
 
 function renderVacancies(){
-  el('vacancyCount').textContent=
-    state.vacancies.length+' шт.';
+  el('vacancyCount').textContent=state.vacancies.length+' шт.';
 
-  el('vacancyList').innerHTML=
-    table(
-      [
-        'Вакансия',
-        'Статус',
-        'Комментарий',
-        ''
-      ],
-      state.vacancies.map(
-        item=>[
-          item['Вакансия']||'',
-          item['Статус']||'',
-          item['Комментарий']||'',
-          actionButtons(
-            'editVacancy',
-            item['Vacancy ID'],
-            'deleteVacancy'
-          )
-        ]
-      )
-    );
+  const rows=state.vacancies.map(v=>{
+    const templates=state.interviewTemplates.filter(t=>t['Vacancy ID']===v['Vacancy ID']);
+    const templateHtml=templates.length
+      ? '<div class="chip-wrap">'+templates.map(t=>'<span class="mini-chip status-'+statusKey(t['Этап'])+'">'+escapeHtml(t['Название'])+'</span>').join('')+'</div>'
+      : '<span class="muted">Нет шаблонов</span>';
+    return {
+      _class:v._sync==='pending'?'row-pending':'',
+      cells:[
+        {html:syncIcon(v._sync)},
+        v['Вакансия'],
+        {html:vacancyStatusChip(v['Статус'])},
+        {html:templateHtml},
+        v['Комментарий']||'',
+        {html:adminActions('editVacancy',v['Vacancy ID'],'deleteVacancyUi',v._sync==='pending')}
+      ]
+    };
+  });
+
+  el('vacancyList').innerHTML=adminTable(['','Вакансия','Статус','Шаблоны интервью','Комментарий',''],rows);
 }
 
 function resetVacancyForm(){
@@ -163,625 +156,262 @@ function resetVacancyForm(){
   el('vacancyName').value='';
   el('vacancyStatus').value='Открыта';
   el('vacancyComment').value='';
-  el('vacancyFormTitle')
-    .textContent='Новая вакансия';
+  el('vacancyFormTitle').textContent='Новая вакансия';
+  resetTemplateForm();
+  renderVacancyTemplatesForSelected();
 }
 
 function editVacancy(id){
-  const item=
-    state.vacancies.find(
-      vacancy=>
-        vacancy['Vacancy ID']===id
-    );
-
-  if(!item){
-    return;
-  }
-
+  const v=state.vacancies.find(x=>x['Vacancy ID']===id);
+  if(!v)return;
   el('vacancyId').value=id;
-  el('vacancyName').value=
-    item['Вакансия']||'';
-  el('vacancyStatus').value=
-    item['Статус']||'Открыта';
-  el('vacancyComment').value=
-    item['Комментарий']||'';
-
-  el('vacancyFormTitle')
-    .textContent=
-      'Редактирование вакансии';
+  el('vacancyName').value=v['Вакансия']||'';
+  el('vacancyStatus').value=v['Статус']||'Открыта';
+  el('vacancyComment').value=v['Комментарий']||'';
+  el('vacancyFormTitle').textContent='Редактирование вакансии';
+  resetTemplateForm();
+  renderVacancyTemplatesForSelected();
+  el('vacancyForm').scrollIntoView({behavior:'smooth',block:'start'});
 }
 
-function saveVacancyForm(){
-  const name=
-    value('vacancyName').trim();
-
-  if(!name){
-    showToast(
-      'Укажите название вакансии.',
-      'error'
-    );
-    return;
-  }
-
-  call(
-    'saveVacancy',
-    {
-      id:value('vacancyId'),
-      name,
-      status:
-        value('vacancyStatus'),
-      comment:
-        value('vacancyComment')
-    },
-    ()=>{
-      showToast(
-        'Вакансия сохранена.'
-      );
-
-      resetVacancyForm();
-      refreshAll();
+async function saveVacancyForm(button){
+  const name=value('vacancyName').trim();
+  if(!name){showToast('Укажите название вакансии.','error');return}
+  const id=value('vacancyId');
+  const payload={id,name,status:value('vacancyStatus'),comment:value('vacancyComment')};
+  await optimisticSave({
+    collectionName:'vacancies',
+    idKey:'Vacancy ID',
+    payload,
+    localEntity:{'Вакансия':name,'Статус':payload.status,'Комментарий':payload.comment},
+    rpcName:'saveVacancy',
+    responseKey:'vacancy',
+    button,
+    formId:'vacancyForm',
+    onSuccess:(saved,tempId)=>{
+      if(!id)el('vacancyId').value=saved['Vacancy ID'];
+      showToast('Вакансия сохранена.');
+      renderVacancyTemplatesForSelected();
     }
-  );
+  });
 }
 
-async function deleteVacancy(id){
-  const item=
-    state.vacancies.find(
-      vacancy=>
-        vacancy['Vacancy ID']===id
-    );
+async function deleteVacancyUi(id,button){
+  const v=state.vacancies.find(x=>x['Vacancy ID']===id);
+  const ok=await showConfirm('Удалить вакансию «'+(v?v['Вакансия']:'')+'»? Она будет скрыта, но останется в Google Sheets.','Soft delete');
+  if(!ok)return;
+  await optimisticDelete({
+    collectionName:'vacancies',id,rpcName:'deleteVacancy',button,
+    onSuccess:()=>{
+      state.interviewTemplates=state.interviewTemplates.filter(t=>t['Vacancy ID']!==id);
+      if(value('vacancyId')===id)resetVacancyForm();
+      showToast('Вакансия удалена.');
+    }
+  });
+}
 
-  const ok=
-    await showConfirm(
-      'Удалить вакансию "'+
-      (
-        item
-          ? item['Вакансия']
-          : ''
-      )+
-      '"?'
-    );
-
-  if(!ok){
+function renderVacancyTemplatesForSelected(){
+  const vacancyId=value('vacancyId');
+  const editor=el('templateEditor');
+  const empty=el('vacancyTemplateEmpty');
+  if(!vacancyId){
+    editor.hidden=true;
+    empty.hidden=false;
+    el('vacancyTemplateCount').textContent='0';
     return;
   }
+  editor.hidden=false;
+  empty.hidden=true;
+  renderTemplateStageOptions(value('templateStage'));
+  const templates=state.interviewTemplates.filter(t=>t['Vacancy ID']===vacancyId);
+  el('vacancyTemplateCount').textContent=templates.length;
+  el('vacancyTemplateList').innerHTML=templates.length?templates.map(t=>
+    '<div class="template-row '+(t._sync==='pending'?'row-pending':'')+'">'+
+      syncIcon(t._sync)+
+      '<div class="template-row-main"><strong>'+escapeHtml(t['Название'])+'</strong>'+statusChip(t['Этап'],true)+'</div>'+
+      '<div class="template-row-actions">'+
+        '<button class="button button-ghost button-small" onclick="editTemplate(\''+escJs(t['Template ID'])+'\')">Изменить</button>'+
+        '<button class="button button-ghost button-small danger-text" onclick="deleteTemplateUi(\''+escJs(t['Template ID'])+'\',this)">Удалить</button>'+
+      '</div>'+
+    '</div>'
+  ).join(''):'<div class="empty-state compact">Шаблонов пока нет.</div>';
+}
 
-  call(
-    'deleteVacancy',
-    id,
-    ()=>{
-      showToast(
-        'Вакансия удалена.'
-      );
+function renderTemplateStageOptions(selected){
+  if(!el('templateStage'))return;
+  const current=selected!==undefined?selected:value('templateStage');
+  el('templateStage').innerHTML=option('','Выберите этап')+state.pipelineStatuses.map(s=>option(s,s,s===current)).join('');
+}
 
-      refreshAll();
+function resetTemplateForm(){
+  if(!el('templateId'))return;
+  el('templateId').value='';
+  el('templateName').value='';
+  el('templateQuestions').value='';
+  renderTemplateStageOptions('');
+}
+
+function editTemplate(id){
+  const t=state.interviewTemplates.find(x=>x['Template ID']===id);
+  if(!t)return;
+  if(value('vacancyId')!==t['Vacancy ID'])editVacancy(t['Vacancy ID']);
+  el('templateId').value=id;
+  el('templateName').value=t['Название']||'';
+  el('templateQuestions').value=(t.questions||[]).join('\n');
+  renderTemplateStageOptions(t['Этап']);
+}
+
+async function saveTemplateForm(button){
+  const vacancyId=value('vacancyId');
+  const name=value('templateName').trim();
+  const stage=value('templateStage');
+  if(!vacancyId){showToast('Сначала сохраните вакансию.','error');return}
+  if(!name){showToast('Укажите название шаблона.','error');return}
+  if(!stage){showToast('Выберите этап.','error');return}
+  const id=value('templateId');
+  const vacancy=state.vacancies.find(v=>v['Vacancy ID']===vacancyId);
+  const questions=value('templateQuestions').split('\n').map(x=>x.trim()).filter(Boolean);
+  const payload={id,name,vacancyId,stage,questions};
+
+  await optimisticSave({
+    collectionName:'interviewTemplates',
+    idKey:'Template ID',
+    payload,
+    localEntity:{'Название':name,'Vacancy ID':vacancyId,'Вакансия':vacancy?vacancy['Вакансия']:'','Этап':stage,questions},
+    rpcName:'saveInterviewTemplate',
+    responseKey:'template',
+    button,
+    formId:'vacancyForm',
+    onSuccess:()=>{
+      showToast('Шаблон интервью сохранён.');
+      resetTemplateForm();
+      renderVacancyTemplatesForSelected();
     }
-  );
+  });
+}
+
+async function deleteTemplateUi(id,button){
+  const t=state.interviewTemplates.find(x=>x['Template ID']===id);
+  const ok=await showConfirm('Удалить шаблон «'+(t?t['Название']:'')+'»?','Soft delete');
+  if(!ok)return;
+  await optimisticDelete({
+    collectionName:'interviewTemplates',id,rpcName:'deleteInterviewTemplate',button,
+    onSuccess:()=>{showToast('Шаблон удалён.');renderVacancyTemplatesForSelected()}
+  });
 }
 
 function renderSources(){
-  el('sourceCount').textContent=
-    state.sources.length+' шт.';
-
-  el('sourceList').innerHTML=
-    table(
-      ['Название',''],
-      state.sources.map(
-        item=>[
-          item['Название']||'',
-          actionButtons(
-            'editSource',
-            item['Source ID'],
-            'deleteSource'
-          )
-        ]
-      )
-    );
+  el('sourceCount').textContent=state.sources.length+' шт.';
+  const rows=state.sources.map(s=>({
+    _class:s._sync==='pending'?'row-pending':'',
+    cells:[
+      {html:syncIcon(s._sync)},
+      s['Название'],
+      {html:adminActions('editSource',s['Source ID'],'deleteSourceUi',s._sync==='pending')}
+    ]
+  }));
+  el('sourceList').innerHTML=adminTable(['','Название',''],rows);
 }
 
-function resetSourceForm(){
-  el('sourceId').value='';
-  el('sourceName').value='';
-
-  el('sourceFormTitle')
-    .textContent='Новый источник';
-}
+function resetSourceForm(){el('sourceId').value='';el('sourceName').value='';el('sourceFormTitle').textContent='Новый источник'}
 
 function editSource(id){
-  const item=
-    state.sources.find(
-      source=>
-        source['Source ID']===id
-    );
-
-  if(!item){
-    return;
-  }
-
-  el('sourceId').value=id;
-  el('sourceName').value=
-    item['Название']||'';
-
-  el('sourceFormTitle')
-    .textContent=
-      'Редактирование источника';
+  const s=state.sources.find(x=>x['Source ID']===id);
+  if(!s)return;
+  el('sourceId').value=id;el('sourceName').value=s['Название']||'';el('sourceFormTitle').textContent='Редактирование источника';
 }
 
-function saveSourceForm(){
-  const name=
-    value('sourceName').trim();
-
-  if(!name){
-    showToast(
-      'Укажите название источника.',
-      'error'
-    );
-    return;
-  }
-
-  call(
-    'saveSource',
-    {
-      id:value('sourceId'),
-      name
-    },
-    ()=>{
-      showToast(
-        'Источник сохранён.'
-      );
-
-      resetSourceForm();
-      refreshAll();
-    }
-  );
+async function saveSourceForm(button){
+  const name=value('sourceName').trim();
+  if(!name){showToast('Укажите название источника.','error');return}
+  const id=value('sourceId');
+  await optimisticSave({
+    collectionName:'sources',idKey:'Source ID',
+    payload:{id,name},localEntity:{'Название':name},
+    rpcName:'saveSource',responseKey:'source',button,formId:'sourceForm',
+    onSuccess:()=>{showToast('Источник сохранён.');resetSourceForm();populateGlobalFilters()}
+  });
 }
 
-async function deleteSource(id){
-  const item=
-    state.sources.find(
-      source=>
-        source['Source ID']===id
-    );
-
-  const ok=
-    await showConfirm(
-      'Удалить источник "'+
-      (
-        item
-          ? item['Название']
-          : ''
-      )+
-      '"?'
-    );
-
-  if(!ok){
-    return;
-  }
-
-  call(
-    'deleteSource',
-    id,
-    ()=>{
-      showToast(
-        'Источник удалён.'
-      );
-
-      refreshAll();
-    }
-  );
+async function deleteSourceUi(id,button){
+  const s=state.sources.find(x=>x['Source ID']===id);
+  const ok=await showConfirm('Удалить источник «'+(s?s['Название']:'')+'»?','Soft delete');
+  if(!ok)return;
+  await optimisticDelete({
+    collectionName:'sources',id,rpcName:'deleteSource',button,
+    onSuccess:()=>{showToast('Источник удалён.');if(value('sourceId')===id)resetSourceForm();populateGlobalFilters()}
+  });
 }
 
-function renderResponsibleStages(
-  selected=[]
-){
-  el('responsibleStages')
-    .innerHTML=
-      (state.pipelineStatuses||[])
-        .map(stage=>
-          '<label>'+
-            '<input '+
-              'type="checkbox" '+
-              'class="responsible-stage" '+
-              'value="'+
-              escapeHtml(stage)+
-              '" '+
-              (
-                selected.includes(stage)
-                  ? 'checked'
-                  : ''
-              )+
-            '>'+
-            '<span>'+
-              escapeHtml(stage)+
-            '</span>'+
-          '</label>'
-        )
-        .join('');
+function renderResponsibleStageOptions(selected){
+  if(!el('responsibleStages'))return;
+  const current=selected!==undefined?selected:[...document.querySelectorAll('.responsible-stage:checked')].map(x=>x.value);
+  el('responsibleStages').innerHTML=state.pipelineStatuses.map(stage=>
+    '<label class="stage-check status-soft-'+statusKey(stage)+'"><input type="checkbox" class="responsible-stage" value="'+escapeHtml(stage)+'" '+(current.includes(stage)?'checked':'')+'><span>'+escapeHtml(stage)+'</span></label>'
+  ).join('');
 }
 
 function renderResponsibles(){
-  el('responsibleCount')
-    .textContent=
-      state.responsibles.length+
-      ' шт.';
-
-  el('responsibleList')
-    .innerHTML=
-      table(
-        [
-          'ФИО',
-          'Email',
-          'Доступные этапы',
-          ''
-        ],
-        state.responsibles.map(
-          item=>[
-            item['ФИО']||'',
-            item['Email']||'',
-            (item.stages||[])
-              .join(', '),
-            actionButtons(
-              'editResponsible',
-              item[
-                'Responsible ID'
-              ],
-              'deleteResponsible'
-            )
-          ]
-        )
-      );
+  el('responsibleCount').textContent=state.responsibles.length+' шт.';
+  const rows=state.responsibles.map(r=>({
+    _class:r._sync==='pending'?'row-pending':'',
+    cells:[
+      {html:syncIcon(r._sync)},
+      fullNameOf(r),
+      r['Email']||'',
+      {html:'<div class="chip-wrap">'+(r.stages||[]).map(s=>statusChip(s,true)).join('')+'</div>'},
+      {html:adminActions('editResponsible',r['Responsible ID'],'deleteResponsibleUi',r._sync==='pending')}
+    ]
+  }));
+  el('responsibleList').innerHTML=adminTable(['','Ответственный','Email','Этапы',''],rows);
 }
 
 function resetResponsibleForm(){
   el('responsibleId').value='';
-  el('responsibleName').value='';
+  el('responsibleLastName').value='';
+  el('responsibleFirstName').value='';
+  el('responsibleMiddleName').value='';
   el('responsibleEmail').value='';
-
-  el('responsibleFormTitle')
-    .textContent=
-      'Новый ответственный';
-
-  renderResponsibleStages([]);
+  el('responsibleFormTitle').textContent='Новый ответственный';
+  renderResponsibleStageOptions([]);
 }
 
 function editResponsible(id){
-  const item=
-    state.responsibles.find(
-      responsible=>
-        responsible[
-          'Responsible ID'
-        ]===id
-    );
-
-  if(!item){
-    return;
-  }
-
+  const r=state.responsibles.find(x=>x['Responsible ID']===id);
+  if(!r)return;
   el('responsibleId').value=id;
-  el('responsibleName').value=
-    item['ФИО']||'';
-  el('responsibleEmail').value=
-    item['Email']||'';
-
-  el('responsibleFormTitle')
-    .textContent=
-      'Редактирование ответственного';
-
-  renderResponsibleStages(
-    item.stages||[]
-  );
+  el('responsibleLastName').value=r['Фамилия']||'';
+  el('responsibleFirstName').value=r['Имя']||'';
+  el('responsibleMiddleName').value=r['Отчество']||'';
+  el('responsibleEmail').value=r['Email']||'';
+  el('responsibleFormTitle').textContent='Редактирование ответственного';
+  renderResponsibleStageOptions(r.stages||[]);
 }
 
-function selectedResponsibleStages(){
-  return [
-    ...document.querySelectorAll(
-      '.responsible-stage:checked'
-    )
-  ].map(input=>input.value);
+async function saveResponsibleForm(button){
+  const lastName=value('responsibleLastName').trim(),firstName=value('responsibleFirstName').trim(),middleName=value('responsibleMiddleName').trim();
+  const stages=[...document.querySelectorAll('.responsible-stage:checked')].map(x=>x.value);
+  if(!lastName||!firstName){showToast('Фамилия и имя обязательны.','error');return}
+  if(!stages.length){showToast('Выберите хотя бы один этап.','error');return}
+  if(!validateEmailField(el('responsibleEmail')))return;
+  const id=value('responsibleId'),email=value('responsibleEmail');
+  const fullName=[lastName,firstName,middleName].filter(Boolean).join(' ');
+  await optimisticSave({
+    collectionName:'responsibles',idKey:'Responsible ID',
+    payload:{id,lastName,firstName,middleName,email,stages},
+    localEntity:{'Фамилия':lastName,'Имя':firstName,'Отчество':middleName,'ФИО':fullName,'Email':email,stages},
+    rpcName:'saveResponsible',responseKey:'responsible',button,formId:'responsibleForm',
+    onSuccess:()=>{showToast('Ответственный сохранён.');resetResponsibleForm();populateGlobalFilters()}
+  });
 }
 
-function saveResponsibleForm(){
-  const name=
-    value('responsibleName')
-      .trim();
-
-  const stages=
-    selectedResponsibleStages();
-
-  if(!name){
-    showToast(
-      'Укажите ФИО ответственного.',
-      'error'
-    );
-    return;
-  }
-
-  if(!stages.length){
-    showToast(
-      'Выберите хотя бы один этап.',
-      'error'
-    );
-    return;
-  }
-
-  call(
-    'saveResponsible',
-    {
-      id:value('responsibleId'),
-      name,
-      email:
-        value('responsibleEmail'),
-      stages
-    },
-    ()=>{
-      showToast(
-        'Ответственный сохранён.'
-      );
-
-      resetResponsibleForm();
-      refreshAll();
-    }
-  );
-}
-
-async function deleteResponsible(id){
-  const item=
-    state.responsibles.find(
-      responsible=>
-        responsible[
-          'Responsible ID'
-        ]===id
-    );
-
-  const ok=
-    await showConfirm(
-      'Удалить ответственного "'+
-      (
-        item
-          ? item['ФИО']
-          : ''
-      )+
-      '"?'
-    );
-
-  if(!ok){
-    return;
-  }
-
-  call(
-    'deleteResponsible',
-    id,
-    ()=>{
-      showToast(
-        'Ответственный удалён.'
-      );
-
-      refreshAll();
-    }
-  );
-}
-
-function renderTemplateSelects(
-  vacancyId='',
-  stage=''
-){
-  el('templateVacancy')
-    .innerHTML=
-      '<option value="">'+
-      'Выберите вакансию'+
-      '</option>'+
-      state.vacancies
-        .map(item=>
-          '<option value="'+
-          escapeHtml(
-            item['Vacancy ID']
-          )+
-          '" '+
-          (
-            item['Vacancy ID']===
-              vacancyId
-              ? 'selected'
-              : ''
-          )+
-          '>'+
-          escapeHtml(
-            item['Вакансия']
-          )+
-          '</option>'
-        )
-        .join('');
-
-  el('templateStage')
-    .innerHTML=
-      '<option value="">'+
-      'Выберите этап'+
-      '</option>'+
-      (state.pipelineStatuses||[])
-        .map(item=>
-          '<option value="'+
-          escapeHtml(item)+
-          '" '+
-          (
-            item===stage
-              ? 'selected'
-              : ''
-          )+
-          '>'+
-          escapeHtml(item)+
-          '</option>'
-        )
-        .join('');
-}
-
-function renderTemplates(){
-  el('templateCount')
-    .textContent=
-      state.interviewTemplates.length+
-      ' шт.';
-
-  el('templateList')
-    .innerHTML=
-      table(
-        [
-          'Название',
-          'Вакансия',
-          'Этап',
-          'Вопросов',
-          ''
-        ],
-        state.interviewTemplates.map(
-          item=>[
-            item['Название']||'',
-            item['Вакансия']||'',
-            item['Этап']||'',
-            String(
-              (item.questions||[])
-                .length
-            ),
-            actionButtons(
-              'editTemplate',
-              item['Template ID'],
-              'deleteTemplate'
-            )
-          ]
-        )
-      );
-}
-
-function resetTemplateForm(){
-  el('templateId').value='';
-  el('templateName').value='';
-  el('templateQuestions').value='';
-
-  el('templateFormTitle')
-    .textContent=
-      'Новый шаблон интервью';
-
-  renderTemplateSelects();
-}
-
-function editTemplate(id){
-  const item=
-    state.interviewTemplates.find(
-      template=>
-        template['Template ID']===id
-    );
-
-  if(!item){
-    return;
-  }
-
-  el('templateId').value=id;
-  el('templateName').value=
-    item['Название']||'';
-  el('templateQuestions').value=
-    (item.questions||[])
-      .join('\n');
-
-  el('templateFormTitle')
-    .textContent=
-      'Редактирование шаблона';
-
-  renderTemplateSelects(
-    item['Vacancy ID'],
-    item['Этап']
-  );
-}
-
-function saveTemplateForm(){
-  const name=
-    value('templateName').trim();
-
-  const vacancyId=
-    value('templateVacancy');
-
-  const stage=
-    value('templateStage');
-
-  if(!name){
-    showToast(
-      'Укажите название шаблона.',
-      'error'
-    );
-    return;
-  }
-
-  if(!vacancyId){
-    showToast(
-      'Выберите вакансию.',
-      'error'
-    );
-    return;
-  }
-
-  if(!stage){
-    showToast(
-      'Выберите этап.',
-      'error'
-    );
-    return;
-  }
-
-  const questions=
-    value('templateQuestions')
-      .split('\n')
-      .map(question=>
-        question.trim()
-      )
-      .filter(Boolean);
-
-  call(
-    'saveInterviewTemplate',
-    {
-      id:value('templateId'),
-      name,
-      vacancyId,
-      stage,
-      questions
-    },
-    ()=>{
-      showToast(
-        'Шаблон сохранён.'
-      );
-
-      resetTemplateForm();
-      refreshReferences();
-    }
-  );
-}
-
-async function deleteTemplate(id){
-  const item=
-    state.interviewTemplates.find(
-      template=>
-        template['Template ID']===id
-    );
-
-  const ok=
-    await showConfirm(
-      'Удалить шаблон "'+
-      (
-        item
-          ? item['Название']
-          : ''
-      )+
-      '"?'
-    );
-
-  if(!ok){
-    return;
-  }
-
-  call(
-    'deleteInterviewTemplate',
-    id,
-    ()=>{
-      showToast(
-        'Шаблон удалён.'
-      );
-
-      refreshReferences();
-    }
-  );
+async function deleteResponsibleUi(id,button){
+  const r=state.responsibles.find(x=>x['Responsible ID']===id);
+  const ok=await showConfirm('Удалить ответственного «'+(r?fullNameOf(r):'')+'»?','Soft delete');
+  if(!ok)return;
+  await optimisticDelete({
+    collectionName:'responsibles',id,rpcName:'deleteResponsible',button,
+    onSuccess:()=>{showToast('Ответственный удалён.');if(value('responsibleId')===id)resetResponsibleForm();populateGlobalFilters()}
+  });
 }
 </script>
