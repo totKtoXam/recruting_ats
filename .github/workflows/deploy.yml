@@ -117,3 +117,27 @@ jobs:
           fi
 
 # URL verification trigger
+
+
+      - name: Smoke test Resume Intake API
+        env:
+          API_WEB_APP_URL: ${{ vars.API_WEB_APP_URL || secrets.API_WEB_APP_URL }}
+          ATS_API_KEY: ${{ secrets.ATS_API_KEY }}
+        run: |
+          if [ -z "$API_WEB_APP_URL" ] || [ -z "$ATS_API_KEY" ]; then
+            echo "API smoke test skipped: API_WEB_APP_URL or ATS_API_KEY is not configured."
+            exit 0
+          fi
+
+          META="$(curl -fsSL --get "$API_WEB_APP_URL"             --data-urlencode "api=meta"             --data-urlencode "api_key=$ATS_API_KEY")"
+
+          echo "$META" | jq -e '.ok == true' >/dev/null
+
+          REFS="$(curl -fsSL --get "$API_WEB_APP_URL"             --data-urlencode "api=references"             --data-urlencode "api_key=$ATS_API_KEY")"
+
+          echo "$REFS" | jq -e '.ok == true' >/dev/null
+
+          echo "Resume Intake API smoke test: OK"
+          echo "Vacancies: $(echo "$REFS" | jq '.vacancies | length')"
+          echo "Sources: $(echo "$REFS" | jq '.sources | length')"
+          echo "Responsibles: $(echo "$REFS" | jq '.responsibles | length')"
