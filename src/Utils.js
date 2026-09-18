@@ -367,3 +367,27 @@ function validateHttpUrl_(value) {
 
   return url;
 }
+
+
+function normalizeMoney_(value) {
+  const raw = String(value || '')
+    .replace(/\s/g, '')
+    .replace(/,/g, '.');
+
+  if (!raw) {
+    return '';
+  }
+
+  const number = Number(raw);
+
+  if (
+    !Number.isFinite(number) ||
+    number < 0
+  ) {
+    throw new Error(
+      'Некорректное денежное значение.'
+    );
+  }
+
+  return Math.round(number);
+}
