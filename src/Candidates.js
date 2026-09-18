@@ -1,44 +1,68 @@
+function mapCandidate_(candidate, archivedOverride) {
+  const fallback =
+    splitFullName_(candidate['ФИО']);
+
+  return {
+    ...candidate,
+    'Фамилия':
+      candidate['Фамилия'] ||
+      fallback.lastName,
+    'Имя':
+      candidate['Имя'] ||
+      fallback.firstName,
+    'Отчество':
+      candidate['Отчество'] ||
+      fallback.middleName,
+    links: parseJson_(
+      candidate['Иные ссылки'],
+      []
+    ),
+    resumeVersions: parseJson_(
+      candidate['Версии резюме'],
+      []
+    ),
+    archived:
+      archivedOverride !== undefined
+        ? archivedOverride
+        : String(
+            candidate['Архивирован'] || ''
+          ).toLowerCase() === 'true'
+  };
+}
+
+
 function getCandidates() {
   return rowsToObjects_(
-    getSheet_(APP_CONFIG.SHEETS.CANDIDATES)
-  ).map(candidate => {
-    const fallback =
-      splitFullName_(candidate['ФИО']);
+    getSheet_(
+      APP_CONFIG.SHEETS.CANDIDATES
+    )
+  ).map(candidate =>
+    mapCandidate_(
+      candidate,
+      false
+    )
+  );
+}
 
-    return {
-      ...candidate,
-      'Фамилия':
-        candidate['Фамилия'] ||
-        fallback.lastName,
-      'Имя':
-        candidate['Имя'] ||
-        fallback.firstName,
-      'Отчество':
-        candidate['Отчество'] ||
-        fallback.middleName,
-      links: parseJson_(
-        candidate['Иные ссылки'],
-        []
-      ),
-      resumeVersions: parseJson_(
-        candidate['Версии резюме'],
-        []
-      ),
-      archived:
-        String(
-          candidate['Архивирован'] || ''
-        ).toLowerCase() === 'true'
-    };
-  });
+
+function getArchivedCandidates() {
+  return rowsToObjects_(
+    getSheet_(
+      APP_CONFIG.SHEETS.ARCHIVED_CANDIDATES
+    )
+  ).map(candidate =>
+    mapCandidate_(
+      candidate,
+      true
+    )
+  );
 }
 
 
 function getStats() {
-  const candidates = getCandidates();
-
-  const active = candidates.filter(
-    candidate => !candidate.archived
-  );
+  const active = getCandidates();
+  const archived =
+    getArchivedCandidates();
 
   const byStatus = {};
 
@@ -53,11 +77,70 @@ function getStats() {
 
   return {
     total: active.length,
-    archived:
-      candidates.length -
-      active.length,
+    archived: archived.length,
     byStatus
   };
+}
+
+
+function getNextCandidateNumber_() {
+  const numbers = [
+    ...getCandidates(),
+    ...getArchivedCandidates()
+  ]
+    .map(candidate =>
+      Number(
+        candidate['№'] || 0
+      )
+    )
+    .filter(Number.isFinite);
+
+  return (
+    numbers.length
+      ? Math.max(...numbers)
+      : 0
+  ) + 1;
+}
+
+
+function findCandidateStorage_(candidateId) {
+  const activeSheet = getSheet_(
+    APP_CONFIG.SHEETS.CANDIDATES
+  );
+
+  const active = findRowById_(
+    activeSheet,
+    'ID',
+    candidateId
+  );
+
+  if (active.rowIndex >= 0) {
+    return {
+      sheet: activeSheet,
+      found: active,
+      archived: false
+    };
+  }
+
+  const archiveSheet = getSheet_(
+    APP_CONFIG.SHEETS.ARCHIVED_CANDIDATES
+  );
+
+  const archived = findRowById_(
+    archiveSheet,
+    'ID',
+    candidateId
+  );
+
+  if (archived.rowIndex >= 0) {
+    return {
+      sheet: archiveSheet,
+      found: archived,
+      archived: true
+    };
+  }
+
+  return null;
 }
 
 
@@ -66,33 +149,40 @@ function saveCandidate(payload) {
 
   const isNew = !payload.ID;
 
-  const sheet = getSheet_(
+  let sheet = getSheet_(
     APP_CONFIG.SHEETS.CANDIDATES
   );
 
-  const headers = getHeaders_(sheet);
+  let headers =
+    getHeaders_(sheet);
 
   let existing = {};
   let rowIndex = -1;
+  let isArchivedStorage = false;
 
   if (!isNew) {
-    const found = findRowById_(
-      sheet,
-      'ID',
-      payload.ID
-    );
+    const storage =
+      findCandidateStorage_(
+        payload.ID
+      );
 
-    if (found.rowIndex < 0) {
+    if (!storage) {
       throw new Error(
         'Кандидат не найден.'
       );
     }
 
-    rowIndex = found.rowIndex;
+    sheet = storage.sheet;
+    headers =
+      storage.found.headers;
+    rowIndex =
+      storage.found.rowIndex;
+    isArchivedStorage =
+      storage.archived;
 
     existing = objectFromRow_(
-      found.headers,
-      found.values
+      storage.found.headers,
+      storage.found.values
     );
   }
 
@@ -116,14 +206,16 @@ function saveCandidate(payload) {
   }
 
   const vacancyChanged =
-    String(existing['Vacancy ID'] || '') !==
-    vacancyId;
+    String(
+      existing['Vacancy ID'] || ''
+    ) !== vacancyId;
 
   if (
     (isNew || vacancyChanged) &&
     (
       isSoftDeleted_(vacancy) ||
-      vacancy['Статус'] !== 'Открыта'
+      vacancy['Статус'] !==
+        'Открыта'
     )
   ) {
     throw new Error(
@@ -152,7 +244,9 @@ function saveCandidate(payload) {
 
   const responsibleChanged =
     String(
-      existing['Responsible ID'] || ''
+      existing[
+        'Responsible ID'
+      ] || ''
     ) !== responsibleId;
 
   if (
@@ -167,15 +261,19 @@ function saveCandidate(payload) {
   const candidateStatus =
     isNew
       ? 'Новый'
-      : existing['Статус'] || 'Новый';
+      : existing['Статус'] ||
+        'Новый';
 
   const responsibleStages =
     parseJson_(
-      responsible['Доступные этапы'],
+      responsible[
+        'Доступные этапы'
+      ],
       []
     );
 
   if (
+    !isArchivedStorage &&
     (isNew || responsibleChanged) &&
     !responsibleStages.includes(
       candidateStatus
@@ -190,9 +288,12 @@ function saveCandidate(payload) {
 
   const sourceId =
     String(
-      payload.sourceId !== undefined
+      payload.sourceId !==
+      undefined
         ? payload.sourceId || ''
-        : existing['Source ID'] || ''
+        : existing[
+            'Source ID'
+          ] || ''
     ).trim();
 
   let source = null;
@@ -211,8 +312,11 @@ function saveCandidate(payload) {
     }
 
     const sourceChanged =
-      String(existing['Source ID'] || '') !==
-      sourceId;
+      String(
+        existing[
+          'Source ID'
+        ] || ''
+      ) !== sourceId;
 
     if (
       (isNew || sourceChanged) &&
@@ -226,50 +330,60 @@ function saveCandidate(payload) {
 
   const lastName =
     normalizeNamePart_(
-      payload.lastName !== undefined
+      payload.lastName !==
+      undefined
         ? payload.lastName
         : existing['Фамилия']
     );
 
   const firstName =
     normalizeNamePart_(
-      payload.firstName !== undefined
+      payload.firstName !==
+      undefined
         ? payload.firstName
         : existing['Имя']
     );
 
   const middleName =
     normalizeNamePart_(
-      payload.middleName !== undefined
+      payload.middleName !==
+      undefined
         ? payload.middleName
         : existing['Отчество']
     );
 
-  const fullName = composeFullName_(
-    lastName,
-    firstName,
-    middleName
-  );
+  const fullName =
+    composeFullName_(
+      lastName,
+      firstName,
+      middleName
+    );
 
-  const telegram = normalizeTelegram_(
-    payload.telegram !== undefined
-      ? payload.telegram
-      : existing['Telegram']
-  );
+  const telegram =
+    normalizeTelegram_(
+      payload.telegram !==
+      undefined
+        ? payload.telegram
+        : existing['Telegram']
+    );
 
-  const linkedin = normalizeProfileUrl_(
-    payload.linkedin !== undefined
-      ? payload.linkedin
-      : existing['LinkedIn'],
-    'linkedin'
-  );
+  const linkedin =
+    normalizeProfileUrl_(
+      payload.linkedin !==
+      undefined
+        ? payload.linkedin
+        : existing['LinkedIn'],
+      'linkedin'
+    );
 
-  const github = normalizeProfileUrl_(
-    payload.github !== undefined
-      ? payload.github
-      : existing['GitHub'],
-    'github'
-  );
+  const github =
+    normalizeProfileUrl_(
+      payload.github !==
+      undefined
+        ? payload.github
+        : existing['GitHub'],
+      'github'
+    );
 
   const links = Array.isArray(
     payload.links
@@ -290,7 +404,9 @@ function saveCandidate(payload) {
           link.url
         )
     : parseJson_(
-        existing['Иные ссылки'],
+        existing[
+          'Иные ссылки'
+        ],
         []
       );
 
@@ -305,17 +421,20 @@ function saveCandidate(payload) {
     }
   });
 
-  const salary = normalizeMoney_(
-    payload.salary !== undefined
-      ? payload.salary
-      : existing[
-          'Зарплатные ожидания'
-        ]
-  );
+  const salary =
+    normalizeMoney_(
+      payload.salary !==
+      undefined
+        ? payload.salary
+        : existing[
+            'Зарплатные ожидания'
+          ]
+    );
 
   if (
     salary !== '' &&
-    Number(salary) > 10000000
+    Number(salary) >
+      10000000
   ) {
     throw new Error(
       'ЗП ожидания не может превышать 10 000 000.'
@@ -328,10 +447,7 @@ function saveCandidate(payload) {
 
   const candidateNumber =
     existing['№'] ||
-    getNextNumber_(
-      APP_CONFIG.SHEETS.CANDIDATES,
-      '№'
-    );
+    getNextCandidateNumber_();
 
   const folderInfo =
     ensureCandidateFolder_(
@@ -344,7 +460,9 @@ function saveCandidate(payload) {
 
   let resumeVersions =
     parseJson_(
-      existing['Версии резюме'],
+      existing[
+        'Версии резюме'
+      ],
       []
     );
 
@@ -411,13 +529,15 @@ function saveCandidate(payload) {
       candidateStatus,
     'Телефон':
       normalizeKzPhone_(
-        payload.phone !== undefined
+        payload.phone !==
+        undefined
           ? payload.phone
           : existing['Телефон']
       ),
     'Email':
       validateEmail_(
-        payload.email !== undefined
+        payload.email !==
+        undefined
           ? payload.email
           : existing['Email']
       ),
@@ -457,7 +577,8 @@ function saveCandidate(payload) {
       folderInfo.url,
     'Комментарий':
       String(
-        payload.comment !== undefined
+        payload.comment !==
+        undefined
           ? payload.comment || ''
           : existing[
               'Комментарий'
@@ -471,29 +592,27 @@ function saveCandidate(payload) {
       ] || now,
     'Дата изменения': now,
     'Архивирован':
-      String(
-        existing[
-          'Архивирован'
-        ] || ''
-      ).toLowerCase() ===
-      'true',
+      isArchivedStorage,
     'Дата архивации':
-      existing[
-        'Дата архивации'
-      ] || '',
+      isArchivedStorage
+        ? existing[
+            'Дата архивации'
+          ] || now
+        : '',
     'Причина отказа':
       existing[
         'Причина отказа'
       ] || ''
   };
 
-  const row = headers.map(
-    header =>
-      candidate[header] !==
-      undefined
-        ? candidate[header]
-        : ''
-  );
+  const row =
+    headers.map(
+      header =>
+        candidate[header] !==
+        undefined
+          ? candidate[header]
+          : ''
+    );
 
   if (rowIndex > 0) {
     sheet
@@ -510,23 +629,18 @@ function saveCandidate(payload) {
 
   return {
     ok: true,
-    candidate: {
-      ...candidate,
-      links,
-      resumeVersions,
-      archived:
-        String(
-          candidate[
-            'Архивирован'
-          ] || ''
-        ).toLowerCase() ===
-        'true'
-    }
+    candidate:
+      mapCandidate_(
+        candidate,
+        isArchivedStorage
+      )
   };
 }
 
 
-function validateCandidate_(payload) {
+function validateCandidate_(
+  payload
+) {
   if (!payload) {
     throw new Error(
       'Пустые данные кандидата.'
@@ -613,7 +727,8 @@ function ensureCandidateFolder_(
 
   const safeName =
     String(
-      fullName || 'Кандидат'
+      fullName ||
+      'Кандидат'
     )
       .trim()
       .replace(
@@ -721,18 +836,6 @@ function getAllowedTransitions(
   );
 
   if (!candidate) {
-    throw new Error(
-      'Кандидат не найден.'
-    );
-  }
-
-  if (
-    String(
-      candidate[
-        'Архивирован'
-      ]
-    ).toLowerCase() === 'true'
-  ) {
     return [];
   }
 
@@ -747,65 +850,111 @@ function getAllowedTransitions(
 function archiveCandidate(
   candidateId
 ) {
-  const sheet = getSheet_(
-    APP_CONFIG.SHEETS.CANDIDATES
-  );
+  const lock =
+    LockService.getScriptLock();
 
-  const found = findRowById_(
-    sheet,
-    'ID',
-    candidateId
-  );
+  lock.waitLock(30000);
 
-  if (found.rowIndex < 0) {
-    throw new Error(
-      'Кандидат не найден.'
+  try {
+    const activeSheet =
+      getSheet_(
+        APP_CONFIG.SHEETS.CANDIDATES
+      );
+
+    const found = findRowById_(
+      activeSheet,
+      'ID',
+      candidateId
     );
+
+    if (found.rowIndex < 0) {
+      const archived =
+        findById_(
+          APP_CONFIG.SHEETS.ARCHIVED_CANDIDATES,
+          'ID',
+          candidateId
+        );
+
+      if (archived) {
+        return {
+          ok: true,
+          candidate:
+            mapCandidate_(
+              archived,
+              true
+            )
+        };
+      }
+
+      throw new Error(
+        'Кандидат не найден.'
+      );
+    }
+
+    const candidate =
+      objectFromRow_(
+        found.headers,
+        found.values
+      );
+
+    const now = formatNow_();
+
+    candidate[
+      'Архивирован'
+    ] = true;
+
+    candidate[
+      'Дата архивации'
+    ] = now;
+
+    candidate[
+      'Причина отказа'
+    ] = 'Архивация';
+
+    candidate[
+      'Дата изменения'
+    ] = now;
+
+    const archiveSheet =
+      getSheet_(
+        APP_CONFIG.SHEETS.ARCHIVED_CANDIDATES
+      );
+
+    const archiveHeaders =
+      getHeaders_(archiveSheet);
+
+    const existingArchive =
+      findById_(
+        APP_CONFIG.SHEETS.ARCHIVED_CANDIDATES,
+        'ID',
+        candidateId
+      );
+
+    if (!existingArchive) {
+      archiveSheet.appendRow(
+        archiveHeaders.map(
+          header =>
+            candidate[header] !==
+            undefined
+              ? candidate[header]
+              : ''
+        )
+      );
+    }
+
+    activeSheet.deleteRow(
+      found.rowIndex
+    );
+
+    return {
+      ok: true,
+      candidate:
+        mapCandidate_(
+          candidate,
+          true
+        )
+    };
+  } finally {
+    lock.releaseLock();
   }
-
-  const candidate =
-    objectFromRow_(
-      found.headers,
-      found.values
-    );
-
-  const now = formatNow_();
-
-  candidate['Статус'] =
-    'Отказ';
-
-  candidate['Архивирован'] =
-    true;
-
-  candidate['Дата архивации'] =
-    now;
-
-  candidate['Причина отказа'] =
-    'Архивация';
-
-  candidate['Дата изменения'] =
-    now;
-
-  const row =
-    found.headers.map(
-      header =>
-        candidate[header] !==
-        undefined
-          ? candidate[header]
-          : ''
-    );
-
-  sheet
-    .getRange(
-      found.rowIndex,
-      1,
-      1,
-      found.headers.length
-    )
-    .setValues([row]);
-
-  return {
-    ok: true,
-    candidate
-  };
 }
