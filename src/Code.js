@@ -1,5 +1,6 @@
 function doGet() {
   ensureSchema_();
+  ensureSpreadsheetMenuTrigger_();
 
   return HtmlService
     .createTemplateFromFile('Index')
