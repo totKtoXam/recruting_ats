@@ -19,14 +19,31 @@
     </div>
 
     <nav class="top-actions">
-      <a
-        class="button button-secondary button-link"
-        href="<?= appUrl ?>?page=admin"
+      <span
+        id="dataSyncStatus"
+        class="sync-status"
       >
-        Админ-панель
-      </a>
+        Загрузка данных…
+      </span>
 
       <button
+        id="navCandidates"
+        class="button button-secondary"
+        onclick="navigateTo('candidates')"
+      >
+        Кандидаты
+      </button>
+
+      <button
+        id="navAdmin"
+        class="button button-secondary"
+        onclick="navigateTo('admin')"
+      >
+        Админ-панель
+      </button>
+
+      <button
+        id="addCandidateTop"
         class="button button-primary"
         onclick="openCandidate()"
       >
@@ -35,7 +52,7 @@
     </nav>
   </header>
 
-  <main class="page">
+  <main id="viewCandidates" class="page app-view">
     <section class="filters">
       <input
         id="filterSearch"
@@ -78,6 +95,14 @@
       id="board"
       class="board"
     ></section>
+  </main>
+
+  <main
+    id="viewAdmin"
+    class="page app-view"
+    hidden
+  >
+    <?!= include('AdminView'); ?>
   </main>
 
   <div
@@ -412,6 +437,11 @@
     </div>
   </div>
 
+  <script>
+    window.__INITIAL_ROUTE__ = '<?= initialRoute ?>';
+  </script>
+
   <?!= include('Scripts'); ?>
+  <?!= include('AdminScripts'); ?>
 </body>
 </html>
