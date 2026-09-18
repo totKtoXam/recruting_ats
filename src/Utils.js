@@ -457,3 +457,56 @@ function softDeleteById_(sheetName, idHeader, id) {
     entity
   };
 }
+
+
+function getNextNumber_(sheetName, numberHeader) {
+  const rows = rowsToObjects_(
+    getSheet_(sheetName)
+  );
+
+  const max = rows.reduce(
+    (result, row) => {
+      const value = Number(
+        row[numberHeader] || 0
+      );
+
+      return Number.isFinite(value)
+        ? Math.max(result, value)
+        : result;
+    },
+    0
+  );
+
+  return max + 1;
+}
+
+
+function normalizeProfileUrl_(value, type) {
+  const raw = String(value || '').trim();
+
+  if (!raw) {
+    return '';
+  }
+
+  let url = raw;
+
+  if (!/^https?:\/\//i.test(url)) {
+    if (type === 'github') {
+      url =
+        'https://github.com/' +
+        url.replace(/^@/, '');
+    } else if (type === 'linkedin') {
+      const clean = url
+        .replace(/^@/, '')
+        .replace(/^linkedin\.com\//i, '');
+
+      url =
+        'https://www.linkedin.com/' +
+        (clean.startsWith('in/')
+          ? clean
+          : 'in/' + clean);
+    }
+  }
+
+  return validateHttpUrl_(url);
+}
