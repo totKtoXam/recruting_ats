@@ -157,6 +157,7 @@ function resetVacancyForm(){
   el('vacancyStatus').value='Открыта';
   el('vacancyComment').value='';
   el('vacancyFormTitle').textContent='Новая вакансия';
+  colorizeVacancySelect(el('vacancyStatus'));
   resetTemplateForm();
   renderVacancyTemplatesForSelected();
 }
@@ -169,6 +170,7 @@ function editVacancy(id){
   el('vacancyStatus').value=v['Статус']||'Открыта';
   el('vacancyComment').value=v['Комментарий']||'';
   el('vacancyFormTitle').textContent='Редактирование вакансии';
+  colorizeVacancySelect(el('vacancyStatus'));
   resetTemplateForm();
   renderVacancyTemplatesForSelected();
   el('vacancyForm').scrollIntoView({behavior:'smooth',block:'start'});
@@ -241,6 +243,7 @@ function renderTemplateStageOptions(selected){
   if(!el('templateStage'))return;
   const current=selected!==undefined?selected:value('templateStage');
   el('templateStage').innerHTML=option('','Выберите этап')+state.pipelineStatuses.map(s=>option(s,s,s===current)).join('');
+  colorizeStageSelect(el('templateStage'));
 }
 
 function resetTemplateForm(){
