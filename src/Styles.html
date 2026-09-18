@@ -1231,4 +1231,301 @@ input:disabled,select:disabled,textarea:disabled,button:disabled{opacity:.58;cur
   .template-row{grid-template-columns:24px 1fr}
   .template-row>.button{grid-column:2}
 }
+
+
+/* Mobile / tablet adaptation */
+@media(max-width:1024px){
+  .topbar{padding:10px 14px;min-height:62px}
+  .page{padding:18px 12px 30px}
+  .filters{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .filters .search-field{grid-column:1/-1}
+  .board{width:calc(100vw - 24px)}
+  .candidate-panel{width:calc(100vw - 20px);height:calc(100dvh - 20px);max-height:none}
+  .candidate-header{grid-template-columns:1fr auto}
+  .candidate-header-flow{grid-column:1/-1;order:3}
+  .candidate-layout{grid-template-columns:1fr 1fr}
+  .candidate-column-interviews{grid-column:1/-1;max-height:360px}
+  .directory-layout,.vacancy-directory-layout{grid-template-columns:1fr;max-width:none}
+  .directory-table-card,.directory-form-card,.directory-table-narrow,.directory-form-narrow{max-width:none}
+}
+
+@media(max-width:720px){
+  html,body{width:100%;overflow-x:hidden}
+  body{padding-bottom:72px}
+
+  .topbar{
+    position:sticky;
+    top:0;
+    min-height:58px;
+    padding:8px 10px;
+    gap:8px
+  }
+  .brand{gap:8px;min-width:0}
+  .brand-mark{width:34px;height:34px;border-radius:10px;font-size:15px}
+  .topbar h1{font-size:15px;white-space:nowrap}
+  .subtitle{display:none}
+  .top-actions{gap:4px;min-width:0}
+  .sync-status{
+    position:fixed;
+    left:10px;
+    bottom:12px;
+    z-index:35;
+    max-width:calc(100vw - 20px);
+    margin:0;
+    padding:6px 9px;
+    border-radius:999px;
+    background:rgba(15,23,42,.92);
+    box-shadow:0 5px 18px rgba(15,23,42,.2);
+    font-size:10px;
+    pointer-events:none
+  }
+  .nav-button{
+    min-height:36px;
+    padding:7px 9px;
+    font-size:11px;
+    white-space:nowrap
+  }
+
+  .page{padding:14px 10px 24px}
+  .page-header{gap:12px;margin-bottom:12px}
+  .page-header h2{font-size:23px}
+  .page-description{font-size:12px}
+  .page-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+  .page-actions .button{min-width:0;padding:8px 10px;font-size:12px}
+
+  .surface{padding:10px;border-radius:13px}
+  .filters{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+  .filters .search-field{grid-column:1/-1}
+  .filters .toggle{height:40px}
+  .field{gap:5px}
+  .field label{font-size:11px}
+  input,select,textarea{font-size:16px;padding:10px 11px;border-radius:10px}
+  textarea{min-height:84px}
+
+  .stats{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:7px;
+    margin-bottom:10px
+  }
+  .stat{min-width:0;padding:9px 10px;border-radius:11px}
+  .stat span{font-size:10px}
+  .stat b{font-size:18px}
+
+  .vacancy-stats{
+    display:block;
+    margin-bottom:10px;
+    overflow:hidden
+  }
+  .vacancy-stats-label{padding:0 0 6px}
+  .vacancy-stat-list{
+    flex-wrap:nowrap;
+    overflow-x:auto;
+    padding:0 0 6px;
+    scroll-snap-type:x proximity
+  }
+  .vacancy-stat-chip{
+    flex:0 0 auto;
+    max-width:82vw;
+    scroll-snap-align:start
+  }
+  .vacancy-stat-chip span{
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap
+  }
+
+  .board{
+    width:calc(100vw - 20px);
+    gap:9px;
+    min-height:420px;
+    padding:2px 1px 12px;
+    overflow-x:auto;
+    overflow-y:visible;
+    scroll-snap-type:x mandatory;
+    scroll-padding:0 1px
+  }
+  .column{
+    flex:0 0 calc(100vw - 38px);
+    min-width:calc(100vw - 38px);
+    min-height:410px;
+    padding:9px;
+    scroll-snap-align:start
+  }
+  .column.collapsed{
+    flex:0 0 52px;
+    min-width:52px
+  }
+  .column-title{position:sticky;top:0;z-index:3}
+  .candidate-card{padding:12px;margin-bottom:8px}
+  .candidate-name{font-size:14px}
+  .candidate-meta-row{font-size:11px}
+  .card-actions{gap:5px}
+  .card-actions .button{font-size:10px;padding:5px 7px}
+  .card-resume-history-popover{
+    position:fixed;
+    left:10px;
+    right:10px;
+    bottom:78px;
+    width:auto;
+    max-height:50dvh
+  }
+
+  .modal{
+    align-items:flex-end;
+    padding:0;
+    background:rgba(15,23,42,.6)
+  }
+  .panel{
+    width:100%;
+    max-width:none;
+    max-height:92dvh;
+    border-radius:20px 20px 0 0;
+    padding:14px;
+    padding-bottom:max(16px,env(safe-area-inset-bottom))
+  }
+  .candidate-panel{
+    width:100%;
+    height:100dvh;
+    max-height:100dvh;
+    border-radius:0;
+    padding:10px;
+    padding-top:max(10px,env(safe-area-inset-top))
+  }
+  .candidate-header{
+    position:sticky;
+    top:0;
+    z-index:8;
+    display:grid;
+    grid-template-columns:minmax(0,1fr) auto;
+    gap:8px;
+    padding:5px 2px 10px;
+    background:#f8fafc
+  }
+  .candidate-header-title h2{font-size:19px;white-space:normal}
+  .candidate-header-flow{
+    grid-column:1/-1;
+    display:flex;
+    overflow-x:auto;
+    flex-wrap:nowrap;
+    padding-bottom:3px
+  }
+  .candidate-header-actions{
+    grid-column:1/-1;
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr)) 38px;
+    gap:6px
+  }
+  .candidate-header-actions .button{
+    min-width:0;
+    min-height:36px;
+    padding:7px 8px;
+    font-size:11px
+  }
+  .candidate-header-actions .icon-close{
+    width:38px;height:36px
+  }
+  .candidate-header-actions #archiveCandidateButton{grid-column:1}
+  .candidate-header-actions .button-primary{grid-column:2}
+  .candidate-header-actions .icon-close{grid-column:3;grid-row:1}
+  .candidate-header-actions #shareCandidateButton{grid-column:1/-1}
+
+  .candidate-layout{
+    display:flex;
+    flex-direction:column;
+    gap:9px;
+    overflow-y:auto;
+    padding-top:9px
+  }
+  .candidate-column{
+    flex:0 0 auto;
+    width:100%;
+    height:auto;
+    min-height:0;
+    overflow:visible;
+    padding:12px;
+    border-radius:13px
+  }
+  .candidate-column-interviews{max-height:none}
+  .section-heading{margin-bottom:11px}
+  .section-heading h3{font-size:15px}
+  .name-grid,.social-grid{grid-template-columns:1fr}
+  .candidate-fields{gap:9px}
+  .transition-bar{flex-wrap:nowrap;overflow-x:auto;padding-bottom:3px}
+  .transition-pill{flex:0 0 auto}
+  .resume-version{grid-template-columns:auto minmax(0,1fr) auto}
+  .resume-version strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .link-item{grid-template-columns:1fr}
+  .link-item .button{justify-self:end}
+
+  .tabs{
+    flex-wrap:nowrap;
+    overflow-x:auto;
+    margin-bottom:12px;
+    padding-bottom:4px
+  }
+  .tab{flex:0 0 auto;padding:8px 10px;font-size:11px}
+
+  .directory-layout,.vacancy-directory-layout{
+    display:flex;
+    flex-direction:column;
+    gap:10px
+  }
+  .admin-list-card,.admin-form-card{padding:10px;border-radius:13px}
+  .directory-table-card,.directory-form-card{width:100%;max-width:none}
+  .table-scroll{
+    max-height:46dvh;
+    overflow:auto;
+    -webkit-overflow-scrolling:touch
+  }
+  .admin-table{min-width:620px}
+  .admin-table th{position:sticky;top:0;z-index:2;background:#fff}
+  .admin-table th,.admin-table td{padding:8px 7px;font-size:10px}
+  .vacancy-editor-grid{display:flex;flex-direction:column;gap:12px}
+  .vacancy-editor-templates{
+    padding:12px 0 0;
+    border-left:0;
+    border-top:1px solid var(--line)
+  }
+  .form-grid,.form-grid-3{grid-template-columns:1fr}
+  .stage-multiselect{gap:5px}
+  .stage-check{font-size:10px;padding:5px 7px}
+  .template-row{
+    grid-template-columns:22px minmax(0,1fr);
+    padding:8px
+  }
+  .template-row>.button{grid-column:2;justify-self:end}
+  .question-editor-row{grid-template-columns:24px minmax(0,1fr)}
+  .question-editor-row .button{grid-column:2;justify-self:end}
+
+  .actions{
+    position:sticky;
+    bottom:0;
+    z-index:6;
+    margin:10px -4px -4px;
+    padding:9px 4px 4px;
+    background:linear-gradient(180deg,rgba(248,250,252,0),#f8fafc 30%)
+  }
+  .actions .button{flex:1;min-width:0}
+  .confirm-panel{border-radius:20px 20px 0 0}
+  .toast{
+    left:10px;
+    right:10px;
+    top:auto;
+    bottom:76px;
+    max-width:none
+  }
+}
+
+@media(max-width:420px){
+  .brand h1{font-size:14px}
+  .brand-mark{width:31px;height:31px}
+  .nav-button{padding:7px 6px;font-size:10px}
+  .filters{grid-template-columns:1fr}
+  .filters .search-field{grid-column:auto}
+  .page-actions{grid-template-columns:1fr}
+  .candidate-header-actions{grid-template-columns:1fr 1fr 36px}
+  .column{flex-basis:calc(100vw - 28px);min-width:calc(100vw - 28px)}
+}
+
 </style>
