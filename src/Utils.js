@@ -313,7 +313,7 @@ function validateEmail_(value) {
     );
   }
 
-  return email;
+  return email.toLowerCase();
 }
 
 
@@ -390,4 +390,70 @@ function normalizeMoney_(value) {
   }
 
   return Math.round(number);
+}
+
+
+function isSoftDeleted_(entity) {
+  return String(
+    entity && entity['Удален'] || ''
+  ).toLowerCase() === 'true';
+}
+
+
+function normalizeNamePart_(value) {
+  return String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+
+function composeFullName_(lastName, firstName, middleName) {
+  return [
+    normalizeNamePart_(lastName),
+    normalizeNamePart_(firstName),
+    normalizeNamePart_(middleName)
+  ].filter(Boolean).join(' ');
+}
+
+
+function splitFullName_(fullName) {
+  const parts = String(fullName || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  return {
+    lastName: parts[0] || '',
+    firstName: parts[1] || '',
+    middleName: parts.slice(2).join(' ')
+  };
+}
+
+
+function softDeleteById_(sheetName, idHeader, id) {
+  const existing = findById_(
+    sheetName,
+    idHeader,
+    id
+  );
+
+  if (!existing) {
+    throw new Error('Запись не найдена.');
+  }
+
+  const entity = upsertObject_(
+    sheetName,
+    idHeader,
+    {
+      ...existing,
+      'Удален': true,
+      'Дата удаления': formatNow_(),
+      'Дата изменения': formatNow_()
+    }
+  );
+
+  return {
+    ok: true,
+    entity
+  };
 }
