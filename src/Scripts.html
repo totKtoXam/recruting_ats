@@ -134,6 +134,26 @@ function vacancyStatusKey(status){
   return map[status]||'neutral';
 }
 
+function colorizeStageSelect(select){
+  if(!select)return;
+  select.className=select.className
+    .replace(/status-select-\\S+/g,'')
+    .trim();
+  if(select.value){
+    select.classList.add('status-select-'+statusKey(select.value));
+  }
+}
+
+function colorizeVacancySelect(select){
+  if(!select)return;
+  select.className=select.className
+    .replace(/vacancy-select-\\S+/g,'')
+    .trim();
+  if(select.value){
+    select.classList.add('vacancy-select-'+vacancyStatusKey(select.value));
+  }
+}
+
 function statusChip(status,small=false){
   return '<span class="status-chip status-'+statusKey(status)+(small?' small':'')+'">'+escapeHtml(status||'—')+'</span>';
 }
