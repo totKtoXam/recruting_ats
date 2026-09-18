@@ -115,3 +115,5 @@ jobs:
           else
             echo "API_WEB_APP_URL repository variable is not configured."
           fi
+
+# URL verification trigger
