@@ -1,3 +1,18 @@
+function getAllInterviews() {
+  return rowsToObjects_(
+    getSheet_(
+      APP_CONFIG.SHEETS.INTERVIEWS
+    )
+  ).map(interview => ({
+    ...interview,
+    answers: parseJson_(
+      interview['Вопросы и ответы'],
+      []
+    )
+  }));
+}
+
+
 function getInterviews(candidateId) {
   if (!candidateId) {
     return [];
