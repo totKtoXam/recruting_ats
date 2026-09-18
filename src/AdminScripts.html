@@ -1,112 +1,10 @@
 <script>
-let state={
-  vacancies:[],
-  sources:[],
-  responsibles:[],
-  interviewTemplates:[],
-  pipelineStatuses:[]
-};
-
-let confirmResolver=null;
-
-function el(id){
-  return document.getElementById(id);
-}
-
-function value(id){
-  return el(id).value;
-}
-
-function escapeHtml(v){
-  return String(v??'')
-    .replaceAll('&','&amp;')
-    .replaceAll('<','&lt;')
-    .replaceAll('>','&gt;')
-    .replaceAll('"','&quot;')
-    .replaceAll("'","&#039;");
-}
-
-function escJs(v){
-  return String(v??'')
-    .replaceAll('\\','\\\\')
-    .replaceAll("'","\\'");
-}
-
-function setLoading(v){
-  el('loading')
-    .classList
-    .toggle('active',!!v);
-}
-
-function showToast(message,type='info'){
-  const toast=el('toast');
-
-  toast.textContent=message;
-  toast.className=
-    'toast active '+
-    (type==='error'
-      ? 'toast-error'
-      : 'toast-success');
-
-  clearTimeout(showToast.timer);
-
-  showToast.timer=setTimeout(()=>{
-    toast.className='toast';
-  },3500);
-}
-
-function handleError(error){
-  setLoading(false);
-
-  showToast(
-    error&&error.message
-      ? error.message
-      : String(error),
-    'error'
-  );
-}
-
-function call(name,args,onSuccess){
-  setLoading(true);
-
-  const runner=
-    google.script.run
-      .withFailureHandler(handleError)
-      .withSuccessHandler(result=>{
-        setLoading(false);
-
-        if(onSuccess){
-          onSuccess(result);
-        }
-      });
-
-  if(args===undefined){
-    runner[name]();
-  }else{
-    runner[name](args);
+function renderAdminAll(){
+  if(!state.loaded.references){
+    renderAdminLoading();
+    return;
   }
-}
 
-function init(){
-  loadData();
-}
-
-function loadData(after){
-  call(
-    'getInitialData',
-    undefined,
-    data=>{
-      state=data;
-      renderAll();
-
-      if(after){
-        after();
-      }
-    }
-  );
-}
-
-function renderAll(){
   renderResponsibleStages();
   renderTemplateSelects();
   renderVacancies();
@@ -115,17 +13,43 @@ function renderAll(){
   renderTemplates();
 }
 
+function renderAdminLoading(){
+  const ids=[
+    'vacancyList',
+    'sourceList',
+    'responsibleList',
+    'templateList'
+  ];
+
+  ids.forEach(id=>{
+    if(el(id)){
+      el(id).innerHTML=
+        '<div class="muted">'+
+        'Данные загружаются в фоне…'+
+        '</div>';
+    }
+  });
+}
+
 function showAdminTab(name,button){
   document
-    .querySelectorAll('.admin-page-section')
+    .querySelectorAll(
+      '.admin-page-section'
+    )
     .forEach(section=>
-      section.classList.remove('active')
+      section.classList.remove(
+        'active'
+      )
     );
 
   document
-    .querySelectorAll('.admin-tabs .tab')
+    .querySelectorAll(
+      '.admin-tabs .tab'
+    )
     .forEach(tab=>
-      tab.classList.remove('active')
+      tab.classList.remove(
+        'active'
+      )
     );
 
   el('admin-'+name)
@@ -137,31 +61,11 @@ function showAdminTab(name,button){
   }
 }
 
-function showConfirm(message,title='Подтверждение'){
-  el('confirmTitle').textContent=title;
-  el('confirmMessage').textContent=message;
-
-  el('confirmModal')
-    .classList
-    .add('open');
-
-  return new Promise(resolve=>{
-    confirmResolver=resolve;
-  });
-}
-
-function closeConfirm(result){
-  el('confirmModal')
-    .classList
-    .remove('open');
-
-  if(confirmResolver){
-    confirmResolver(result);
-    confirmResolver=null;
-  }
-}
-
-function actionButtons(editFn,id,deleteFn){
+function actionButtons(
+  editFn,
+  id,
+  deleteFn
+){
   return (
     '<div class="table-actions">'+
       '<button class="button button-small" '+
@@ -176,34 +80,50 @@ function actionButtons(editFn,id,deleteFn){
   );
 }
 
-function table(headers,rows){
+function table(
+  headers,
+  rows
+){
   return (
     '<div class="table-scroll">'+
       '<table class="admin-table">'+
         '<thead><tr>'+
           headers
-            .map(h=>'<th>'+escapeHtml(h)+'</th>')
+            .map(header=>
+              '<th>'+
+              escapeHtml(header)+
+              '</th>'
+            )
             .join('')+
         '</tr></thead>'+
         '<tbody>'+
           (
             rows.length
-              ? rows.map(row=>
-                  '<tr>'+
-                    row.map((cell,index)=>
-                      '<td>'+
-                      (
-                        index===row.length-1
-                          ? cell
-                          : escapeHtml(cell)
-                      )+
-                      '</td>'
-                    ).join('')+
-                  '</tr>'
-                ).join('')
+              ? rows
+                  .map(row=>
+                    '<tr>'+
+                    row
+                      .map((cell,index)=>
+                        '<td>'+
+                        (
+                          index===
+                          row.length-1
+                            ? cell
+                            : escapeHtml(
+                                cell
+                              )
+                        )+
+                        '</td>'
+                      )
+                      .join('')+
+                    '</tr>'
+                  )
+                  .join('')
               : '<tr><td colspan="'+
                 headers.length+
-                '" class="empty-cell">Нет данных</td></tr>'
+                '" class="empty-cell">'+
+                'Нет данных'+
+                '</td></tr>'
           )+
         '</tbody>'+
       '</table>'+
@@ -217,17 +137,24 @@ function renderVacancies(){
 
   el('vacancyList').innerHTML=
     table(
-      ['Вакансия','Статус','Комментарий',''],
-      state.vacancies.map(item=>[
-        item['Вакансия']||'',
-        item['Статус']||'',
-        item['Комментарий']||'',
-        actionButtons(
-          'editVacancy',
-          item['Vacancy ID'],
-          'deleteVacancy'
-        )
-      ])
+      [
+        'Вакансия',
+        'Статус',
+        'Комментарий',
+        ''
+      ],
+      state.vacancies.map(
+        item=>[
+          item['Вакансия']||'',
+          item['Статус']||'',
+          item['Комментарий']||'',
+          actionButtons(
+            'editVacancy',
+            item['Vacancy ID'],
+            'deleteVacancy'
+          )
+        ]
+      )
     );
 }
 
@@ -236,14 +163,15 @@ function resetVacancyForm(){
   el('vacancyName').value='';
   el('vacancyStatus').value='Открыта';
   el('vacancyComment').value='';
-  el('vacancyFormTitle').textContent=
-    'Новая вакансия';
+  el('vacancyFormTitle')
+    .textContent='Новая вакансия';
 }
 
 function editVacancy(id){
   const item=
-    state.vacancies.find(v=>
-      v['Vacancy ID']===id
+    state.vacancies.find(
+      vacancy=>
+        vacancy['Vacancy ID']===id
     );
 
   if(!item){
@@ -257,17 +185,15 @@ function editVacancy(id){
     item['Статус']||'Открыта';
   el('vacancyComment').value=
     item['Комментарий']||'';
-  el('vacancyFormTitle').textContent=
-    'Редактирование вакансии';
 
-  window.scrollTo({
-    top:0,
-    behavior:'smooth'
-  });
+  el('vacancyFormTitle')
+    .textContent=
+      'Редактирование вакансии';
 }
 
 function saveVacancyForm(){
-  const name=value('vacancyName').trim();
+  const name=
+    value('vacancyName').trim();
 
   if(!name){
     showToast(
@@ -282,28 +208,39 @@ function saveVacancyForm(){
     {
       id:value('vacancyId'),
       name,
-      status:value('vacancyStatus'),
-      comment:value('vacancyComment')
+      status:
+        value('vacancyStatus'),
+      comment:
+        value('vacancyComment')
     },
     ()=>{
-      showToast('Вакансия сохранена.');
+      showToast(
+        'Вакансия сохранена.'
+      );
+
       resetVacancyForm();
-      loadData();
+      refreshAll();
     }
   );
 }
 
 async function deleteVacancy(id){
   const item=
-    state.vacancies.find(v=>
-      v['Vacancy ID']===id
+    state.vacancies.find(
+      vacancy=>
+        vacancy['Vacancy ID']===id
     );
 
-  const ok=await showConfirm(
-    'Удалить вакансию "'+
-    (item?item['Вакансия']:'')+
-    '"?'
-  );
+  const ok=
+    await showConfirm(
+      'Удалить вакансию "'+
+      (
+        item
+          ? item['Вакансия']
+          : ''
+      )+
+      '"?'
+    );
 
   if(!ok){
     return;
@@ -313,8 +250,11 @@ async function deleteVacancy(id){
     'deleteVacancy',
     id,
     ()=>{
-      showToast('Вакансия удалена.');
-      loadData();
+      showToast(
+        'Вакансия удалена.'
+      );
+
+      refreshAll();
     }
   );
 }
@@ -326,28 +266,32 @@ function renderSources(){
   el('sourceList').innerHTML=
     table(
       ['Название',''],
-      state.sources.map(item=>[
-        item['Название']||'',
-        actionButtons(
-          'editSource',
-          item['Source ID'],
-          'deleteSource'
-        )
-      ])
+      state.sources.map(
+        item=>[
+          item['Название']||'',
+          actionButtons(
+            'editSource',
+            item['Source ID'],
+            'deleteSource'
+          )
+        ]
+      )
     );
 }
 
 function resetSourceForm(){
   el('sourceId').value='';
   el('sourceName').value='';
-  el('sourceFormTitle').textContent=
-    'Новый источник';
+
+  el('sourceFormTitle')
+    .textContent='Новый источник';
 }
 
 function editSource(id){
   const item=
-    state.sources.find(s=>
-      s['Source ID']===id
+    state.sources.find(
+      source=>
+        source['Source ID']===id
     );
 
   if(!item){
@@ -357,12 +301,15 @@ function editSource(id){
   el('sourceId').value=id;
   el('sourceName').value=
     item['Название']||'';
-  el('sourceFormTitle').textContent=
-    'Редактирование источника';
+
+  el('sourceFormTitle')
+    .textContent=
+      'Редактирование источника';
 }
 
 function saveSourceForm(){
-  const name=value('sourceName').trim();
+  const name=
+    value('sourceName').trim();
 
   if(!name){
     showToast(
@@ -379,24 +326,33 @@ function saveSourceForm(){
       name
     },
     ()=>{
-      showToast('Источник сохранён.');
+      showToast(
+        'Источник сохранён.'
+      );
+
       resetSourceForm();
-      loadData();
+      refreshAll();
     }
   );
 }
 
 async function deleteSource(id){
   const item=
-    state.sources.find(s=>
-      s['Source ID']===id
+    state.sources.find(
+      source=>
+        source['Source ID']===id
     );
 
-  const ok=await showConfirm(
-    'Удалить источник "'+
-    (item?item['Название']:'')+
-    '"?'
-  );
+  const ok=
+    await showConfirm(
+      'Удалить источник "'+
+      (
+        item
+          ? item['Название']
+          : ''
+      )+
+      '"?'
+    );
 
   if(!ok){
     return;
@@ -406,66 +362,95 @@ async function deleteSource(id){
     'deleteSource',
     id,
     ()=>{
-      showToast('Источник удалён.');
-      loadData();
+      showToast(
+        'Источник удалён.'
+      );
+
+      refreshAll();
     }
   );
 }
 
-function renderResponsibleStages(selected=[]){
-  el('responsibleStages').innerHTML=
-    (state.pipelineStatuses||[])
-      .map(stage=>
-        '<label>'+
-          '<input '+
-            'type="checkbox" '+
-            'class="responsible-stage" '+
-            'value="'+escapeHtml(stage)+'" '+
-            (
-              selected.includes(stage)
-                ? 'checked'
-                : ''
-            )+
-          '>'+
-          '<span>'+escapeHtml(stage)+'</span>'+
-        '</label>'
-      )
-      .join('');
+function renderResponsibleStages(
+  selected=[]
+){
+  el('responsibleStages')
+    .innerHTML=
+      (state.pipelineStatuses||[])
+        .map(stage=>
+          '<label>'+
+            '<input '+
+              'type="checkbox" '+
+              'class="responsible-stage" '+
+              'value="'+
+              escapeHtml(stage)+
+              '" '+
+              (
+                selected.includes(stage)
+                  ? 'checked'
+                  : ''
+              )+
+            '>'+
+            '<span>'+
+              escapeHtml(stage)+
+            '</span>'+
+          '</label>'
+        )
+        .join('');
 }
 
 function renderResponsibles(){
-  el('responsibleCount').textContent=
-    state.responsibles.length+' шт.';
+  el('responsibleCount')
+    .textContent=
+      state.responsibles.length+
+      ' шт.';
 
-  el('responsibleList').innerHTML=
-    table(
-      ['ФИО','Email','Доступные этапы',''],
-      state.responsibles.map(item=>[
-        item['ФИО']||'',
-        item['Email']||'',
-        (item.stages||[]).join(', '),
-        actionButtons(
-          'editResponsible',
-          item['Responsible ID'],
-          'deleteResponsible'
+  el('responsibleList')
+    .innerHTML=
+      table(
+        [
+          'ФИО',
+          'Email',
+          'Доступные этапы',
+          ''
+        ],
+        state.responsibles.map(
+          item=>[
+            item['ФИО']||'',
+            item['Email']||'',
+            (item.stages||[])
+              .join(', '),
+            actionButtons(
+              'editResponsible',
+              item[
+                'Responsible ID'
+              ],
+              'deleteResponsible'
+            )
+          ]
         )
-      ])
-    );
+      );
 }
 
 function resetResponsibleForm(){
   el('responsibleId').value='';
   el('responsibleName').value='';
   el('responsibleEmail').value='';
-  el('responsibleFormTitle').textContent=
-    'Новый ответственный';
+
+  el('responsibleFormTitle')
+    .textContent=
+      'Новый ответственный';
+
   renderResponsibleStages([]);
 }
 
 function editResponsible(id){
   const item=
-    state.responsibles.find(r=>
-      r['Responsible ID']===id
+    state.responsibles.find(
+      responsible=>
+        responsible[
+          'Responsible ID'
+        ]===id
     );
 
   if(!item){
@@ -477,8 +462,10 @@ function editResponsible(id){
     item['ФИО']||'';
   el('responsibleEmail').value=
     item['Email']||'';
-  el('responsibleFormTitle').textContent=
-    'Редактирование ответственного';
+
+  el('responsibleFormTitle')
+    .textContent=
+      'Редактирование ответственного';
 
   renderResponsibleStages(
     item.stages||[]
@@ -495,7 +482,8 @@ function selectedResponsibleStages(){
 
 function saveResponsibleForm(){
   const name=
-    value('responsibleName').trim();
+    value('responsibleName')
+      .trim();
 
   const stages=
     selectedResponsibleStages();
@@ -521,28 +509,40 @@ function saveResponsibleForm(){
     {
       id:value('responsibleId'),
       name,
-      email:value('responsibleEmail'),
+      email:
+        value('responsibleEmail'),
       stages
     },
     ()=>{
-      showToast('Ответственный сохранён.');
+      showToast(
+        'Ответственный сохранён.'
+      );
+
       resetResponsibleForm();
-      loadData();
+      refreshAll();
     }
   );
 }
 
 async function deleteResponsible(id){
   const item=
-    state.responsibles.find(r=>
-      r['Responsible ID']===id
+    state.responsibles.find(
+      responsible=>
+        responsible[
+          'Responsible ID'
+        ]===id
     );
 
-  const ok=await showConfirm(
-    'Удалить ответственного "'+
-    (item?item['ФИО']:'')+
-    '"?'
-  );
+  const ok=
+    await showConfirm(
+      'Удалить ответственного "'+
+      (
+        item
+          ? item['ФИО']
+          : ''
+      )+
+      '"?'
+    );
 
   if(!ok){
     return;
@@ -552,8 +552,11 @@ async function deleteResponsible(id){
     'deleteResponsible',
     id,
     ()=>{
-      showToast('Ответственный удалён.');
-      loadData();
+      showToast(
+        'Ответственный удалён.'
+      );
+
+      refreshAll();
     }
   );
 }
@@ -562,84 +565,106 @@ function renderTemplateSelects(
   vacancyId='',
   stage=''
 ){
-  el('templateVacancy').innerHTML=
-    '<option value="">Выберите вакансию</option>'+
-    state.vacancies
-      .map(item=>
-        '<option value="'+
-        escapeHtml(item['Vacancy ID'])+
-        '" '+
-        (
-          item['Vacancy ID']===vacancyId
-            ? 'selected'
-            : ''
-        )+
-        '>'+
-        escapeHtml(item['Вакансия'])+
-        '</option>'
-      )
-      .join('');
+  el('templateVacancy')
+    .innerHTML=
+      '<option value="">'+
+      'Выберите вакансию'+
+      '</option>'+
+      state.vacancies
+        .map(item=>
+          '<option value="'+
+          escapeHtml(
+            item['Vacancy ID']
+          )+
+          '" '+
+          (
+            item['Vacancy ID']===
+              vacancyId
+              ? 'selected'
+              : ''
+          )+
+          '>'+
+          escapeHtml(
+            item['Вакансия']
+          )+
+          '</option>'
+        )
+        .join('');
 
-  el('templateStage').innerHTML=
-    '<option value="">Выберите этап</option>'+
-    (state.pipelineStatuses||[])
-      .map(item=>
-        '<option value="'+
-        escapeHtml(item)+
-        '" '+
-        (
-          item===stage
-            ? 'selected'
-            : ''
-        )+
-        '>'+
-        escapeHtml(item)+
-        '</option>'
-      )
-      .join('');
+  el('templateStage')
+    .innerHTML=
+      '<option value="">'+
+      'Выберите этап'+
+      '</option>'+
+      (state.pipelineStatuses||[])
+        .map(item=>
+          '<option value="'+
+          escapeHtml(item)+
+          '" '+
+          (
+            item===stage
+              ? 'selected'
+              : ''
+          )+
+          '>'+
+          escapeHtml(item)+
+          '</option>'
+        )
+        .join('');
 }
 
 function renderTemplates(){
-  el('templateCount').textContent=
-    state.interviewTemplates.length+' шт.';
+  el('templateCount')
+    .textContent=
+      state.interviewTemplates.length+
+      ' шт.';
 
-  el('templateList').innerHTML=
-    table(
-      [
-        'Название',
-        'Вакансия',
-        'Этап',
-        'Вопросов',
-        ''
-      ],
-      state.interviewTemplates.map(item=>[
-        item['Название']||'',
-        item['Вакансия']||'',
-        item['Этап']||'',
-        String((item.questions||[]).length),
-        actionButtons(
-          'editTemplate',
-          item['Template ID'],
-          'deleteTemplate'
+  el('templateList')
+    .innerHTML=
+      table(
+        [
+          'Название',
+          'Вакансия',
+          'Этап',
+          'Вопросов',
+          ''
+        ],
+        state.interviewTemplates.map(
+          item=>[
+            item['Название']||'',
+            item['Вакансия']||'',
+            item['Этап']||'',
+            String(
+              (item.questions||[])
+                .length
+            ),
+            actionButtons(
+              'editTemplate',
+              item['Template ID'],
+              'deleteTemplate'
+            )
+          ]
         )
-      ])
-    );
+      );
 }
 
 function resetTemplateForm(){
   el('templateId').value='';
   el('templateName').value='';
   el('templateQuestions').value='';
-  el('templateFormTitle').textContent=
-    'Новый шаблон интервью';
+
+  el('templateFormTitle')
+    .textContent=
+      'Новый шаблон интервью';
 
   renderTemplateSelects();
 }
 
 function editTemplate(id){
   const item=
-    state.interviewTemplates.find(t=>
-      t['Template ID']===id
+    state.interviewTemplates.find(
+      template=>
+        template['Template ID']===id
     );
 
   if(!item){
@@ -650,9 +675,12 @@ function editTemplate(id){
   el('templateName').value=
     item['Название']||'';
   el('templateQuestions').value=
-    (item.questions||[]).join('\n');
-  el('templateFormTitle').textContent=
-    'Редактирование шаблона';
+    (item.questions||[])
+      .join('\n');
+
+  el('templateFormTitle')
+    .textContent=
+      'Редактирование шаблона';
 
   renderTemplateSelects(
     item['Vacancy ID'],
@@ -697,7 +725,9 @@ function saveTemplateForm(){
   const questions=
     value('templateQuestions')
       .split('\n')
-      .map(q=>q.trim())
+      .map(question=>
+        question.trim()
+      )
       .filter(Boolean);
 
   call(
@@ -710,24 +740,33 @@ function saveTemplateForm(){
       questions
     },
     ()=>{
-      showToast('Шаблон сохранён.');
+      showToast(
+        'Шаблон сохранён.'
+      );
+
       resetTemplateForm();
-      loadData();
+      refreshReferences();
     }
   );
 }
 
 async function deleteTemplate(id){
   const item=
-    state.interviewTemplates.find(t=>
-      t['Template ID']===id
+    state.interviewTemplates.find(
+      template=>
+        template['Template ID']===id
     );
 
-  const ok=await showConfirm(
-    'Удалить шаблон "'+
-    (item?item['Название']:'')+
-    '"?'
-  );
+  const ok=
+    await showConfirm(
+      'Удалить шаблон "'+
+      (
+        item
+          ? item['Название']
+          : ''
+      )+
+      '"?'
+    );
 
   if(!ok){
     return;
@@ -737,11 +776,12 @@ async function deleteTemplate(id){
     'deleteInterviewTemplate',
     id,
     ()=>{
-      showToast('Шаблон удалён.');
-      loadData();
+      showToast(
+        'Шаблон удалён.'
+      );
+
+      refreshReferences();
     }
   );
 }
-
-init();
 </script>
