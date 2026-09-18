@@ -3,6 +3,9 @@ const APP_CONFIG = Object.freeze({
     CANDIDATES: 'Кандидаты',
     INTERVIEWS: 'Интервью',
     VACANCIES: 'Вакансии',
+    SOURCES: 'Источники',
+    RESPONSIBLES: 'Ответственные',
+    INTERVIEW_TEMPLATES: 'Шаблоны интервью',
     DICTS: 'Справочники'
   }),
 
@@ -18,9 +21,34 @@ const APP_CONFIG = Object.freeze({
     'Финальное интервью',
     'Offer',
     'Hired',
-    'Отказ',
-    'Резерв'
-  ])
+    'Отказ'
+  ]),
+
+  PIPELINE_STATUSES: Object.freeze([
+    'Новый',
+    'HR screening',
+    'Техническое интервью',
+    'Финальное интервью',
+    'Offer',
+    'Hired'
+  ]),
+
+  VACANCY_STATUSES: Object.freeze([
+    'Открыта',
+    'На паузе',
+    'Закрыта'
+  ]),
+
+  TRANSITIONS: Object.freeze({
+    'Новый': ['HR screening'],
+    'HR screening': ['Новый', 'Техническое интервью'],
+    'Техническое интервью': ['HR screening', 'Финальное интервью'],
+    'Финальное интервью': ['Техническое интервью', 'Offer'],
+    'Offer': ['Финальное интервью', 'Hired'],
+    'Hired': ['Offer']
+  }),
+
+  MAX_RESUME_BYTES: 10 * 1024 * 1024
 });
 
 
