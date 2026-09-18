@@ -9,6 +9,7 @@ function renderAdminAll(){
   renderVacancies();
   renderSources();
   renderResponsibles();
+  colorizeVacancySelect(el('vacancyStatus'));
   renderResponsibleStageOptions();
   renderTemplateStageOptions();
   renderVacancyTemplatesForSelected();
@@ -369,13 +370,15 @@ function renderResponsibles(){
     _class:r._sync==='pending'?'row-pending':'',
     cells:[
       {html:syncIcon(r._sync)},
-      fullNameOf(r),
+      r['Фамилия']||'',
+      r['Имя']||'',
+      r['Отчество']||'',
       r['Email']||'',
       {html:'<div class="chip-wrap">'+(r.stages||[]).map(s=>statusChip(s,true)).join('')+'</div>'},
       {html:adminActions('editResponsible',r['Responsible ID'],'deleteResponsibleUi',r._sync==='pending')}
     ]
   }));
-  el('responsibleList').innerHTML=adminTable(['','Ответственный','Email','Этапы',''],rows);
+  el('responsibleList').innerHTML=adminTable(['','Фамилия','Имя','Отчество','Email','Этапы',''],rows);
 }
 
 function resetResponsibleForm(){
