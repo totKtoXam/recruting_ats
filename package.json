@@ -1,0 +1,19 @@
+{
+  "name": "recruting-ats",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Recruiting ATS built with Google Apps Script",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "status": "clasp show-file-status",
+    "push": "clasp push --force",
+    "pull": "clasp pull",
+    "deployments": "clasp list-deployments",
+    "open": "clasp open-script"
+  },
+  "devDependencies": {
+    "@google/clasp": "3.4.1"
+  }
+}
