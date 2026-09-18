@@ -909,7 +909,10 @@ function archiveCandidate(
 
     candidate[
       'Причина отказа'
-    ] = 'Архивация';
+    ] =
+      candidate[
+        'Причина отказа'
+      ] || '';
 
     candidate[
       'Дата изменения'
