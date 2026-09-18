@@ -47,6 +47,9 @@ function ensureSchema_() {
   schemas[APP_CONFIG.SHEETS.INTERVIEWS] = [
     'Interview ID',
     'Candidate ID',
+    'Фамилия кандидата',
+    'Имя кандидата',
+    'Отчество кандидата',
     'ФИО',
     'Vacancy ID',
     'Вакансия',
@@ -56,6 +59,9 @@ function ensureSchema_() {
     'Template ID',
     'Шаблон',
     'Дата',
+    'Фамилия интервьюера',
+    'Имя интервьюера',
+    'Отчество интервьюера',
     'Интервьюер',
     'Responsible ID',
     'Вопросы и ответы',
@@ -132,6 +138,7 @@ function ensureSchema_() {
   seedDictionaries_();
   migrateSourcesFromLegacyDictionary_();
   migrateFullNameColumns_();
+  migrateInterviewNameColumns_();
 }
 
 
@@ -356,6 +363,79 @@ function migrateFullNameSheet_(sheetName, fullNameHeader) {
       row[indexes.last] = parts.lastName;
       row[indexes.first] = parts.firstName;
       row[indexes.middle] = parts.middleName;
+      changed = true;
+    }
+  });
+
+  if (changed) {
+    range.setValues(values);
+  }
+}
+
+
+function migrateInterviewNameColumns_() {
+  const sheet = getSheet_(APP_CONFIG.SHEETS.INTERVIEWS);
+
+  if (sheet.getLastRow() < 2) {
+    return;
+  }
+
+  const headers = getHeaders_(sheet);
+  const indexes = {
+    candidateFull: headers.indexOf('ФИО'),
+    candidateLast: headers.indexOf('Фамилия кандидата'),
+    candidateFirst: headers.indexOf('Имя кандидата'),
+    candidateMiddle: headers.indexOf('Отчество кандидата'),
+    interviewerFull: headers.indexOf('Интервьюер'),
+    interviewerLast: headers.indexOf('Фамилия интервьюера'),
+    interviewerFirst: headers.indexOf('Имя интервьюера'),
+    interviewerMiddle: headers.indexOf('Отчество интервьюера')
+  };
+
+  const required = Object.values(indexes);
+
+  if (required.some(index => index < 0)) {
+    return;
+  }
+
+  const range = sheet.getRange(
+    2,
+    1,
+    sheet.getLastRow() - 1,
+    headers.length
+  );
+
+  const values = range.getValues();
+  let changed = false;
+
+  values.forEach(row => {
+    if (
+      row[indexes.candidateFull] &&
+      !row[indexes.candidateLast] &&
+      !row[indexes.candidateFirst]
+    ) {
+      const parts = splitFullName_(
+        row[indexes.candidateFull]
+      );
+
+      row[indexes.candidateLast] = parts.lastName;
+      row[indexes.candidateFirst] = parts.firstName;
+      row[indexes.candidateMiddle] = parts.middleName;
+      changed = true;
+    }
+
+    if (
+      row[indexes.interviewerFull] &&
+      !row[indexes.interviewerLast] &&
+      !row[indexes.interviewerFirst]
+    ) {
+      const parts = splitFullName_(
+        row[indexes.interviewerFull]
+      );
+
+      row[indexes.interviewerLast] = parts.lastName;
+      row[indexes.interviewerFirst] = parts.firstName;
+      row[indexes.interviewerMiddle] = parts.middleName;
       changed = true;
     }
   });
