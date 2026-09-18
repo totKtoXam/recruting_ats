@@ -70,3 +70,40 @@ jobs:
             echo "GAS_WEB_APP_URL repository variable is not configured."
             echo "Set Settings -> Secrets and variables -> Actions -> Variables -> GAS_WEB_APP_URL to show the app URL in deploy logs and job summary."
           fi
+
+
+      - name: Deploy Resume Intake API
+        env:
+          API_CLASP_JSON: ${{ secrets.API_CLASP_JSON }}
+          API_GAS_DEPLOYMENT_ID: ${{ secrets.API_GAS_DEPLOYMENT_ID }}
+          API_WEB_APP_URL: ${{ vars.API_WEB_APP_URL }}
+        run: |
+          if [ -z "$API_CLASP_JSON" ] || [ -z "$API_GAS_DEPLOYMENT_ID" ]; then
+            echo "Resume Intake API deploy skipped: API_CLASP_JSON / API_GAS_DEPLOYMENT_ID are not configured."
+            exit 0
+          fi
+
+          printf '%s' "$API_CLASP_JSON" > ".clasp.json"
+
+          echo "Validating API Apps Script project..."
+          npx clasp show-file-status
+
+          echo "Pushing API Apps Script sources..."
+          npx clasp push --force
+
+          echo "Updating API Web App deployment..."
+          npx clasp create-deployment \
+            --deploymentId "$API_GAS_DEPLOYMENT_ID" \
+            --description "GitHub Actions API: $GITHUB_SHA"
+
+          if [ -n "$API_WEB_APP_URL" ]; then
+            echo "API Web App: $API_WEB_APP_URL"
+            {
+              echo
+              echo "### Recruiting ATS Resume Intake API"
+              echo
+              echo "$API_WEB_APP_URL"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "API_WEB_APP_URL repository variable is not configured."
+          fi
