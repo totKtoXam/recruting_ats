@@ -40,7 +40,7 @@
 
       <div class="field">
         <label for="vacancyStatus">Статус *</label>
-        <select id="vacancyStatus">
+        <select id="vacancyStatus" onchange="colorizeVacancySelect(this)">
           <option value="Открыта">Открыта</option>
           <option value="На паузе">На паузе</option>
           <option value="Закрыта">Закрыта</option>
@@ -79,7 +79,7 @@
 
           <div class="field">
             <label for="templateStage">Этап *</label>
-            <select id="templateStage"></select>
+            <select id="templateStage" onchange="colorizeStageSelect(this)"></select>
           </div>
 
           <div class="field">
