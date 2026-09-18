@@ -47,18 +47,22 @@
         <label>Поиск</label>
         <input id="filterSearch" type="search" placeholder="Фамилия, имя, телефон, email, Telegram..." oninput="renderBoard()">
       </div>
+
       <div class="field compact">
         <label>Вакансия</label>
         <select id="filterVacancy" onchange="renderBoard()"></select>
       </div>
+
       <div class="field compact">
         <label>Ответственный</label>
         <select id="filterResponsible" onchange="renderBoard()"></select>
       </div>
+
       <div class="field compact">
         <label>Источник</label>
         <select id="filterSource" onchange="renderBoard()"></select>
       </div>
+
       <label class="toggle">
         <input id="filterArchived" type="checkbox" onchange="renderBoard()">
         <span>Архив</span>
@@ -74,136 +78,193 @@
   </main>
 
   <div id="candidateModal" class="modal">
-    <div class="panel panel-wide">
-      <div class="panel-header">
-        <div>
-          <div class="eyebrow">Кандидат</div>
+    <div class="panel candidate-panel">
+      <div class="candidate-header">
+        <div class="candidate-header-title">
+          <div class="eyebrow">Кандидат <span id="candidateNumberLabel"></span></div>
           <h2 id="candidateTitle">Новый кандидат</h2>
-          <div id="candidateStatusLabel" class="status-chip"></div>
         </div>
-        <button class="icon-close" onclick="closeCandidate()" aria-label="Закрыть">×</button>
+
+        <div class="candidate-header-flow">
+          <div id="candidateStatusLabel" class="status-chip"></div>
+          <div id="candidateTransitions" class="transition-bar"></div>
+        </div>
+
+        <div class="candidate-header-actions">
+          <button id="shareCandidateButton" class="button button-secondary" onclick="copyCandidateLink(this)" hidden>
+            <span>🔗</span>
+            <span>Поделиться</span>
+          </button>
+          <button id="archiveCandidateButton" class="button button-danger" onclick="archiveCurrentCandidate(this)" hidden>
+            Архивировать
+          </button>
+          <button class="button button-primary" onclick="saveCandidateForm(this)">
+            Сохранить
+          </button>
+          <button class="icon-close" onclick="closeCandidate()" aria-label="Закрыть">×</button>
+        </div>
       </div>
 
-      <div id="candidateTransitions" class="transition-bar"></div>
+      <input id="candidateId" type="hidden">
 
-      <section id="candidateForm" class="form-card">
-        <input id="candidateId" type="hidden">
-
-        <div class="section-heading">
-          <div>
-            <h3>Основная информация</h3>
-            <p>Поля со звёздочкой обязательны.</p>
-          </div>
-        </div>
-
-        <div class="form-grid form-grid-3">
-          <div class="field">
-            <label>Фамилия *</label>
-            <input id="candidateLastName" autocomplete="family-name">
-          </div>
-          <div class="field">
-            <label>Имя *</label>
-            <input id="candidateFirstName" autocomplete="given-name">
-          </div>
-          <div class="field">
-            <label>Отчество</label>
-            <input id="candidateMiddleName" autocomplete="additional-name">
+      <div class="candidate-layout">
+        <section id="candidateForm" class="candidate-column candidate-column-main">
+          <div class="section-heading compact-heading">
+            <div>
+              <h3>Основные данные</h3>
+              <p>ФИО, контакты и назначение.</p>
+            </div>
           </div>
 
-          <div class="field">
-            <label>Вакансия *</label>
-            <select id="candidateVacancy"></select>
+          <div class="candidate-fields">
+            <div class="name-grid">
+              <div class="field">
+                <label>Фамилия *</label>
+                <input id="candidateLastName" autocomplete="family-name">
+              </div>
+              <div class="field">
+                <label>Имя *</label>
+                <input id="candidateFirstName" autocomplete="given-name">
+              </div>
+              <div class="field">
+                <label>Отчество</label>
+                <input id="candidateMiddleName" autocomplete="additional-name">
+              </div>
+            </div>
+
+            <div class="field">
+              <label>Вакансия *</label>
+              <select id="candidateVacancy"></select>
+            </div>
+
+            <div class="field">
+              <label>Ответственный *</label>
+              <select id="candidateResponsible"></select>
+            </div>
+
+            <div class="field">
+              <label>Источник</label>
+              <div class="select-with-brand">
+                <span id="candidateSourceIcon" class="brand-icon brand-generic">•</span>
+                <select id="candidateSource" onchange="renderCandidateSourceIcon()"></select>
+              </div>
+            </div>
+
+            <div class="field">
+              <label>Телефон *</label>
+              <input
+                id="candidatePhone"
+                inputmode="tel"
+                autocomplete="tel"
+                placeholder="+7 7XX XXX XX XX"
+                oninput="maskKzPhone(this)"
+              >
+              <small class="field-hint">Формат РК: +7 7XX XXX XX XX</small>
+            </div>
+
+            <div class="field">
+              <label>Email</label>
+              <input
+                id="candidateEmail"
+                type="email"
+                autocomplete="email"
+                placeholder="name@example.com"
+                oninput="normalizeEmailInput(this)"
+                onblur="validateEmailField(this)"
+              >
+              <small id="candidateEmailHint" class="field-hint"></small>
+            </div>
+
+            <div class="field">
+              <label>ЗП ожидания</label>
+              <input
+                id="candidateSalary"
+                inputmode="numeric"
+                placeholder="500 000"
+                oninput="formatMoneyInput(this, 10000000)"
+              >
+              <small class="field-hint">Максимум 10 000 000</small>
+            </div>
+
+            <div class="social-grid">
+              <div class="field">
+                <label><span class="social-icon telegram">✈</span> Telegram</label>
+                <input id="candidateTelegram" oninput="renderSocialPreviews()" placeholder="@username">
+                <a id="telegramPreview" class="preview-link" target="_blank" rel="noopener"></a>
+              </div>
+
+              <div class="field">
+                <label><span class="social-icon github">GH</span> GitHub</label>
+                <input id="candidateGithub" oninput="renderSocialPreviews()" placeholder="username или URL">
+                <a id="githubPreview" class="preview-link" target="_blank" rel="noopener"></a>
+              </div>
+
+              <div class="field">
+                <label><span class="social-icon linkedin">in</span> LinkedIn</label>
+                <input id="candidateLinkedin" oninput="renderSocialPreviews()" placeholder="username или URL">
+                <a id="linkedinPreview" class="preview-link" target="_blank" rel="noopener"></a>
+              </div>
+            </div>
           </div>
-          <div class="field">
-            <label>Ответственный *</label>
-            <select id="candidateResponsible"></select>
-          </div>
-          <div class="field">
-            <label>Источник</label>
-            <select id="candidateSource"></select>
+        </section>
+
+        <section class="candidate-column candidate-column-assets">
+          <div class="section-heading compact-heading">
+            <div>
+              <h3>Материалы</h3>
+              <p>Резюме, папка, комментарии и ссылки.</p>
+            </div>
           </div>
 
           <div class="field">
-            <label>Телефон *</label>
-            <input
-              id="candidatePhone"
-              inputmode="tel"
-              autocomplete="tel"
-              placeholder="+7 7XX XXX XX XX"
-              oninput="maskKzPhone(this)"
-            >
-            <small class="field-hint">Формат РК: +7 7XX XXX XX XX</small>
-          </div>
-          <div class="field">
-            <label>Email</label>
-            <input
-              id="candidateEmail"
-              type="email"
-              autocomplete="email"
-              placeholder="name@example.com"
-              oninput="normalizeEmailInput(this)"
-              onblur="validateEmailField(this)"
-            >
-            <small id="candidateEmailHint" class="field-hint"></small>
-          </div>
-          <div class="field">
-            <label>ЗП ожидания</label>
-            <input id="candidateSalary" inputmode="numeric" placeholder="500 000" oninput="formatMoneyInput(this)">
-          </div>
-
-          <div class="field full">
-            <label>Telegram</label>
-            <input id="candidateTelegram" oninput="renderTelegramPreview()" placeholder="@username или https://t.me/username">
-            <a id="telegramPreview" class="preview-link" target="_blank" rel="noopener"></a>
-          </div>
-
-          <div class="field full">
             <label>Резюме *</label>
             <label class="file-drop">
-              <input id="candidateResumeFile" type="file" accept=".pdf,.doc,.docx">
-              <span>Выберите PDF / DOC / DOCX до 10 МБ</span>
+              <input
+                id="candidateResumeFile"
+                type="file"
+                accept=".pdf,.doc,.docx"
+                onchange="renderSelectedResumeFile()"
+              >
+              <span class="file-drop-icon">⇧</span>
+              <span>
+                <strong>Выберите файл</strong>
+                <small>PDF / DOC / DOCX до 10 МБ</small>
+              </span>
             </label>
-            <a id="candidateResumeLink" class="preview-link" target="_blank" rel="noopener"></a>
+
+            <div id="candidateResumeSelected" class="resume-selected"></div>
+            <div id="candidateResumeVersions" class="resume-versions"></div>
           </div>
 
-          <div class="field full">
+          <div class="field">
             <label>Папка кандидата</label>
-            <a id="candidateFolderLink" class="preview-link" target="_blank" rel="noopener"></a>
+            <a id="candidateFolderLink" class="resource-link" target="_blank" rel="noopener"></a>
           </div>
 
-          <div class="field full">
+          <div class="field">
             <label>Комментарий</label>
             <textarea id="candidateComment" placeholder="Дополнительная информация о кандидате"></textarea>
           </div>
 
-          <div class="field full">
+          <div class="field">
             <div class="field-header">
               <label>Иные ссылки</label>
               <button class="button button-ghost button-small" type="button" onclick="addCandidateLink()">＋ Добавить</button>
             </div>
             <div id="candidateLinks"></div>
           </div>
-        </div>
+        </section>
 
-        <div class="actions form-actions">
-          <button id="archiveCandidateButton" class="button button-danger left" onclick="archiveCurrentCandidate(this)" style="display:none">
-            Архивировать
-          </button>
-          <button class="button button-primary" onclick="saveCandidateForm(this)">
-            Сохранить
-          </button>
-        </div>
-      </section>
-
-      <section id="candidateHistorySection" class="history-section" hidden>
-        <div class="section-heading">
-          <div>
-            <h3>Результаты интервью</h3>
-            <p>История доступна на любом этапе.</p>
+        <section class="candidate-column candidate-column-interviews">
+          <div class="section-heading compact-heading">
+            <div>
+              <h3>Результаты интервью</h3>
+              <p>Вопросы, ответы и история этапов.</p>
+            </div>
           </div>
-        </div>
-        <div id="interviewHistory"></div>
-      </section>
+          <div id="interviewHistory"></div>
+        </section>
+      </div>
     </div>
   </div>
 
@@ -224,15 +285,19 @@
             <label>Шаблон вопросов</label>
             <select id="transitionTemplate" onchange="renderTransitionQuestions()"></select>
           </div>
+
           <div class="field">
             <label>Ответственный на следующем этапе *</label>
             <select id="transitionResponsible"></select>
           </div>
+
           <div id="transitionQuestions" class="field full"></div>
+
           <div class="field full">
             <label>Комментарии</label>
             <textarea id="transitionComment"></textarea>
           </div>
+
           <div class="field full">
             <label>Результат *</label>
             <textarea id="transitionResult"></textarea>
@@ -257,10 +322,12 @@
 
       <section id="interviewEditForm" class="form-card form-card-flat">
         <div id="editInterviewQuestions"></div>
+
         <div class="field">
           <label>Комментарий</label>
           <textarea id="editInterviewComment"></textarea>
         </div>
+
         <div class="field">
           <label>Результат</label>
           <textarea id="editInterviewResult"></textarea>
@@ -281,6 +348,7 @@
       <div class="confirm-icon">!</div>
       <h2 id="confirmTitle">Подтверждение</h2>
       <p id="confirmMessage"></p>
+
       <div class="actions">
         <button class="button button-secondary" onclick="closeConfirm(false)">Отмена</button>
         <button id="confirmActionButton" class="button button-danger" onclick="closeConfirm(true)">Подтвердить</button>
