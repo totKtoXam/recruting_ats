@@ -4,6 +4,7 @@ let currentCandidate=null;
 let pendingTransition=null;
 let currentInterviews=[];
 let editingInterview=null;
+let confirmResolver=null;
 const collapsedColumns=new Set();
 
 function el(id){return document.getElementById(id)}
@@ -12,7 +13,30 @@ function setLoading(v){el('loading').classList.toggle('active',!!v)}
 function escapeHtml(v){return String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&#039;")}
 function escJs(v){return String(v??'').replaceAll('\\','\\\\').replaceAll("'","\\'")}
 function option(value,label,selected){return '<option value="'+escapeHtml(value)+'"'+(selected?' selected':'')+'>'+escapeHtml(label)+'</option>'}
-function handleError(error){setLoading(false);alert(error&&error.message?error.message:String(error))}
+function showToast(message,type='info'){
+  const toast=el('toast');
+  toast.textContent=message;
+  toast.className='toast active '+(type==='error'?'toast-error':'toast-success');
+  clearTimeout(showToast.timer);
+  showToast.timer=setTimeout(()=>{toast.className='toast'},3500);
+}
+function handleError(error){
+  setLoading(false);
+  showToast(error&&error.message?error.message:String(error),'error');
+}
+function showConfirm(message,title='Подтверждение'){
+  el('confirmTitle').textContent=title;
+  el('confirmMessage').textContent=message;
+  el('confirmModal').classList.add('open');
+  return new Promise(resolve=>{confirmResolver=resolve});
+}
+function closeConfirm(result){
+  el('confirmModal').classList.remove('open');
+  if(confirmResolver){
+    confirmResolver(result);
+    confirmResolver=null;
+  }
+}
 function call(name,args,onSuccess){
   setLoading(true);
   const runner=google.script.run.withFailureHandler(handleError).withSuccessHandler(result=>{setLoading(false);if(onSuccess)onSuccess(result)});
@@ -32,7 +56,6 @@ function refresh(after){
     state=data;
     populateGlobalFilters();
     render();
-    renderAdmin();
     if(after)after();
   });
 }
@@ -194,16 +217,28 @@ async function saveCandidateForm(){
 }
 
 function archiveCurrentCandidate(){if(currentCandidate)archiveById(currentCandidate.ID)}
-function archiveById(id){
-  if(!confirm('Архивировать кандидата? Статус станет "Отказ", причина — "Архивация".'))return;
-  call('archiveCandidate',id,()=>refresh(()=>{if(el('candidateModal').classList.contains('open'))closeCandidate()}));
+async function archiveById(id){
+  const ok=await showConfirm(
+    'Архивировать кандидата? Статус станет "Отказ", причина — "Архивация".',
+    'Архивация кандидата'
+  );
+  if(!ok)return;
+  call('archiveCandidate',id,()=>{
+    showToast('Кандидат архивирован.');
+    refresh(()=>{
+      if(el('candidateModal').classList.contains('open'))closeCandidate();
+    });
+  });
 }
 
 function startTransition(id,toStatus){
   const candidate=state.candidates.find(c=>String(c.ID)===String(id));
   if(!candidate||candidate.archived||candidate['Статус']===toStatus)return;
   const allowed=state.transitions[candidate['Статус']]||[];
-  if(!allowed.includes(toStatus)){alert('Переход '+candidate['Статус']+' → '+toStatus+' не разрешён.');return}
+  if(!allowed.includes(toStatus)){
+    showToast('Переход '+candidate['Статус']+' → '+toStatus+' не разрешён.','error');
+    return;
+  }
   call('getInterviewContext',{candidateId:id,toStatus},ctx=>{
     pendingTransition=ctx;
     el('transitionTitle').textContent=ctx.fromStatus+' → '+ctx.toStatus;
@@ -248,58 +283,6 @@ function saveInterviewEdit(){
   const payload={id:editingInterview['Interview ID'],answers:[...document.querySelectorAll('.edit-answer')].map(x=>({question:x.dataset.question,answer:x.value})),comment:value('editInterviewComment'),result:value('editInterviewResult')};
   call('updateInterview',payload,()=>{closeInterviewEdit();loadInterviewHistory(currentCandidate.ID)});
 }
-
-function openAdmin(){renderAdmin();el('adminModal').classList.add('open')}
-function closeAdmin(){el('adminModal').classList.remove('open')}
-function showAdminTab(id,button){document.querySelectorAll('.admin-section').forEach(x=>x.classList.remove('active'));document.querySelectorAll('#adminModal .tab').forEach(x=>x.classList.remove('active'));el(id).classList.add('active');button.classList.add('active')}
-function renderAdmin(){renderAdminVacancies();renderAdminSources();renderAdminResponsibles();renderAdminTemplates()}
-
-function renderAdminVacancies(){
-  el('adminVacancies').innerHTML='<div class="admin-toolbar"><button class="button button-primary" onclick="editVacancy()">+ Вакансия</button></div>'+table(['Вакансия','Статус','Комментарий',''],state.vacancies.map(v=>[v['Вакансия'],v['Статус'],v['Комментарий']||'',adminButtons('editVacancy',v['Vacancy ID'],'deleteVacancyUi')]));
-}
-function editVacancy(id){
-  const v=state.vacancies.find(x=>x['Vacancy ID']===id)||{};
-  const name=prompt('Название вакансии',v['Вакансия']||'');if(name===null)return;
-  const status=prompt('Статус: Открыта / На паузе / Закрыта',v['Статус']||'Открыта');if(status===null)return;
-  const comment=prompt('Комментарий',v['Комментарий']||'');if(comment===null)return;
-  call('saveVacancy',{id:id||'',name,status,comment},()=>refresh());
-}
-function deleteVacancyUi(id){if(confirm('Удалить вакансию?'))call('deleteVacancy',id,()=>refresh())}
-
-function renderAdminSources(){
-  el('adminSources').innerHTML='<div class="admin-toolbar"><button class="button button-primary" onclick="editSource()">+ Источник</button></div>'+table(['Название',''],state.sources.map(s=>[s['Название'],adminButtons('editSource',s['Source ID'],'deleteSourceUi')]));
-}
-function editSource(id){const s=state.sources.find(x=>x['Source ID']===id)||{};const name=prompt('Название источника',s['Название']||'');if(name===null)return;call('saveSource',{id:id||'',name},()=>refresh())}
-function deleteSourceUi(id){if(confirm('Удалить источник?'))call('deleteSource',id,()=>refresh())}
-
-function renderAdminResponsibles(){
-  el('adminResponsibles').innerHTML='<div class="admin-toolbar"><button class="button button-primary" onclick="editResponsible()">+ Ответственный</button></div>'+table(['ФИО','Email','Этапы',''],state.responsibles.map(r=>[r['ФИО'],r['Email']||'',(r.stages||[]).join(', '),adminButtons('editResponsible',r['Responsible ID'],'deleteResponsibleUi')]));
-}
-function editResponsible(id){
-  const r=state.responsibles.find(x=>x['Responsible ID']===id)||{};
-  const name=prompt('ФИО',r['ФИО']||'');if(name===null)return;
-  const email=prompt('Email',r['Email']||'');if(email===null)return;
-  const stages=prompt('Доступные этапы через запятую:\n'+getStatuses().join(', '),(r.stages||['Новый']).join(', '));if(stages===null)return;
-  call('saveResponsible',{id:id||'',name,email,stages:stages.split(',').map(x=>x.trim()).filter(Boolean)},()=>refresh());
-}
-function deleteResponsibleUi(id){if(confirm('Удалить ответственного?'))call('deleteResponsible',id,()=>refresh())}
-
-function renderAdminTemplates(){
-  el('adminTemplates').innerHTML='<div class="admin-toolbar"><button class="button button-primary" onclick="editTemplate()">+ Шаблон</button></div>'+table(['Название','Вакансия','Этап','Вопросов',''],state.interviewTemplates.map(t=>[t['Название'],t['Вакансия'],t['Этап'],String((t.questions||[]).length),adminButtons('editTemplate',t['Template ID'],'deleteTemplateUi')]));
-}
-function editTemplate(id){
-  const t=state.interviewTemplates.find(x=>x['Template ID']===id)||{};
-  const name=prompt('Название шаблона',t['Название']||'');if(name===null)return;
-  const vacancyName=prompt('Точное название вакансии',t['Вакансия']||'');if(vacancyName===null)return;
-  const vacancy=state.vacancies.find(v=>v['Вакансия'].toLowerCase()===vacancyName.trim().toLowerCase());if(!vacancy){alert('Вакансия не найдена.');return}
-  const stage=prompt('Этап:\n'+getStatuses().join(', '),t['Этап']||'HR screening');if(stage===null)return;
-  const questions=prompt('Вопросы: один вопрос на строку',(t.questions||[]).join('\n'));if(questions===null)return;
-  call('saveInterviewTemplate',{id:id||'',name,vacancyId:vacancy['Vacancy ID'],stage,questions:questions.split('\n')},()=>refresh());
-}
-function deleteTemplateUi(id){if(confirm('Удалить шаблон?'))call('deleteInterviewTemplate',id,()=>refresh())}
-
-function adminButtons(editFn,id,deleteFn){return '<button class="button button-small" onclick="'+editFn+'(\''+escJs(id)+'\')">Изменить</button> <button class="button button-small button-danger" onclick="'+deleteFn+'(\''+escJs(id)+'\')">Удалить</button>'}
-function table(headers,rows){return '<table class="admin-table"><thead><tr>'+headers.map(h=>'<th>'+escapeHtml(h)+'</th>').join('')+'</tr></thead><tbody>'+rows.map(row=>'<tr>'+row.map((cell,i)=>'<td>'+(i===row.length-1?cell:escapeHtml(cell))+'</td>').join('')+'</tr>').join('')+'</tbody></table>'}
 
 init();
 </script>
