@@ -16,6 +16,9 @@ function ensureSchema_() {
 
   schemas[APP_CONFIG.SHEETS.CANDIDATES] = [
     'ID',
+    'Фамилия',
+    'Имя',
+    'Отчество',
     'ФИО',
     'Vacancy ID',
     'Вакансия',
@@ -58,7 +61,9 @@ function ensureSchema_() {
     'Вопросы и ответы',
     'Комментарий',
     'Результат',
-    'Дата изменения'
+    'Дата изменения',
+    'Удален',
+    'Дата удаления'
   ];
 
   schemas[APP_CONFIG.SHEETS.VACANCIES] = [
@@ -67,23 +72,32 @@ function ensureSchema_() {
     'Статус',
     'Комментарий',
     'Дата создания',
-    'Дата изменения'
+    'Дата изменения',
+    'Удален',
+    'Дата удаления'
   ];
 
   schemas[APP_CONFIG.SHEETS.SOURCES] = [
     'Source ID',
     'Название',
     'Дата создания',
-    'Дата изменения'
+    'Дата изменения',
+    'Удален',
+    'Дата удаления'
   ];
 
   schemas[APP_CONFIG.SHEETS.RESPONSIBLES] = [
     'Responsible ID',
+    'Фамилия',
+    'Имя',
+    'Отчество',
     'ФИО',
     'Email',
     'Доступные этапы',
     'Дата создания',
-    'Дата изменения'
+    'Дата изменения',
+    'Удален',
+    'Дата удаления'
   ];
 
   schemas[APP_CONFIG.SHEETS.INTERVIEW_TEMPLATES] = [
@@ -94,7 +108,9 @@ function ensureSchema_() {
     'Этап',
     'Вопросы',
     'Дата создания',
-    'Дата изменения'
+    'Дата изменения',
+    'Удален',
+    'Дата удаления'
   ];
 
   schemas[APP_CONFIG.SHEETS.DICTS] = [
@@ -115,6 +131,7 @@ function ensureSchema_() {
 
   seedDictionaries_();
   migrateSourcesFromLegacyDictionary_();
+  migrateFullNameColumns_();
 }
 
 
@@ -279,4 +296,71 @@ function migrateSourcesFromLegacyDictionary_() {
       name
     });
   });
+}
+
+
+function migrateFullNameColumns_() {
+  migrateFullNameSheet_(
+    APP_CONFIG.SHEETS.CANDIDATES,
+    'ФИО'
+  );
+
+  migrateFullNameSheet_(
+    APP_CONFIG.SHEETS.RESPONSIBLES,
+    'ФИО'
+  );
+}
+
+
+function migrateFullNameSheet_(sheetName, fullNameHeader) {
+  const sheet = getSheet_(sheetName);
+  const headers = getHeaders_(sheet);
+
+  const indexes = {
+    full: headers.indexOf(fullNameHeader),
+    last: headers.indexOf('Фамилия'),
+    first: headers.indexOf('Имя'),
+    middle: headers.indexOf('Отчество')
+  };
+
+  if (
+    indexes.full < 0 ||
+    indexes.last < 0 ||
+    indexes.first < 0 ||
+    indexes.middle < 0 ||
+    sheet.getLastRow() < 2
+  ) {
+    return;
+  }
+
+  const range = sheet.getRange(
+    2,
+    1,
+    sheet.getLastRow() - 1,
+    headers.length
+  );
+
+  const values = range.getValues();
+  let changed = false;
+
+  values.forEach(row => {
+    if (
+      row[indexes.full] &&
+      !row[indexes.last] &&
+      !row[indexes.first]
+    ) {
+      const parts = splitFullName_(
+        row[indexes.full]
+      );
+
+      row[indexes.last] = parts.lastName;
+      row[indexes.first] = parts.firstName;
+      row[indexes.middle] = parts.middleName;
+      changed = true;
+    }
+  });
+
+  if (changed) {
+    range.setValues(values);
+  }
 }
