@@ -2,28 +2,24 @@ function doGet(event) {
   ensureSchema_();
   ensureSpreadsheetMenuTrigger_();
 
-  const page =
-    event &&
-    event.parameter &&
-    event.parameter.page === 'admin'
-      ? 'AdminPage'
-      : 'Index';
-
   const template =
-    HtmlService.createTemplateFromFile(page);
+    HtmlService.createTemplateFromFile('Index');
 
   template.appUrl =
     ScriptApp
       .getService()
       .getUrl();
 
+  template.initialRoute =
+    event &&
+    event.parameter &&
+    event.parameter.page === 'admin'
+      ? 'admin'
+      : 'candidates';
+
   return template
     .evaluate()
-    .setTitle(
-      page === 'AdminPage'
-        ? 'Recruiting ATS — Админ-панель'
-        : 'Recruiting ATS'
-    )
+    .setTitle('Recruiting ATS')
     .setXFrameOptionsMode(
       HtmlService.XFrameOptionsMode.ALLOWALL
     );
@@ -37,18 +33,37 @@ function include(filename) {
 }
 
 
-function getInitialData() {
+function getReferenceData() {
   ensureSchema_();
 
   return {
-    candidates: getCandidates(),
     vacancies: getVacancies(),
     sources: getSources(),
     responsibles: getResponsibles(),
     interviewTemplates: getInterviewTemplates(),
     dictionaries: getDictionaries(),
     transitions: APP_CONFIG.TRANSITIONS,
-    pipelineStatuses: APP_CONFIG.PIPELINE_STATUSES,
+    pipelineStatuses: APP_CONFIG.PIPELINE_STATUSES
+  };
+}
+
+
+function getCandidateData() {
+  ensureSchema_();
+
+  return {
+    candidates: getCandidates(),
     stats: getStats()
+  };
+}
+
+
+function getInitialData() {
+  const references = getReferenceData();
+  const candidateData = getCandidateData();
+
+  return {
+    ...references,
+    ...candidateData
   };
 }
