@@ -1,5 +1,7 @@
 name: Deploy Apps Script
 
+# API bootstrap trigger verified
+
 on:
   push:
     branches:
