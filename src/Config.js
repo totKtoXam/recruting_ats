@@ -1,6 +1,7 @@
 const APP_CONFIG = Object.freeze({
   SHEETS: Object.freeze({
     CANDIDATES: 'Кандидаты',
+    ARCHIVED_CANDIDATES: 'Архив кандидатов',
     INTERVIEWS: 'Интервью',
     VACANCIES: 'Вакансии',
     SOURCES: 'Источники',
