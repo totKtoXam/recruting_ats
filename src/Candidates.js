@@ -817,10 +817,22 @@ function saveCandidate(payload) {
     isNew &&
     payload.draftToken
   ) {
-    markCandidateDraftUsed_(
-      payload.draftToken,
-      candidateId
-    );
+    try {
+      markCandidateDraftUsed_(
+        payload.draftToken,
+        candidateId
+      );
+    } catch (error) {
+      console.warn(
+        'Не удалось пометить черновик использованным: ' +
+        (
+          error &&
+          error.message
+            ? error.message
+            : String(error)
+        )
+      );
+    }
   }
 
   return {
