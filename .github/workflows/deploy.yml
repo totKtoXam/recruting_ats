@@ -59,7 +59,7 @@ jobs:
 
       - name: Publish Web App URL
         env:
-          GAS_WEB_APP_URL: ${{ vars.GAS_WEB_APP_URL }}
+          GAS_WEB_APP_URL: ${{ vars.GAS_WEB_APP_URL || secrets.GAS_WEB_APP_URL }}
         run: |
           if [ -n "$GAS_WEB_APP_URL" ]; then
             echo "Web App: $GAS_WEB_APP_URL"
@@ -78,7 +78,7 @@ jobs:
         env:
           API_CLASP_JSON: ${{ secrets.API_CLASP_JSON }}
           API_GAS_DEPLOYMENT_ID: ${{ secrets.API_GAS_DEPLOYMENT_ID }}
-          API_WEB_APP_URL: ${{ vars.API_WEB_APP_URL }}
+          API_WEB_APP_URL: ${{ vars.API_WEB_APP_URL || secrets.API_WEB_APP_URL }}
         run: |
           if [ -z "$API_CLASP_JSON" ]; then
             echo "Resume Intake API push skipped: API_CLASP_JSON is not configured."
