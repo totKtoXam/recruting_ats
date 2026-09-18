@@ -83,25 +83,191 @@ function getStats() {
 }
 
 
-function getNextCandidateNumber_() {
-  const numbers = [
-    ...getCandidates(),
-    ...getArchivedCandidates()
-  ]
-    .map(candidate =>
-      Number(
-        candidate['№'] || 0
-      )
-    )
-    .filter(Number.isFinite);
+function columnToA1_(columnNumber) {
+  let value = Number(columnNumber);
+  let result = '';
 
-  return (
-    numbers.length
-      ? Math.max(...numbers)
-      : 0
-  ) + 1;
+  while (value > 0) {
+    const remainder =
+      (value - 1) % 26;
+
+    result =
+      String.fromCharCode(
+        65 + remainder
+      ) + result;
+
+    value =
+      Math.floor(
+        (value - 1) / 26
+      );
+  }
+
+  return result;
 }
 
+
+function getCandidateNumberFormula_(
+  activeRowIndex
+) {
+  const activeSheet =
+    getSheet_(
+      APP_CONFIG.SHEETS.CANDIDATES
+    );
+
+  const archiveSheet =
+    getSheet_(
+      APP_CONFIG.SHEETS.ARCHIVED_CANDIDATES
+    );
+
+  const activeHeaders =
+    getHeaders_(activeSheet);
+
+  const archiveHeaders =
+    getHeaders_(archiveSheet);
+
+  const activeNumberColumn =
+    activeHeaders.indexOf('№') + 1;
+
+  const archiveNumberColumn =
+    archiveHeaders.indexOf('№') + 1;
+
+  if (
+    activeNumberColumn <= 0 ||
+    archiveNumberColumn <= 0
+  ) {
+    throw new Error(
+      'Не найдена колонка № для вычисления номера кандидата.'
+    );
+  }
+
+  const activeColumnA1 =
+    columnToA1_(
+      activeNumberColumn
+    );
+
+  const archiveColumnA1 =
+    columnToA1_(
+      archiveNumberColumn
+    );
+
+  const activeMax =
+    activeRowIndex > 2
+      ? "MAX('" +
+        APP_CONFIG.SHEETS.CANDIDATES +
+        "'!" +
+        activeColumnA1 +
+        "$2:" +
+        activeColumnA1 +
+        (activeRowIndex - 1) +
+        ")"
+      : '0';
+
+  const archiveMax =
+    "MAX('" +
+    APP_CONFIG.SHEETS.ARCHIVED_CANDIDATES +
+    "'!" +
+    archiveColumnA1 +
+    "$2:" +
+    archiveColumnA1 +
+    ")";
+
+  return (
+    '=MAX(0,' +
+    activeMax +
+    ',' +
+    archiveMax +
+    ')+1'
+  );
+}
+
+
+function appendCandidateWithSpreadsheetNumber_(
+  sheet,
+  headers,
+  row
+) {
+  const lock =
+    LockService.getScriptLock();
+
+  lock.waitLock(30000);
+
+  let appendedRow = -1;
+
+  try {
+    const numberIndex =
+      headers.indexOf('№');
+
+    if (numberIndex < 0) {
+      throw new Error(
+        'Не найдена колонка №.'
+      );
+    }
+
+    const rowToAppend =
+      [...row];
+
+    rowToAppend[numberIndex] = '';
+
+    sheet.appendRow(
+      rowToAppend
+    );
+
+    appendedRow =
+      sheet.getLastRow();
+
+    const numberCell =
+      sheet.getRange(
+        appendedRow,
+        numberIndex + 1
+      );
+
+    numberCell.setFormula(
+      getCandidateNumberFormula_(
+        appendedRow
+      )
+    );
+
+    SpreadsheetApp.flush();
+
+    const number =
+      Number(
+        numberCell.getValue()
+      );
+
+    if (
+      !Number.isFinite(number) ||
+      number < 1
+    ) {
+      throw new Error(
+        'Не удалось вычислить номер кандидата в Google Sheets.'
+      );
+    }
+
+    numberCell.setValue(
+      number
+    );
+
+    return number;
+  } catch (error) {
+    if (
+      appendedRow > 1 &&
+      appendedRow <=
+        sheet.getLastRow()
+    ) {
+      try {
+        sheet.deleteRow(
+          appendedRow
+        );
+      } catch (cleanupError) {
+        // Keep original error.
+      }
+    }
+
+    throw error;
+  } finally {
+    lock.releaseLock();
+  }
+}
 
 function findCandidateStorage_(candidateId) {
   const activeSheet = getSheet_(
@@ -446,8 +612,7 @@ function saveCandidate(payload) {
     Utilities.getUuid();
 
   const candidateNumber =
-    existing['№'] ||
-    getNextCandidateNumber_();
+    existing['№'] || '';
 
   const folderInfo =
     ensureCandidateFolder_(
@@ -498,6 +663,22 @@ function saveCandidate(payload) {
       uploaded,
       ...resumeVersions
     ];
+  } else if (
+    isNew &&
+    payload.draftToken
+  ) {
+    const uploaded =
+      copyDraftResumeToCandidate_(
+        payload.draftToken,
+        folderInfo.folder
+      );
+
+    if (uploaded) {
+      resumeVersions = [
+        uploaded,
+        ...resumeVersions
+      ];
+    }
   }
 
   if (
@@ -624,7 +805,22 @@ function saveCandidate(payload) {
       )
       .setValues([row]);
   } else {
-    sheet.appendRow(row);
+    candidate['№'] =
+      appendCandidateWithSpreadsheetNumber_(
+        sheet,
+        headers,
+        row
+      );
+  }
+
+  if (
+    isNew &&
+    payload.draftToken
+  ) {
+    markCandidateDraftUsed_(
+      payload.draftToken,
+      candidateId
+    );
   }
 
   return {
