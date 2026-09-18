@@ -33,6 +33,13 @@ function saveVacancy(input) {
     {
       ...existing,
       'Vacancy ID': input.id || Utilities.getUuid(),
+      '№':
+        existing && existing['№']
+          ? existing['№']
+          : getNextNumber_(
+              APP_CONFIG.SHEETS.VACANCIES,
+              '№'
+            ),
       'Вакансия': name,
       'Статус': status,
       'Комментарий': String(input.comment || '').trim(),
@@ -117,6 +124,13 @@ function saveSource(input) {
     {
       ...existing,
       'Source ID': input.id || Utilities.getUuid(),
+      '№':
+        existing && existing['№']
+          ? existing['№']
+          : getNextNumber_(
+              APP_CONFIG.SHEETS.SOURCES,
+              '№'
+            ),
       'Название': name,
       'Дата создания':
         existing && existing['Дата создания']
@@ -211,6 +225,13 @@ function saveResponsible(input) {
     {
       ...existing,
       'Responsible ID': input.id || Utilities.getUuid(),
+      '№':
+        existing && existing['№']
+          ? existing['№']
+          : getNextNumber_(
+              APP_CONFIG.SHEETS.RESPONSIBLES,
+              '№'
+            ),
       'Фамилия': lastName,
       'Имя': firstName,
       'Отчество': middleName,
@@ -309,6 +330,13 @@ function saveInterviewTemplate(input) {
     {
       ...existing,
       'Template ID': input.id || Utilities.getUuid(),
+      '№':
+        existing && existing['№']
+          ? existing['№']
+          : getNextNumber_(
+              APP_CONFIG.SHEETS.INTERVIEW_TEMPLATES,
+              '№'
+            ),
       'Название': name,
       'Vacancy ID': vacancyId,
       'Вакансия': vacancy['Вакансия'],
