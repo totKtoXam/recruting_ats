@@ -1,0 +1,1021 @@
+<script>
+  let state = {
+    candidates: [],
+    vacancies: [],
+    dictionaries: {},
+    stats: {
+      total: 0,
+      byStatus: {}
+    }
+  };
+
+  let currentCandidate = null;
+
+  const fallbackStatuses = [
+    'Новый',
+    'HR screening',
+    'Техническое интервью',
+    'Финальное интервью',
+    'Offer',
+    'Hired',
+    'Отказ',
+    'Резерв'
+  ];
+
+
+  function setLoading(isLoading) {
+    document
+      .getElementById('loading')
+      .classList
+      .toggle(
+        'active',
+        Boolean(isLoading)
+      );
+  }
+
+
+  function init() {
+    setLoading(true);
+
+    google.script.run
+      .withSuccessHandler(data => {
+        state = data;
+
+        fillSelect(
+          'Статус',
+          getStatuses()
+        );
+
+        fillSelect(
+          'Источник',
+          state.dictionaries[
+            'Источники'
+          ] || []
+        );
+
+        fillSelect(
+          'ivType',
+          state.dictionaries[
+            'Типы интервью'
+          ] || []
+        );
+
+        fillSelect(
+          'ivRecommendation',
+          state.dictionaries[
+            'Рекомендации'
+          ] || []
+        );
+
+        renderVacancies();
+        render();
+
+        setLoading(false);
+      })
+      .withFailureHandler(
+        handleError
+      )
+      .getInitialData();
+  }
+
+
+  function getStatuses() {
+    return (
+      state.dictionaries[
+        'Статусы кандидата'
+      ] || []
+    ).length
+      ? state.dictionaries[
+          'Статусы кандидата'
+        ]
+      : fallbackStatuses;
+  }
+
+
+  function fillSelect(
+    id,
+    items
+  ) {
+    const element =
+      document.getElementById(id);
+
+    element.innerHTML =
+      '<option value=""></option>' +
+      items
+        .map(item =>
+          '<option value="' +
+          escapeHtml(item) +
+          '">' +
+          escapeHtml(item) +
+          '</option>'
+        )
+        .join('');
+  }
+
+
+  function renderVacancies() {
+    const names = [
+      ...new Set(
+        state.vacancies
+          .map(item =>
+            item['Вакансия']
+          )
+          .filter(Boolean)
+      )
+    ];
+
+    document
+      .getElementById(
+        'vacanciesList'
+      )
+      .innerHTML = names
+        .map(name =>
+          '<option value="' +
+          escapeHtml(name) +
+          '"></option>'
+        )
+        .join('');
+  }
+
+
+  function render() {
+    renderStats();
+    renderBoard();
+  }
+
+
+  function renderStats() {
+    const stats =
+      state.stats || {
+        total: 0,
+        byStatus: {}
+      };
+
+    document
+      .getElementById('stats')
+      .innerHTML =
+        '<div class="stat">' +
+        '<span>Всего</span>' +
+        '<b>' +
+        stats.total +
+        '</b>' +
+        '</div>' +
+        Object
+          .entries(
+            stats.byStatus || {}
+          )
+          .map(([status, count]) =>
+            '<div class="stat">' +
+            '<span>' +
+            escapeHtml(status) +
+            '</span>' +
+            '<b>' +
+            count +
+            '</b>' +
+            '</div>'
+          )
+          .join('');
+  }
+
+
+  function renderBoard() {
+    const query = String(
+      document
+        .getElementById('search')
+        .value || ''
+    )
+      .trim()
+      .toLowerCase();
+
+    const statuses =
+      getStatuses();
+
+    const board =
+      document.getElementById(
+        'board'
+      );
+
+    board.innerHTML = statuses
+      .map(status => {
+        const candidates =
+          state.candidates
+            .filter(candidate =>
+              (
+                candidate['Статус'] ||
+                'Новый'
+              ) === status
+            )
+            .filter(candidate =>
+              matchesSearch(
+                candidate,
+                query
+              )
+            );
+
+        return (
+          '<div ' +
+            'class="column" ' +
+            'data-status="' +
+            escapeHtml(status) +
+            '" ' +
+            'ondragover="handleDragOver(event)" ' +
+            'ondragleave="handleDragLeave(event)" ' +
+            'ondrop="handleDrop(event)">' +
+
+            '<div class="column-title">' +
+              '<span>' +
+                escapeHtml(status) +
+              '</span>' +
+              '<span>' +
+                candidates.length +
+              '</span>' +
+            '</div>' +
+
+            candidates
+              .map(candidate =>
+                renderCandidateCard(
+                  candidate
+                )
+              )
+              .join('') +
+
+          '</div>'
+        );
+      })
+      .join('');
+  }
+
+
+  function matchesSearch(
+    candidate,
+    query
+  ) {
+    if (!query) {
+      return true;
+    }
+
+    const haystack = [
+      candidate['ФИО'],
+      candidate['Вакансия'],
+      candidate['Телефон'],
+      candidate['Email'],
+      candidate['Telegram'],
+      candidate['Ответственный']
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+
+    return haystack.includes(
+      query
+    );
+  }
+
+
+  function renderCandidateCard(
+    candidate
+  ) {
+    return (
+      '<article ' +
+        'class="candidate-card" ' +
+        'draggable="true" ' +
+        'data-id="' +
+        escapeHtml(candidate.ID) +
+        '" ' +
+        'ondragstart="handleDragStart(event)" ' +
+        'ondragend="handleDragEnd(event)" ' +
+        'onclick="openCandidateById(\'' +
+        escapeJsString(candidate.ID) +
+        '\')">' +
+
+        '<div class="candidate-name">' +
+          escapeHtml(
+            candidate['ФИО']
+          ) +
+        '</div>' +
+
+        '<div class="candidate-meta">' +
+          escapeHtml(
+            candidate['Вакансия'] || ''
+          ) +
+        '</div>' +
+
+        '<div class="candidate-meta">' +
+          escapeHtml(
+            candidate['Ответственный'] || ''
+          ) +
+        '</div>' +
+
+      '</article>'
+    );
+  }
+
+
+  function handleDragStart(event) {
+    const id =
+      event.currentTarget
+        .dataset
+        .id;
+
+    event
+      .dataTransfer
+      .setData(
+        'text/plain',
+        id
+      );
+
+    event.dataTransfer.effectAllowed =
+      'move';
+
+    event
+      .currentTarget
+      .classList
+      .add('dragging');
+  }
+
+
+  function handleDragEnd(event) {
+    event
+      .currentTarget
+      .classList
+      .remove('dragging');
+
+    document
+      .querySelectorAll(
+        '.column'
+      )
+      .forEach(column =>
+        column
+          .classList
+          .remove('drag-over')
+      );
+  }
+
+
+  function handleDragOver(event) {
+    event.preventDefault();
+
+    event
+      .currentTarget
+      .classList
+      .add('drag-over');
+  }
+
+
+  function handleDragLeave(event) {
+    event
+      .currentTarget
+      .classList
+      .remove('drag-over');
+  }
+
+
+  function handleDrop(event) {
+    event.preventDefault();
+
+    const column =
+      event.currentTarget;
+
+    column
+      .classList
+      .remove('drag-over');
+
+    const candidateId =
+      event
+        .dataTransfer
+        .getData('text/plain');
+
+    const newStatus =
+      column
+        .dataset
+        .status;
+
+    const candidate =
+      state.candidates.find(item =>
+        String(item.ID) ===
+        String(candidateId)
+      );
+
+    if (
+      !candidate ||
+      candidate['Статус'] ===
+        newStatus
+    ) {
+      return;
+    }
+
+    setLoading(true);
+
+    google.script.run
+      .withSuccessHandler(() => {
+        candidate['Статус'] =
+          newStatus;
+
+        state.stats =
+          calculateLocalStats();
+
+        render();
+        setLoading(false);
+      })
+      .withFailureHandler(
+        handleError
+      )
+      .updateCandidateStatus(
+        candidateId,
+        newStatus
+      );
+  }
+
+
+  function calculateLocalStats() {
+    const byStatus = {};
+
+    state.candidates
+      .forEach(candidate => {
+        const status =
+          candidate['Статус'] ||
+          'Без статуса';
+
+        byStatus[status] =
+          (byStatus[status] || 0) + 1;
+      });
+
+    return {
+      total:
+        state.candidates.length,
+      byStatus
+    };
+  }
+
+
+  function openCandidateById(id) {
+    const candidate =
+      state.candidates.find(item =>
+        String(item.ID) ===
+        String(id)
+      );
+
+    openCandidate(candidate);
+  }
+
+
+  function openCandidate(candidate) {
+    currentCandidate =
+      candidate || null;
+
+    const fields = [
+      'ID',
+      'ФИО',
+      'Вакансия',
+      'Статус',
+      'Телефон',
+      'Email',
+      'Telegram',
+      'Источник',
+      'Зарплатные ожидания',
+      'Резюме',
+      'Папка кандидата',
+      'Ответственный',
+      'Следующий контакт',
+      'Итог',
+      'Причина отказа',
+      'Комментарий'
+    ];
+
+    fields.forEach(field => {
+      document
+        .getElementById(field)
+        .value =
+          candidate
+            ? candidate[field] || ''
+            : '';
+    });
+
+    document
+      .getElementById(
+        'modalTitle'
+      )
+      .textContent =
+        candidate
+          ? candidate['ФИО']
+          : 'Новый кандидат';
+
+    document
+      .getElementById(
+        'candidateIdLabel'
+      )
+      .textContent =
+        candidate
+          ? 'ID: ' + candidate.ID
+          : '';
+
+    document
+      .getElementById(
+        'deleteBtn'
+      )
+      .style
+      .display =
+        candidate
+          ? 'inline-block'
+          : 'none';
+
+    document
+      .getElementById(
+        'modal'
+      )
+      .classList
+      .add('open');
+
+    showTab(
+      'candidate',
+      document.querySelector(
+        '.tab'
+      )
+    );
+
+    if (candidate) {
+      loadInterviews(
+        candidate.ID
+      );
+    } else {
+      document
+        .getElementById(
+          'interviewList'
+        )
+        .innerHTML =
+          '<div class="muted">' +
+          'Сначала сохраните кандидата.' +
+          '</div>';
+    }
+  }
+
+
+  function closeModal() {
+    document
+      .getElementById('modal')
+      .classList
+      .remove('open');
+  }
+
+
+  function handleModalBackdrop(
+    event
+  ) {
+    if (
+      event.target.id ===
+      'modal'
+    ) {
+      closeModal();
+    }
+  }
+
+
+  function showTab(
+    id,
+    button
+  ) {
+    document
+      .querySelectorAll(
+        '.tab-section'
+      )
+      .forEach(section =>
+        section
+          .classList
+          .remove('active')
+      );
+
+    document
+      .querySelectorAll(
+        '.tab'
+      )
+      .forEach(tab =>
+        tab
+          .classList
+          .remove('active')
+      );
+
+    document
+      .getElementById(id)
+      .classList
+      .add('active');
+
+    if (button) {
+      button
+        .classList
+        .add('active');
+    }
+  }
+
+
+  function saveCandidate() {
+    const fields = [
+      'ID',
+      'ФИО',
+      'Вакансия',
+      'Статус',
+      'Телефон',
+      'Email',
+      'Telegram',
+      'Источник',
+      'Зарплатные ожидания',
+      'Резюме',
+      'Папка кандидата',
+      'Ответственный',
+      'Следующий контакт',
+      'Итог',
+      'Причина отказа',
+      'Комментарий'
+    ];
+
+    const payload = {};
+
+    fields.forEach(field => {
+      payload[field] =
+        document
+          .getElementById(field)
+          .value;
+    });
+
+    setLoading(true);
+
+    google.script.run
+      .withSuccessHandler(
+        response => {
+          currentCandidate =
+            response.candidate;
+
+          refresh(
+            response.candidate.ID
+          );
+        }
+      )
+      .withFailureHandler(
+        handleError
+      )
+      .saveCandidate(
+        payload
+      );
+  }
+
+
+  function removeCandidate() {
+    if (!currentCandidate) {
+      return;
+    }
+
+    const accepted = confirm(
+      'Удалить кандидата из ATS? ' +
+      'Папка и файлы в Google Drive удалены не будут.'
+    );
+
+    if (!accepted) {
+      return;
+    }
+
+    setLoading(true);
+
+    google.script.run
+      .withSuccessHandler(() => {
+        closeModal();
+        refresh();
+      })
+      .withFailureHandler(
+        handleError
+      )
+      .deleteCandidate(
+        currentCandidate.ID
+      );
+  }
+
+
+  function openCandidateFolder() {
+    const url =
+      document
+        .getElementById(
+          'Папка кандидата'
+        )
+        .value;
+
+    if (url) {
+      window.open(
+        url,
+        '_blank',
+        'noopener'
+      );
+    }
+  }
+
+
+  function loadInterviews(
+    candidateId
+  ) {
+    setLoading(true);
+
+    google.script.run
+      .withSuccessHandler(
+        interviews => {
+          document
+            .getElementById(
+              'interviewList'
+            )
+            .innerHTML =
+              interviews.length
+                ? interviews
+                    .map(
+                      renderInterview
+                    )
+                    .join('')
+                : '<div class="muted">' +
+                  'Интервью пока нет.' +
+                  '</div>';
+
+          setLoading(false);
+        }
+      )
+      .withFailureHandler(
+        handleError
+      )
+      .getInterviews(
+        candidateId
+      );
+  }
+
+
+  function renderInterview(
+    interview
+  ) {
+    return (
+      '<article class="interview">' +
+
+        '<div>' +
+          '<strong>' +
+            escapeHtml(
+              interview[
+                'Тип интервью'
+              ] || 'Интервью'
+            ) +
+          '</strong>' +
+          ' <span class="muted">' +
+            escapeHtml(
+              interview['Дата'] || ''
+            ) +
+          '</span>' +
+        '</div>' +
+
+        '<div class="interview-row">' +
+          escapeHtml(
+            interview[
+              'Интервьюер'
+            ] || ''
+          ) +
+        '</div>' +
+
+        '<div class="interview-row">' +
+          '<strong>Вопрос:</strong> ' +
+          escapeHtml(
+            interview['Вопрос'] || ''
+          ) +
+        '</div>' +
+
+        '<div class="interview-row">' +
+          '<strong>Ответ:</strong> ' +
+          escapeHtml(
+            interview['Ответ'] || ''
+          ) +
+        '</div>' +
+
+        '<div class="interview-row">' +
+          '<strong>Hard Skills:</strong> ' +
+          escapeHtml(
+            interview[
+              'Hard Skills'
+            ] || ''
+          ) +
+        '</div>' +
+
+        '<div class="interview-row">' +
+          '<strong>Soft Skills:</strong> ' +
+          escapeHtml(
+            interview[
+              'Soft Skills'
+            ] || ''
+          ) +
+        '</div>' +
+
+        '<div class="interview-row">' +
+          '<strong>Итог:</strong> ' +
+          escapeHtml(
+            interview[
+              'Итог интервью'
+            ] || ''
+          ) +
+        '</div>' +
+
+        '<div class="interview-row">' +
+          '<strong>Рекомендация:</strong> ' +
+          escapeHtml(
+            interview[
+              'Рекомендация'
+            ] || ''
+          ) +
+        '</div>' +
+
+      '</article>'
+    );
+  }
+
+
+  function addInterview() {
+    if (
+      !currentCandidate ||
+      !currentCandidate.ID
+    ) {
+      alert(
+        'Сначала сохраните кандидата.'
+      );
+
+      return;
+    }
+
+    const payload = {
+      'Candidate ID':
+        currentCandidate.ID,
+
+      'ФИО':
+        currentCandidate['ФИО'],
+
+      'Вакансия':
+        currentCandidate['Вакансия'],
+
+      'Тип интервью':
+        valueOf('ivType'),
+
+      'Интервьюер':
+        valueOf('ivInterviewer'),
+
+      'Вопрос':
+        valueOf('ivQuestion'),
+
+      'Ответ':
+        valueOf('ivAnswer'),
+
+      'Hard Skills':
+        valueOf('ivHard'),
+
+      'Soft Skills':
+        valueOf('ivSoft'),
+
+      'Мотивация':
+        valueOf('ivMotivation'),
+
+      'Потенциал':
+        valueOf('ivPotential'),
+
+      'Сильные стороны':
+        valueOf('ivStrengths'),
+
+      'Слабые стороны':
+        valueOf('ivWeaknesses'),
+
+      'Итог интервью':
+        valueOf('ivResult'),
+
+      'Рекомендация':
+        valueOf('ivRecommendation'),
+
+      'Комментарий':
+        valueOf('ivComment')
+    };
+
+    setLoading(true);
+
+    google.script.run
+      .withSuccessHandler(() => {
+        clearInterviewForm();
+
+        loadInterviews(
+          currentCandidate.ID
+        );
+      })
+      .withFailureHandler(
+        handleError
+      )
+      .addInterview(
+        payload
+      );
+  }
+
+
+  function clearInterviewForm() {
+    [
+      'ivInterviewer',
+      'ivQuestion',
+      'ivAnswer',
+      'ivHard',
+      'ivSoft',
+      'ivMotivation',
+      'ivPotential',
+      'ivStrengths',
+      'ivWeaknesses',
+      'ivResult',
+      'ivComment'
+    ].forEach(id => {
+      document
+        .getElementById(id)
+        .value = '';
+    });
+
+    document
+      .getElementById(
+        'ivType'
+      )
+      .value = '';
+
+    document
+      .getElementById(
+        'ivRecommendation'
+      )
+      .value = '';
+  }
+
+
+  function refresh(
+    reopenCandidateId
+  ) {
+    setLoading(true);
+
+    google.script.run
+      .withSuccessHandler(data => {
+        state = data;
+
+        renderVacancies();
+        render();
+
+        if (reopenCandidateId) {
+          const candidate =
+            state.candidates.find(item =>
+              String(item.ID) ===
+              String(
+                reopenCandidateId
+              )
+            );
+
+          if (candidate) {
+            openCandidate(
+              candidate
+            );
+          } else {
+            closeModal();
+          }
+        } else {
+          closeModal();
+        }
+
+        setLoading(false);
+      })
+      .withFailureHandler(
+        handleError
+      )
+      .getInitialData();
+  }
+
+
+  function valueOf(id) {
+    return document
+      .getElementById(id)
+      .value;
+  }
+
+
+  function handleError(error) {
+    setLoading(false);
+
+    const message =
+      error &&
+      error.message
+        ? error.message
+        : String(error);
+
+    alert(message);
+  }
+
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+  }
+
+
+  function escapeJsString(value) {
+    return String(value ?? '')
+      .replaceAll('\\', '\\\\')
+      .replaceAll("'", "\\'");
+  }
+
+
+  init();
+</script>
