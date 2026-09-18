@@ -107,6 +107,7 @@
       </div>
 
       <input id="candidateId" type="hidden">
+      <input id="candidateDraftToken" type="hidden">
 
       <div id="candidateWorkspace" class="candidate-layout">
         <section id="candidateForm" class="candidate-column candidate-column-main">
@@ -359,6 +360,7 @@
 
   <script>
     window.__INITIAL_ROUTE__ = '<?= initialRoute ?>';
+    window.__INITIAL_DRAFT_TOKEN__ = '<?= initialDraftToken ?>';
   </script>
 
   <?!= include('Scripts'); ?>
