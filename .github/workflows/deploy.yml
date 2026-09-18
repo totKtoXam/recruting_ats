@@ -54,3 +54,19 @@ jobs:
           npx clasp create-deployment \
             --deploymentId "$GAS_DEPLOYMENT_ID" \
             --description "GitHub Actions: $GITHUB_SHA"
+
+      - name: Publish Web App URL
+        env:
+          GAS_WEB_APP_URL: ${{ vars.GAS_WEB_APP_URL }}
+        run: |
+          if [ -n "$GAS_WEB_APP_URL" ]; then
+            echo "Web App: $GAS_WEB_APP_URL"
+            {
+              echo "### Recruiting ATS Web App"
+              echo
+              echo "$GAS_WEB_APP_URL"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "GAS_WEB_APP_URL repository variable is not configured."
+            echo "Set Settings -> Secrets and variables -> Actions -> Variables -> GAS_WEB_APP_URL to show the app URL in deploy logs and job summary."
+          fi
