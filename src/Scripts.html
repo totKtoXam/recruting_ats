@@ -1441,6 +1441,7 @@ async function saveCandidateForm(button){
 
     const payload={
       ID:existingId,
+      draftToken:value('candidateDraftToken'),
       lastName:value('candidateLastName').trim(),
       firstName:value('candidateFirstName').trim(),
       middleName:value('candidateMiddleName').trim(),
