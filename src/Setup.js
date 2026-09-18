@@ -16,6 +16,7 @@ function ensureSchema_() {
 
   schemas[APP_CONFIG.SHEETS.CANDIDATES] = [
     'ID',
+    '№',
     'Фамилия',
     'Имя',
     'Отчество',
@@ -27,6 +28,8 @@ function ensureSchema_() {
     'Email',
     'Telegram',
     'Telegram URL',
+    'LinkedIn',
+    'GitHub',
     'Source ID',
     'Источник',
     'Зарплатные ожидания',
@@ -34,6 +37,7 @@ function ensureSchema_() {
     'Ответственный',
     'Резюме',
     'Resume File ID',
+    'Версии резюме',
     'Папка кандидата',
     'Комментарий',
     'Иные ссылки',
@@ -74,6 +78,7 @@ function ensureSchema_() {
 
   schemas[APP_CONFIG.SHEETS.VACANCIES] = [
     'Vacancy ID',
+    '№',
     'Вакансия',
     'Статус',
     'Комментарий',
@@ -85,6 +90,7 @@ function ensureSchema_() {
 
   schemas[APP_CONFIG.SHEETS.SOURCES] = [
     'Source ID',
+    '№',
     'Название',
     'Дата создания',
     'Дата изменения',
@@ -94,6 +100,7 @@ function ensureSchema_() {
 
   schemas[APP_CONFIG.SHEETS.RESPONSIBLES] = [
     'Responsible ID',
+    '№',
     'Фамилия',
     'Имя',
     'Отчество',
@@ -108,6 +115,7 @@ function ensureSchema_() {
 
   schemas[APP_CONFIG.SHEETS.INTERVIEW_TEMPLATES] = [
     'Template ID',
+    '№',
     'Название',
     'Vacancy ID',
     'Вакансия',
@@ -139,6 +147,8 @@ function ensureSchema_() {
   migrateSourcesFromLegacyDictionary_();
   migrateFullNameColumns_();
   migrateInterviewNameColumns_();
+  migrateSequenceNumbers_();
+  migrateResumeVersions_();
 }
 
 
@@ -436,6 +446,152 @@ function migrateInterviewNameColumns_() {
       row[indexes.interviewerLast] = parts.lastName;
       row[indexes.interviewerFirst] = parts.firstName;
       row[indexes.interviewerMiddle] = parts.middleName;
+      changed = true;
+    }
+  });
+
+  if (changed) {
+    range.setValues(values);
+  }
+}
+
+
+function migrateSequenceNumbers_() {
+  [
+    {
+      sheet: APP_CONFIG.SHEETS.CANDIDATES,
+      id: 'ID'
+    },
+    {
+      sheet: APP_CONFIG.SHEETS.VACANCIES,
+      id: 'Vacancy ID'
+    },
+    {
+      sheet: APP_CONFIG.SHEETS.SOURCES,
+      id: 'Source ID'
+    },
+    {
+      sheet: APP_CONFIG.SHEETS.RESPONSIBLES,
+      id: 'Responsible ID'
+    },
+    {
+      sheet: APP_CONFIG.SHEETS.INTERVIEW_TEMPLATES,
+      id: 'Template ID'
+    }
+  ].forEach(config => {
+    const sheet = getSheet_(config.sheet);
+
+    if (sheet.getLastRow() < 2) {
+      return;
+    }
+
+    const headers = getHeaders_(sheet);
+    const numberIndex = headers.indexOf('№');
+    const idIndex = headers.indexOf(config.id);
+
+    if (numberIndex < 0 || idIndex < 0) {
+      return;
+    }
+
+    const range = sheet.getRange(
+      2,
+      1,
+      sheet.getLastRow() - 1,
+      headers.length
+    );
+
+    const values = range.getValues();
+
+    let max = values.reduce(
+      (result, row) => {
+        const number = Number(
+          row[numberIndex] || 0
+        );
+
+        return Number.isFinite(number)
+          ? Math.max(result, number)
+          : result;
+      },
+      0
+    );
+
+    let changed = false;
+
+    values.forEach(row => {
+      if (
+        row[idIndex] &&
+        !row[numberIndex]
+      ) {
+        max += 1;
+        row[numberIndex] = max;
+        changed = true;
+      }
+    });
+
+    if (changed) {
+      range.setValues(values);
+    }
+  });
+}
+
+
+function migrateResumeVersions_() {
+  const sheet = getSheet_(
+    APP_CONFIG.SHEETS.CANDIDATES
+  );
+
+  if (sheet.getLastRow() < 2) {
+    return;
+  }
+
+  const headers = getHeaders_(sheet);
+  const versionsIndex =
+    headers.indexOf('Версии резюме');
+  const urlIndex =
+    headers.indexOf('Резюме');
+  const fileIdIndex =
+    headers.indexOf('Resume File ID');
+  const createdIndex =
+    headers.indexOf('Дата добавления');
+
+  if (
+    versionsIndex < 0 ||
+    urlIndex < 0
+  ) {
+    return;
+  }
+
+  const range = sheet.getRange(
+    2,
+    1,
+    sheet.getLastRow() - 1,
+    headers.length
+  );
+
+  const values = range.getValues();
+  let changed = false;
+
+  values.forEach(row => {
+    if (
+      !row[versionsIndex] &&
+      row[urlIndex]
+    ) {
+      row[versionsIndex] =
+        stringifyJson_([
+          {
+            id:
+              fileIdIndex >= 0
+                ? row[fileIdIndex] || ''
+                : '',
+            url: row[urlIndex],
+            name: 'Резюме',
+            uploadedAt:
+              createdIndex >= 0
+                ? row[createdIndex] || ''
+                : ''
+          }
+        ]);
+
       changed = true;
     }
   });
