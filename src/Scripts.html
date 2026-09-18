@@ -435,14 +435,22 @@ function formatMoneyInput(input,max){
 function normalizeGithubClient(raw){
   const value=String(raw||'').trim();
   if(!value)return '';
-  return /^https?:\/\//i.test(value)?value:'https://github.com/'+value.replace(/^@/,'');
+  if(/^https?:\/\//i.test(value))return value;
+  const clean=value
+    .replace(/^@/,'')
+    .replace(/^(?:www\.)?github\.com\//i,'')
+    .replace(/^\/+/, '');
+  return 'https://github.com/'+clean;
 }
 
 function normalizeLinkedinClient(raw){
   const value=String(raw||'').trim();
   if(!value)return '';
   if(/^https?:\/\//i.test(value))return value;
-  const clean=value.replace(/^@/,'').replace(/^linkedin\.com\//i,'');
+  const clean=value
+    .replace(/^@/,'')
+    .replace(/^(?:www\.)?linkedin\.com\//i,'')
+    .replace(/^\/+/, '');
   return 'https://www.linkedin.com/'+(clean.startsWith('in/')?clean:'in/'+clean);
 }
 
@@ -730,6 +738,11 @@ async function saveCandidateForm(button){
       render();
       currentCandidate=saved;
       el('candidateId').value=saved.ID;
+      el('candidateTitle').textContent=fullNameOf(saved);
+      el('candidateNumberLabel').textContent='№'+(saved['№']||'—');
+      el('candidateStatusLabel').className='status-chip status-'+statusKey(saved['Статус']);
+      el('candidateStatusLabel').textContent=saved['Статус'];
+      renderTransitions();
       resumeUploading=false;
       el('candidateResumeFile').value='';
       renderSelectedResumeFile();
