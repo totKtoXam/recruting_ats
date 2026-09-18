@@ -58,12 +58,25 @@ function getCandidateData() {
 }
 
 
+function getArchivedCandidateData() {
+  ensureSchema_();
+
+  return {
+    archivedCandidates:
+      getArchivedCandidates()
+  };
+}
+
+
 function getInitialData() {
   const references = getReferenceData();
   const candidateData = getCandidateData();
+  const archivedData =
+    getArchivedCandidateData();
 
   return {
     ...references,
-    ...candidateData
+    ...candidateData,
+    ...archivedData
   };
 }
