@@ -6,7 +6,7 @@ function doGet(event) {
     event &&
     event.parameter &&
     event.parameter.page === 'admin'
-      ? 'Admin'
+      ? 'AdminPage'
       : 'Index';
 
   const template =
@@ -20,7 +20,7 @@ function doGet(event) {
   return template
     .evaluate()
     .setTitle(
-      page === 'Admin'
+      page === 'AdminPage'
         ? 'Recruiting ATS — Админ-панель'
         : 'Recruiting ATS'
     )
