@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+
+  <meta charset="utf-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  >
+
+  <?!= include('Styles'); ?>
+</head>
+
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Recruiting ATS</h1>
+      <div class="subtitle">
+        Кандидаты и интервью
+      </div>
+    </div>
+
+    <button
+      class="button button-primary"
+      onclick="openCandidate()"
+    >
+      + Добавить кандидата
+    </button>
+  </header>
+
+  <main class="page">
+    <section class="toolbar">
+      <input
+        id="search"
+        class="search"
+        type="search"
+        placeholder="Поиск по ФИО, вакансии, контактам..."
+        oninput="renderBoard()"
+      >
+    </section>
+
+    <section
+      id="stats"
+      class="stats"
+    ></section>
+
+    <section
+      id="board"
+      class="board"
+    ></section>
+  </main>
+
+  <div
+    id="modal"
+    class="modal"
+    onclick="handleModalBackdrop(event)"
+  >
+    <div class="panel">
+      <div class="panel-header">
+        <div>
+          <h2 id="modalTitle">
+            Кандидат
+          </h2>
+
+          <div
+            id="candidateIdLabel"
+            class="muted"
+          ></div>
+        </div>
+
+        <button
+          class="button button-secondary"
+          onclick="closeModal()"
+        >
+          Закрыть
+        </button>
+      </div>
+
+      <div class="tabs">
+        <button
+          class="tab active"
+          onclick="showTab('candidate', this)"
+        >
+          Карточка
+        </button>
+
+        <button
+          class="tab"
+          onclick="showTab('interviews', this)"
+        >
+          Интервью
+        </button>
+      </div>
+
+      <section
+        id="candidate"
+        class="tab-section active"
+      >
+        <div class="form-grid">
+          <input
+            type="hidden"
+            id="ID"
+          >
+
+          <div class="field">
+            <label for="ФИО">
+              ФИО
+            </label>
+
+            <input id="ФИО">
+          </div>
+
+          <div class="field">
+            <label for="Вакансия">
+              Вакансия
+            </label>
+
+            <input
+              id="Вакансия"
+              list="vacanciesList"
+            >
+
+            <datalist
+              id="vacanciesList"
+            ></datalist>
+          </div>
+
+          <div class="field">
+            <label for="Статус">
+              Статус
+            </label>
+
+            <select id="Статус"></select>
+          </div>
+
+          <div class="field">
+            <label for="Источник">
+              Источник
+            </label>
+
+            <select id="Источник"></select>
+          </div>
+
+          <div class="field">
+            <label for="Телефон">
+              Телефон
+            </label>
+
+            <input id="Телефон">
+          </div>
+
+          <div class="field">
+            <label for="Email">
+              Email
+            </label>
+
+            <input
+              id="Email"
+              type="email"
+            >
+          </div>
+
+          <div class="field">
+            <label for="Telegram">
+              Telegram
+            </label>
+
+            <input id="Telegram">
+          </div>
+
+          <div class="field">
+            <label for="Зарплатные ожидания">
+              Зарплатные ожидания
+            </label>
+
+            <input id="Зарплатные ожидания">
+          </div>
+
+          <div class="field">
+            <label for="Ответственный">
+              Ответственный
+            </label>
+
+            <input id="Ответственный">
+          </div>
+
+          <div class="field">
+            <label for="Следующий контакт">
+              Следующий контакт
+            </label>
+
+            <input
+              id="Следующий контакт"
+              type="date"
+            >
+          </div>
+
+          <div class="field full">
+            <label for="Резюме">
+              Резюме
+            </label>
+
+            <input
+              id="Резюме"
+              placeholder="Ссылка на резюме"
+            >
+          </div>
+
+          <div class="field full">
+            <label for="Папка кандидата">
+              Папка кандидата
+            </label>
+
+            <div class="link-row">
+              <input
+                id="Папка кандидата"
+                readonly
+              >
+
+              <button
+                class="button button-secondary"
+                onclick="openCandidateFolder()"
+                type="button"
+              >
+                Открыть
+              </button>
+            </div>
+          </div>
+
+          <div class="field full">
+            <label for="Итог">
+              Итог
+            </label>
+
+            <textarea id="Итог"></textarea>
+          </div>
+
+          <div class="field full">
+            <label for="Причина отказа">
+              Причина отказа
+            </label>
+
+            <textarea
+              id="Причина отказа"
+            ></textarea>
+          </div>
+
+          <div class="field full">
+            <label for="Комментарий">
+              Комментарий
+            </label>
+
+            <textarea id="Комментарий"></textarea>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button
+            id="deleteBtn"
+            class="button button-danger left"
+            onclick="removeCandidate()"
+            style="display:none"
+          >
+            Удалить
+          </button>
+
+          <button
+            class="button button-primary"
+            onclick="saveCandidate()"
+          >
+            Сохранить
+          </button>
+        </div>
+      </section>
+
+      <section
+        id="interviews"
+        class="tab-section"
+      >
+        <div id="interviewList"></div>
+
+        <h3>
+          Добавить интервью
+        </h3>
+
+        <div class="form-grid">
+          <div class="field">
+            <label for="ivType">
+              Тип интервью
+            </label>
+
+            <select id="ivType"></select>
+          </div>
+
+          <div class="field">
+            <label for="ivInterviewer">
+              Интервьюер
+            </label>
+
+            <input id="ivInterviewer">
+          </div>
+
+          <div class="field full">
+            <label for="ivQuestion">
+              Вопрос
+            </label>
+
+            <textarea id="ivQuestion"></textarea>
+          </div>
+
+          <div class="field full">
+            <label for="ivAnswer">
+              Ответ
+            </label>
+
+            <textarea id="ivAnswer"></textarea>
+          </div>
+
+          <div class="field">
+            <label for="ivHard">
+              Hard Skills
+            </label>
+
+            <input id="ivHard">
+          </div>
+
+          <div class="field">
+            <label for="ivSoft">
+              Soft Skills
+            </label>
+
+            <input id="ivSoft">
+          </div>
+
+          <div class="field">
+            <label for="ivMotivation">
+              Мотивация
+            </label>
+
+            <input id="ivMotivation">
+          </div>
+
+          <div class="field">
+            <label for="ivPotential">
+              Потенциал
+            </label>
+
+            <input id="ivPotential">
+          </div>
+
+          <div class="field full">
+            <label for="ivStrengths">
+              Сильные стороны
+            </label>
+
+            <textarea id="ivStrengths"></textarea>
+          </div>
+
+          <div class="field full">
+            <label for="ivWeaknesses">
+              Слабые стороны
+            </label>
+
+            <textarea id="ivWeaknesses"></textarea>
+          </div>
+
+          <div class="field full">
+            <label for="ivResult">
+              Итог интервью
+            </label>
+
+            <textarea id="ivResult"></textarea>
+          </div>
+
+          <div class="field">
+            <label for="ivRecommendation">
+              Рекомендация
+            </label>
+
+            <select id="ivRecommendation"></select>
+          </div>
+
+          <div class="field full">
+            <label for="ivComment">
+              Комментарий
+            </label>
+
+            <textarea id="ivComment"></textarea>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button
+            class="button button-primary"
+            onclick="addInterview()"
+          >
+            Добавить интервью
+          </button>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div
+    id="loading"
+    class="loading"
+  >
+    Загрузка...
+  </div>
+
+  <?!= include('Scripts'); ?>
+</body>
+</html>
