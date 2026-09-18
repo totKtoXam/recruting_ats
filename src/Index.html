@@ -19,12 +19,12 @@
     </div>
 
     <nav class="top-actions">
-      <button
-        class="button button-secondary"
-        onclick="openAdmin()"
+      <a
+        class="button button-secondary button-link"
+        href="<?= appUrl ?>?page=admin"
       >
         Админ-панель
-      </button>
+      </a>
 
       <button
         class="button button-primary"
@@ -372,83 +372,44 @@
   </div>
 
   <div
-    id="adminModal"
-    class="modal"
-  >
-    <div class="panel panel-admin">
-      <div class="panel-header">
-        <div>
-          <h2>Админ-панель</h2>
-          <div class="muted">
-            Справочники и шаблоны
-          </div>
-        </div>
-
-        <button
-          class="button button-secondary"
-          onclick="closeAdmin()"
-        >
-          Закрыть
-        </button>
-      </div>
-
-      <div class="tabs">
-        <button
-          class="tab active"
-          onclick="showAdminTab('adminVacancies', this)"
-        >
-          Вакансии
-        </button>
-
-        <button
-          class="tab"
-          onclick="showAdminTab('adminSources', this)"
-        >
-          Источники
-        </button>
-
-        <button
-          class="tab"
-          onclick="showAdminTab('adminResponsibles', this)"
-        >
-          Ответственные
-        </button>
-
-        <button
-          class="tab"
-          onclick="showAdminTab('adminTemplates', this)"
-        >
-          Шаблоны интервью
-        </button>
-      </div>
-
-      <section
-        id="adminVacancies"
-        class="admin-section active"
-      ></section>
-
-      <section
-        id="adminSources"
-        class="admin-section"
-      ></section>
-
-      <section
-        id="adminResponsibles"
-        class="admin-section"
-      ></section>
-
-      <section
-        id="adminTemplates"
-        class="admin-section"
-      ></section>
-    </div>
-  </div>
-
-  <div
     id="loading"
     class="loading"
   >
     Загрузка...
+  </div>
+
+  <div
+    id="toast"
+    class="toast"
+    role="status"
+    aria-live="polite"
+  ></div>
+
+  <div
+    id="confirmModal"
+    class="modal modal-top"
+  >
+    <div class="panel confirm-panel">
+      <h2 id="confirmTitle">Подтверждение</h2>
+      <p id="confirmMessage"></p>
+
+      <div class="actions">
+        <button
+          class="button button-secondary"
+          onclick="closeConfirm(false)"
+        >
+          Отмена
+        </button>
+
+        <button
+          id="confirmActionButton"
+          class="button button-danger"
+          onclick="closeConfirm(true)"
+        >
+          Подтвердить
+        </button>
+      </div>
+    </div>
   </div>
 
   <?!= include('Scripts'); ?>
