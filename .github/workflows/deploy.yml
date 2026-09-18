@@ -141,3 +141,5 @@ jobs:
           echo "Vacancies: $(echo "$REFS" | jq '.vacancies | length')"
           echo "Sources: $(echo "$REFS" | jq '.sources | length')"
           echo "Responsibles: $(echo "$REFS" | jq '.responsibles | length')"
+
+# API smoke verification trigger
