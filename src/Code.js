@@ -1,12 +1,32 @@
-function doGet() {
+function doGet(event) {
   ensureSchema_();
   ensureSpreadsheetMenuTrigger_();
 
-  return HtmlService
-    .createTemplateFromFile('Index')
+  const page =
+    event &&
+    event.parameter &&
+    event.parameter.page === 'admin'
+      ? 'Admin'
+      : 'Index';
+
+  const template =
+    HtmlService.createTemplateFromFile(page);
+
+  template.appUrl =
+    ScriptApp
+      .getService()
+      .getUrl();
+
+  return template
     .evaluate()
-    .setTitle('Recruiting ATS')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    .setTitle(
+      page === 'Admin'
+        ? 'Recruiting ATS — Админ-панель'
+        : 'Recruiting ATS'
+    )
+    .setXFrameOptionsMode(
+      HtmlService.XFrameOptionsMode.ALLOWALL
+    );
 }
 
 
