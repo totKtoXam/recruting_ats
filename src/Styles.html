@@ -173,6 +173,16 @@ input:disabled,select:disabled,textarea:disabled,button:disabled{opacity:.58;cur
 .vacancy-open{color:#15803d;background:#dcfce7;border-color:#bbf7d0}
 .vacancy-paused{color:#a16207;background:#fef3c7;border-color:#fde68a}
 .vacancy-closed{color:#475569;background:#e2e8f0;border-color:#cbd5e1}
+.status-select-new{color:#1d4ed8;background:#eff6ff;border-color:#bfdbfe}
+.status-select-hr{color:#6d28d9;background:#f5f3ff;border-color:#ddd6fe}
+.status-select-tech{color:#0e7490;background:#ecfeff;border-color:#a5f3fc}
+.status-select-final{color:#c2410c;background:#fff7ed;border-color:#fed7aa}
+.status-select-offer{color:#a16207;background:#fefce8;border-color:#fef08a}
+.status-select-hired{color:#15803d;background:#ecfdf5;border-color:#bbf7d0}
+.status-select-rejected{color:#b91c1c;background:#fef2f2;border-color:#fecaca}
+.vacancy-select-open{color:#15803d;background:#f0fdf4;border-color:#bbf7d0}
+.vacancy-select-paused{color:#a16207;background:#fffbeb;border-color:#fde68a}
+.vacancy-select-closed{color:#475569;background:#f1f5f9;border-color:#cbd5e1}
 
 .modal{
   position:fixed;inset:0;z-index:40;display:none;align-items:center;justify-content:center;
@@ -267,6 +277,9 @@ input:disabled,select:disabled,textarea:disabled,button:disabled{opacity:.58;cur
   background:rgba(255,255,255,.58);backdrop-filter:blur(1px)
 }
 .is-refreshing .board,.is-refreshing .admin-layout,.is-refreshing .filters,.is-refreshing .stats{
+  opacity:.55;pointer-events:none
+}
+.is-refreshing .page-actions .button:not(.is-loading){
   opacity:.55;pointer-events:none
 }
 
