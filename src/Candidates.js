@@ -2,17 +2,32 @@ function getCandidates() {
   return rowsToObjects_(
     getSheet_(APP_CONFIG.SHEETS.CANDIDATES)
   ).map(candidate => {
-    const fallback = splitFullName_(candidate['ФИО']);
+    const fallback =
+      splitFullName_(candidate['ФИО']);
 
     return {
       ...candidate,
-      'Фамилия': candidate['Фамилия'] || fallback.lastName,
-      'Имя': candidate['Имя'] || fallback.firstName,
-      'Отчество': candidate['Отчество'] || fallback.middleName,
-      links: parseJson_(candidate['Иные ссылки'], []),
+      'Фамилия':
+        candidate['Фамилия'] ||
+        fallback.lastName,
+      'Имя':
+        candidate['Имя'] ||
+        fallback.firstName,
+      'Отчество':
+        candidate['Отчество'] ||
+        fallback.middleName,
+      links: parseJson_(
+        candidate['Иные ссылки'],
+        []
+      ),
+      resumeVersions: parseJson_(
+        candidate['Версии резюме'],
+        []
+      ),
       archived:
-        String(candidate['Архивирован'] || '')
-          .toLowerCase() === 'true'
+        String(
+          candidate['Архивирован'] || ''
+        ).toLowerCase() === 'true'
     };
   });
 }
@@ -20,6 +35,7 @@ function getCandidates() {
 
 function getStats() {
   const candidates = getCandidates();
+
   const active = candidates.filter(
     candidate => !candidate.archived
   );
@@ -28,7 +44,8 @@ function getStats() {
 
   active.forEach(candidate => {
     const status =
-      candidate['Статус'] || 'Без статуса';
+      candidate['Статус'] ||
+      'Без статуса';
 
     byStatus[status] =
       (byStatus[status] || 0) + 1;
@@ -37,7 +54,8 @@ function getStats() {
   return {
     total: active.length,
     archived:
-      candidates.length - active.length,
+      candidates.length -
+      active.length,
     byStatus
   };
 }
@@ -47,24 +65,30 @@ function saveCandidate(payload) {
   validateCandidate_(payload);
 
   const isNew = !payload.ID;
-  const sheet = getSheet_(APP_CONFIG.SHEETS.CANDIDATES);
+
+  const sheet = getSheet_(
+    APP_CONFIG.SHEETS.CANDIDATES
+  );
+
+  const headers = getHeaders_(sheet);
 
   let existing = {};
   let rowIndex = -1;
-  const headers = getHeaders_(sheet);
 
-  if (payload.ID) {
+  if (!isNew) {
     const found = findRowById_(
       sheet,
       'ID',
       payload.ID
     );
 
-    rowIndex = found.rowIndex;
-
-    if (rowIndex < 0) {
-      throw new Error('Кандидат не найден.');
+    if (found.rowIndex < 0) {
+      throw new Error(
+        'Кандидат не найден.'
+      );
     }
+
+    rowIndex = found.rowIndex;
 
     existing = objectFromRow_(
       found.headers,
@@ -72,43 +96,91 @@ function saveCandidate(payload) {
     );
   }
 
+  const vacancyId =
+    String(
+      payload.vacancyId ||
+      existing['Vacancy ID'] ||
+      ''
+    ).trim();
+
   const vacancy = findById_(
     APP_CONFIG.SHEETS.VACANCIES,
     'Vacancy ID',
-    payload.vacancyId
+    vacancyId
   );
 
-  if (!vacancy || isSoftDeleted_(vacancy)) {
-    throw new Error('Выбранная вакансия не найдена.');
-  }
-
-  if (isNew && vacancy['Статус'] !== 'Открыта') {
+  if (!vacancy) {
     throw new Error(
-      'Нового кандидата можно добавить только на открытую вакансию.'
+      'Выбранная вакансия не найдена.'
     );
   }
+
+  const vacancyChanged =
+    String(existing['Vacancy ID'] || '') !==
+    vacancyId;
+
+  if (
+    (isNew || vacancyChanged) &&
+    (
+      isSoftDeleted_(vacancy) ||
+      vacancy['Статус'] !== 'Открыта'
+    )
+  ) {
+    throw new Error(
+      'Можно выбрать только открытую вакансию.'
+    );
+  }
+
+  const responsibleId =
+    String(
+      payload.responsibleId ||
+      existing['Responsible ID'] ||
+      ''
+    ).trim();
 
   const responsible = findById_(
     APP_CONFIG.SHEETS.RESPONSIBLES,
     'Responsible ID',
-    payload.responsibleId
+    responsibleId
   );
 
-  if (!responsible || isSoftDeleted_(responsible)) {
-    throw new Error('Ответственный не найден.');
+  if (!responsible) {
+    throw new Error(
+      'Ответственный не найден.'
+    );
   }
 
-  const responsibleStages = parseJson_(
-    responsible['Доступные этапы'],
-    []
-  );
+  const responsibleChanged =
+    String(
+      existing['Responsible ID'] || ''
+    ) !== responsibleId;
+
+  if (
+    (isNew || responsibleChanged) &&
+    isSoftDeleted_(responsible)
+  ) {
+    throw new Error(
+      'Выбранный ответственный удалён.'
+    );
+  }
 
   const candidateStatus =
     isNew
       ? 'Новый'
-      : existing['Статус'];
+      : existing['Статус'] || 'Новый';
 
-  if (!responsibleStages.includes(candidateStatus)) {
+  const responsibleStages =
+    parseJson_(
+      responsible['Доступные этапы'],
+      []
+    );
+
+  if (
+    (isNew || responsibleChanged) &&
+    !responsibleStages.includes(
+      candidateStatus
+    )
+  ) {
     throw new Error(
       'Выбранный ответственный недоступен для этапа "' +
       candidateStatus +
@@ -116,23 +188,62 @@ function saveCandidate(payload) {
     );
   }
 
+  const sourceId =
+    String(
+      payload.sourceId !== undefined
+        ? payload.sourceId || ''
+        : existing['Source ID'] || ''
+    ).trim();
+
   let source = null;
 
-  if (payload.sourceId) {
+  if (sourceId) {
     source = findById_(
       APP_CONFIG.SHEETS.SOURCES,
       'Source ID',
-      payload.sourceId
+      sourceId
     );
 
-    if (!source || isSoftDeleted_(source)) {
-      throw new Error('Источник не найден.');
+    if (!source) {
+      throw new Error(
+        'Источник не найден.'
+      );
+    }
+
+    const sourceChanged =
+      String(existing['Source ID'] || '') !==
+      sourceId;
+
+    if (
+      (isNew || sourceChanged) &&
+      isSoftDeleted_(source)
+    ) {
+      throw new Error(
+        'Выбранный источник удалён.'
+      );
     }
   }
 
-  const lastName = normalizeNamePart_(payload.lastName);
-  const firstName = normalizeNamePart_(payload.firstName);
-  const middleName = normalizeNamePart_(payload.middleName);
+  const lastName =
+    normalizeNamePart_(
+      payload.lastName !== undefined
+        ? payload.lastName
+        : existing['Фамилия']
+    );
+
+  const firstName =
+    normalizeNamePart_(
+      payload.firstName !== undefined
+        ? payload.firstName
+        : existing['Имя']
+    );
+
+  const middleName =
+    normalizeNamePart_(
+      payload.middleName !== undefined
+        ? payload.middleName
+        : existing['Отчество']
+    );
 
   const fullName = composeFullName_(
     lastName,
@@ -140,93 +251,258 @@ function saveCandidate(payload) {
     middleName
   );
 
-  const telegram = normalizeTelegram_(payload.telegram);
+  const telegram = normalizeTelegram_(
+    payload.telegram !== undefined
+      ? payload.telegram
+      : existing['Telegram']
+  );
 
-  const links = Array.isArray(payload.links)
+  const linkedin = normalizeProfileUrl_(
+    payload.linkedin !== undefined
+      ? payload.linkedin
+      : existing['LinkedIn'],
+    'linkedin'
+  );
+
+  const github = normalizeProfileUrl_(
+    payload.github !== undefined
+      ? payload.github
+      : existing['GitHub'],
+    'github'
+  );
+
+  const links = Array.isArray(
+    payload.links
+  )
     ? payload.links
         .map(link => ({
-          name: String(link.name || '').trim(),
-          url: validateHttpUrl_(link.url)
+          name:
+            String(
+              link.name || ''
+            ).trim(),
+          url:
+            validateHttpUrl_(
+              link.url
+            )
         }))
-        .filter(link => link.name || link.url)
-    : [];
+        .filter(link =>
+          link.name ||
+          link.url
+        )
+    : parseJson_(
+        existing['Иные ссылки'],
+        []
+      );
 
   links.forEach(link => {
-    if (!link.name || !link.url) {
+    if (
+      !link.name ||
+      !link.url
+    ) {
       throw new Error(
         'Для иной ссылки необходимо заполнить и название, и URL.'
       );
     }
   });
 
-  const candidateId =
-    existing.ID || Utilities.getUuid();
-
-  const folderInfo = ensureCandidateFolder_(
-    candidateId,
-    fullName,
-    existing['Папка кандидата']
+  const salary = normalizeMoney_(
+    payload.salary !== undefined
+      ? payload.salary
+      : existing[
+          'Зарплатные ожидания'
+        ]
   );
 
-  let resumeUrl = existing['Резюме'] || '';
-  let resumeFileId = existing['Resume File ID'] || '';
+  if (
+    salary !== '' &&
+    Number(salary) > 10000000
+  ) {
+    throw new Error(
+      'ЗП ожидания не может превышать 10 000 000.'
+    );
+  }
 
-  if (payload.resumeFile) {
-    const uploaded = saveResumeFile_(
-      folderInfo.folder,
-      payload.resumeFile
+  const candidateId =
+    existing.ID ||
+    Utilities.getUuid();
+
+  const candidateNumber =
+    existing['№'] ||
+    getNextNumber_(
+      APP_CONFIG.SHEETS.CANDIDATES,
+      '№'
     );
 
-    resumeUrl = uploaded.url;
-    resumeFileId = uploaded.id;
+  const folderInfo =
+    ensureCandidateFolder_(
+      candidateId,
+      fullName,
+      existing[
+        'Папка кандидата'
+      ]
+    );
+
+  let resumeVersions =
+    parseJson_(
+      existing['Версии резюме'],
+      []
+    );
+
+  if (
+    !resumeVersions.length &&
+    existing['Резюме']
+  ) {
+    resumeVersions = [
+      {
+        id:
+          existing[
+            'Resume File ID'
+          ] || '',
+        url:
+          existing['Резюме'],
+        name: 'Резюме',
+        uploadedAt:
+          existing[
+            'Дата добавления'
+          ] || ''
+      }
+    ];
   }
 
-  if (isNew && !resumeUrl) {
-    throw new Error('Резюме обязательно.');
+  if (payload.resumeFile) {
+    const uploaded =
+      saveResumeFile_(
+        folderInfo.folder,
+        payload.resumeFile
+      );
+
+    resumeVersions = [
+      uploaded,
+      ...resumeVersions
+    ];
   }
+
+  if (
+    isNew &&
+    !resumeVersions.length
+  ) {
+    throw new Error(
+      'Резюме обязательно.'
+    );
+  }
+
+  const latestResume =
+    resumeVersions[0] || {};
 
   const now = formatNow_();
 
   const candidate = {
     ...existing,
     'ID': candidateId,
+    '№': candidateNumber,
     'Фамилия': lastName,
     'Имя': firstName,
     'Отчество': middleName,
     'ФИО': fullName,
-    'Vacancy ID': payload.vacancyId,
-    'Вакансия': vacancy['Вакансия'],
-    'Статус': candidateStatus,
-    'Телефон': normalizeKzPhone_(payload.phone),
-    'Email': validateEmail_(payload.email),
-    'Telegram': telegram.display,
-    'Telegram URL': telegram.url,
-    'Source ID': source ? source['Source ID'] : '',
-    'Источник': source ? source['Название'] : '',
-    'Зарплатные ожидания': normalizeMoney_(payload.salary),
-    'Responsible ID': responsible['Responsible ID'],
-    'Ответственный': responsible['ФИО'],
-    'Резюме': resumeUrl,
-    'Resume File ID': resumeFileId,
-    'Папка кандидата': folderInfo.url,
-    'Комментарий': String(payload.comment || '').trim(),
-    'Иные ссылки': stringifyJson_(links),
-    'Дата добавления': existing['Дата добавления'] || now,
+    'Vacancy ID': vacancyId,
+    'Вакансия':
+      vacancy['Вакансия'],
+    'Статус':
+      candidateStatus,
+    'Телефон':
+      normalizeKzPhone_(
+        payload.phone !== undefined
+          ? payload.phone
+          : existing['Телефон']
+      ),
+    'Email':
+      validateEmail_(
+        payload.email !== undefined
+          ? payload.email
+          : existing['Email']
+      ),
+    'Telegram':
+      telegram.display,
+    'Telegram URL':
+      telegram.url,
+    'LinkedIn':
+      linkedin,
+    'GitHub':
+      github,
+    'Source ID':
+      source
+        ? source['Source ID']
+        : '',
+    'Источник':
+      source
+        ? source['Название']
+        : '',
+    'Зарплатные ожидания':
+      salary,
+    'Responsible ID':
+      responsible[
+        'Responsible ID'
+      ],
+    'Ответственный':
+      responsible['ФИО'],
+    'Резюме':
+      latestResume.url || '',
+    'Resume File ID':
+      latestResume.id || '',
+    'Версии резюме':
+      stringifyJson_(
+        resumeVersions
+      ),
+    'Папка кандидата':
+      folderInfo.url,
+    'Комментарий':
+      String(
+        payload.comment !== undefined
+          ? payload.comment || ''
+          : existing[
+              'Комментарий'
+            ] || ''
+      ).trim(),
+    'Иные ссылки':
+      stringifyJson_(links),
+    'Дата добавления':
+      existing[
+        'Дата добавления'
+      ] || now,
     'Дата изменения': now,
-    'Архивирован': existing['Архивирован'] || false,
-    'Дата архивации': existing['Дата архивации'] || '',
-    'Причина отказа': existing['Причина отказа'] || ''
+    'Архивирован':
+      String(
+        existing[
+          'Архивирован'
+        ] || ''
+      ).toLowerCase() ===
+      'true',
+    'Дата архивации':
+      existing[
+        'Дата архивации'
+      ] || '',
+    'Причина отказа':
+      existing[
+        'Причина отказа'
+      ] || ''
   };
 
-  const row = headers.map(header =>
-    candidate[header] !== undefined
-      ? candidate[header]
-      : ''
+  const row = headers.map(
+    header =>
+      candidate[header] !==
+      undefined
+        ? candidate[header]
+        : ''
   );
 
   if (rowIndex > 0) {
     sheet
-      .getRange(rowIndex, 1, 1, headers.length)
+      .getRange(
+        rowIndex,
+        1,
+        1,
+        headers.length
+      )
       .setValues([row]);
   } else {
     sheet.appendRow(row);
@@ -237,9 +513,14 @@ function saveCandidate(payload) {
     candidate: {
       ...candidate,
       links,
+      resumeVersions,
       archived:
-        String(candidate['Архивирован'] || '')
-          .toLowerCase() === 'true'
+        String(
+          candidate[
+            'Архивирован'
+          ] || ''
+        ).toLowerCase() ===
+        'true'
     }
   };
 }
@@ -247,27 +528,47 @@ function saveCandidate(payload) {
 
 function validateCandidate_(payload) {
   if (!payload) {
-    throw new Error('Пустые данные кандидата.');
+    throw new Error(
+      'Пустые данные кандидата.'
+    );
   }
 
-  if (!normalizeNamePart_(payload.lastName)) {
-    throw new Error('Фамилия обязательна.');
+  if (
+    !normalizeNamePart_(
+      payload.lastName
+    )
+  ) {
+    throw new Error(
+      'Фамилия обязательна.'
+    );
   }
 
-  if (!normalizeNamePart_(payload.firstName)) {
-    throw new Error('Имя обязательно.');
+  if (
+    !normalizeNamePart_(
+      payload.firstName
+    )
+  ) {
+    throw new Error(
+      'Имя обязательно.'
+    );
   }
 
   if (!payload.vacancyId) {
-    throw new Error('Вакансия обязательна.');
+    throw new Error(
+      'Вакансия обязательна.'
+    );
   }
 
   if (!payload.phone) {
-    throw new Error('Телефон обязателен.');
+    throw new Error(
+      'Телефон обязателен.'
+    );
   }
 
   if (!payload.responsibleId) {
-    throw new Error('Ответственный обязателен.');
+    throw new Error(
+      'Ответственный обязателен.'
+    );
   }
 }
 
@@ -277,24 +578,32 @@ function ensureCandidateFolder_(
   fullName,
   existingUrl
 ) {
-  const config = getRuntimeConfig_();
-  const root = DriveApp.getFolderById(
-    config.candidatesFolderId
-  );
+  const config =
+    getRuntimeConfig_();
+
+  const root =
+    DriveApp.getFolderById(
+      config.candidatesFolderId
+    );
 
   if (existingUrl) {
-    const match = String(existingUrl)
-      .match(/\/folders\/([A-Za-z0-9_-]+)/);
+    const match =
+      String(existingUrl)
+        .match(
+          /\/folders\/([A-Za-z0-9_-]+)/
+        );
 
     if (match) {
       try {
-        const folder = DriveApp.getFolderById(
-          match[1]
-        );
+        const folder =
+          DriveApp.getFolderById(
+            match[1]
+          );
 
         return {
           folder,
-          url: folder.getUrl()
+          url:
+            folder.getUrl()
         };
       } catch (error) {
         // Recreate below.
@@ -302,11 +611,15 @@ function ensureCandidateFolder_(
     }
   }
 
-  const safeName = String(
-    fullName || 'Кандидат'
-  )
-    .trim()
-    .replace(/[\\/:*?"<>|]/g, '_');
+  const safeName =
+    String(
+      fullName || 'Кандидат'
+    )
+      .trim()
+      .replace(
+        /[\\/:*?"<>|]/g,
+        '_'
+      );
 
   const uniqueNumber =
     String(candidateId)
@@ -315,50 +628,92 @@ function ensureCandidateFolder_(
       .toUpperCase();
 
   const folderName =
-    safeName + ' - ' + uniqueNumber;
+    safeName +
+    ' - ' +
+    uniqueNumber;
 
   const existing =
-    root.getFoldersByName(folderName);
+    root.getFoldersByName(
+      folderName
+    );
 
   const folder =
     existing.hasNext()
       ? existing.next()
-      : root.createFolder(folderName);
+      : root.createFolder(
+          folderName
+        );
 
   return {
     folder,
-    url: folder.getUrl()
+    url:
+      folder.getUrl()
   };
 }
 
 
-function saveResumeFile_(folder, file) {
-  const bytes = Utilities.base64Decode(
-    file.base64
-  );
+function saveResumeFile_(
+  folder,
+  file
+) {
+  const bytes =
+    Utilities.base64Decode(
+      file.base64
+    );
 
-  if (bytes.length > APP_CONFIG.MAX_RESUME_BYTES) {
+  if (
+    bytes.length >
+    APP_CONFIG.MAX_RESUME_BYTES
+  ) {
     throw new Error(
       'Размер резюме не должен превышать 10 МБ.'
     );
   }
 
-  const blob = Utilities.newBlob(
-    bytes,
-    file.mimeType || 'application/octet-stream',
-    file.name || 'resume'
-  );
+  const now = formatNow_();
 
-  const saved = folder.createFile(blob);
+  const originalName =
+    String(
+      file.name ||
+      'resume'
+    ).trim();
+
+  const versionedName =
+    now
+      .replace(
+        /[: ]/g,
+        '-'
+      ) +
+    ' - ' +
+    originalName;
+
+  const blob =
+    Utilities.newBlob(
+      bytes,
+      file.mimeType ||
+        'application/octet-stream',
+      versionedName
+    );
+
+  const saved =
+    folder.createFile(blob);
 
   return {
-    id: saved.getId(),
-    url: saved.getUrl()
+    id:
+      saved.getId(),
+    url:
+      saved.getUrl(),
+    name:
+      originalName,
+    uploadedAt:
+      now
   };
 }
 
 
-function getAllowedTransitions(candidateId) {
+function getAllowedTransitions(
+  candidateId
+) {
   const candidate = findById_(
     APP_CONFIG.SHEETS.CANDIDATES,
     'ID',
@@ -366,12 +721,17 @@ function getAllowedTransitions(candidateId) {
   );
 
   if (!candidate) {
-    throw new Error('Кандидат не найден.');
+    throw new Error(
+      'Кандидат не найден.'
+    );
   }
 
   if (
-    String(candidate['Архивирован'])
-      .toLowerCase() === 'true'
+    String(
+      candidate[
+        'Архивирован'
+      ]
+    ).toLowerCase() === 'true'
   ) {
     return [];
   }
@@ -384,7 +744,9 @@ function getAllowedTransitions(candidateId) {
 }
 
 
-function archiveCandidate(candidateId) {
+function archiveCandidate(
+  candidateId
+) {
   const sheet = getSheet_(
     APP_CONFIG.SHEETS.CANDIDATES
   );
@@ -396,27 +758,42 @@ function archiveCandidate(candidateId) {
   );
 
   if (found.rowIndex < 0) {
-    throw new Error('Кандидат не найден.');
+    throw new Error(
+      'Кандидат не найден.'
+    );
   }
 
-  const candidate = objectFromRow_(
-    found.headers,
-    found.values
-  );
+  const candidate =
+    objectFromRow_(
+      found.headers,
+      found.values
+    );
 
   const now = formatNow_();
 
-  candidate['Статус'] = 'Отказ';
-  candidate['Архивирован'] = true;
-  candidate['Дата архивации'] = now;
-  candidate['Причина отказа'] = 'Архивация';
-  candidate['Дата изменения'] = now;
+  candidate['Статус'] =
+    'Отказ';
 
-  const row = found.headers.map(header =>
-    candidate[header] !== undefined
-      ? candidate[header]
-      : ''
-  );
+  candidate['Архивирован'] =
+    true;
+
+  candidate['Дата архивации'] =
+    now;
+
+  candidate['Причина отказа'] =
+    'Архивация';
+
+  candidate['Дата изменения'] =
+    now;
+
+  const row =
+    found.headers.map(
+      header =>
+        candidate[header] !==
+        undefined
+          ? candidate[header]
+          : ''
+    );
 
   sheet
     .getRange(
