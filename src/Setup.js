@@ -131,6 +131,20 @@ function ensureSchema_() {
     'Дата удаления'
   ];
 
+  schemas[APP_CONFIG.SHEETS.CANDIDATE_DRAFTS] = [
+    'Draft ID',
+    'Token',
+    'Данные',
+    'Resume File ID',
+    'Resume File Name',
+    'Resume File URL',
+    'Дата создания',
+    'Срок действия',
+    'Использован',
+    'Дата использования',
+    'Candidate ID'
+  ];
+
   schemas[APP_CONFIG.SHEETS.DICTS] = [
     'Статусы кандидата',
     'Статусы вакансии'
