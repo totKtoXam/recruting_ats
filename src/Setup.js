@@ -1,5 +1,6 @@
 function setupApplication() {
   ensureSchema_();
+  ensureSpreadsheetMenuTrigger_();
 
   return {
     ok: true,
