@@ -110,8 +110,8 @@ async function runUiTask({button=null,formId=null,pageId=null}={},task){
     showToast(error&&error.message?error.message:String(error),'error');
     throw error;
   }finally{
-    setButtonLoading(button,false);
     setFormLoading(formId,false);
+    setButtonLoading(button,false);
     setPageLoading(pageId,false);
   }
 }
@@ -408,7 +408,7 @@ function openCandidate(candidate){
   el('candidatePhone').value=candidate?candidate['Телефон']||'':'+7 ';
   el('candidateEmail').value=candidate?candidate['Email']||'':'';
   el('candidateTelegram').value=candidate?candidate['Telegram']||'':'';
-  el('candidateSalary').value=candidate?formatMoney(c['Зарплатные ожидания']):'';
+  el('candidateSalary').value=candidate?formatMoney(candidate['Зарплатные ожидания']):'';
   el('candidateComment').value=candidate?candidate['Комментарий']||'':'';
   el('candidateTitle').textContent=isNew?'Новый кандидат':fullNameOf(candidate);
 
