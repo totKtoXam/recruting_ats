@@ -22,157 +22,135 @@ let pendingTransition=null;
 let currentInterviews=[];
 let editingInterview=null;
 let confirmResolver=null;
-let currentRoute='candidates';
-
 const collapsedColumns=new Set();
 
-function el(id){
-  return document.getElementById(id);
-}
+function el(id){return document.getElementById(id)}
+function value(id){return el(id).value}
+function escapeHtml(v){return String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&#039;")}
+function escJs(v){return String(v??'').replaceAll('\\','\\\\').replaceAll("'","\\'")}
+function option(v,label,selected){return '<option value="'+escapeHtml(v)+'"'+(selected?' selected':'')+'>'+escapeHtml(label)+'</option>'}
 
-function value(id){
-  return el(id).value;
-}
-
-function escapeHtml(v){
-  return String(v??'')
-    .replaceAll('&','&amp;')
-    .replaceAll('<','&lt;')
-    .replaceAll('>','&gt;')
-    .replaceAll('"','&quot;')
-    .replaceAll("'","&#039;");
-}
-
-function escJs(v){
-  return String(v??'')
-    .replaceAll('\\','\\\\')
-    .replaceAll("'","\\'");
-}
-
-function option(value,label,selected){
-  return (
-    '<option value="'+
-    escapeHtml(value)+
-    '"'+
-    (selected?' selected':'')+
-    '>'+
-    escapeHtml(label)+
-    '</option>'
-  );
-}
-
-function setLoading(v){
-  el('loading')
-    .classList
-    .toggle('active',!!v);
-}
-
-function showToast(message,type='info'){
-  const toast=el('toast');
-
-  toast.textContent=message;
-  toast.className=
-    'toast active '+
-    (type==='error'
-      ? 'toast-error'
-      : 'toast-success');
-
-  clearTimeout(showToast.timer);
-
-  showToast.timer=setTimeout(()=>{
-    toast.className='toast';
-  },3500);
-}
-
-function handleError(error){
-  setLoading(false);
-
-  showToast(
-    error&&error.message
-      ? error.message
-      : String(error),
-    'error'
-  );
-}
-
-function showConfirm(
-  message,
-  title='Подтверждение'
-){
-  el('confirmTitle').textContent=title;
-  el('confirmMessage').textContent=message;
-
-  el('confirmModal')
-    .classList
-    .add('open');
-
-  return new Promise(resolve=>{
-    confirmResolver=resolve;
+function rpc(name,args){
+  return new Promise((resolve,reject)=>{
+    let runner=google.script.run
+      .withSuccessHandler(resolve)
+      .withFailureHandler(reject);
+    if(args===undefined)runner[name]();
+    else runner[name](args);
   });
 }
 
-function closeConfirm(result){
-  el('confirmModal')
-    .classList
-    .remove('open');
+function showToast(message,type='success'){
+  const toast=el('toast');
+  toast.textContent=message;
+  toast.className='toast active '+(type==='error'?'toast-error':'toast-success');
+  clearTimeout(showToast.timer);
+  showToast.timer=setTimeout(()=>toast.className='toast',3200);
+}
 
+function showConfirm(message,title='Подтверждение'){
+  el('confirmTitle').textContent=title;
+  el('confirmMessage').textContent=message;
+  el('confirmModal').classList.add('open');
+  return new Promise(resolve=>confirmResolver=resolve);
+}
+
+function closeConfirm(result){
+  el('confirmModal').classList.remove('open');
   if(confirmResolver){
     confirmResolver(result);
     confirmResolver=null;
   }
 }
 
-function call(
-  name,
-  args,
-  onSuccess
-){
-  setLoading(true);
-
-  const runner=
-    google.script.run
-      .withFailureHandler(handleError)
-      .withSuccessHandler(result=>{
-        setLoading(false);
-
-        if(onSuccess){
-          onSuccess(result);
-        }
-      });
-
-  if(args===undefined){
-    runner[name]();
+function setButtonLoading(button,busy){
+  if(!button)return;
+  if(busy){
+    if(!button.dataset.originalHtml)button.dataset.originalHtml=button.innerHTML;
+    button.disabled=true;
+    button.classList.add('is-loading');
+    button.innerHTML='<span class="spinner"></span><span>Загрузка…</span>';
   }else{
-    runner[name](args);
+    button.disabled=false;
+    button.classList.remove('is-loading');
+    if(button.dataset.originalHtml){
+      button.innerHTML=button.dataset.originalHtml;
+      delete button.dataset.originalHtml;
+    }
   }
 }
 
-function backgroundCall(
-  name,
-  args,
-  onSuccess
-){
-  const runner=
-    google.script.run
-      .withFailureHandler(error=>{
-        showToast(
-          error&&error.message
-            ? error.message
-            : String(error),
-          'error'
-        );
-      })
-      .withSuccessHandler(result=>{
-        if(onSuccess){
-          onSuccess(result);
-        }
-      });
+function setFormLoading(formId,busy){
+  const form=typeof formId==='string'?el(formId):formId;
+  if(!form)return;
+  form.classList.toggle('is-busy',busy);
+  form.querySelectorAll('input,select,textarea,button').forEach(node=>{
+    if(busy){
+      node.dataset.wasDisabled=node.disabled?'1':'0';
+      node.disabled=true;
+    }else if(node.dataset.wasDisabled!==undefined){
+      node.disabled=node.dataset.wasDisabled==='1';
+      delete node.dataset.wasDisabled;
+    }
+  });
+}
 
-  if(args===undefined){
-    runner[name]();
-  }else{
-    runner[name](args);
+function setPageLoading(pageId,busy){
+  const page=el(pageId);
+  if(page)page.classList.toggle('is-refreshing',busy);
+}
+
+async function runUiTask({button=null,formId=null,pageId=null}={},task){
+  setButtonLoading(button,true);
+  setFormLoading(formId,true);
+  setPageLoading(pageId,true);
+  try{
+    return await task();
+  }catch(error){
+    showToast(error&&error.message?error.message:String(error),'error');
+    throw error;
+  }finally{
+    setButtonLoading(button,false);
+    setFormLoading(formId,false);
+    setPageLoading(pageId,false);
   }
+}
+
+function statusKey(status){
+  const map={
+    'Новый':'new',
+    'HR screening':'hr',
+    'Техническое интервью':'tech',
+    'Финальное интервью':'final',
+    'Offer':'offer',
+    'Hired':'hired',
+    'Отказ':'rejected'
+  };
+  return map[status]||'neutral';
+}
+
+function vacancyStatusKey(status){
+  const map={'Открыта':'open','На паузе':'paused','Закрыта':'closed'};
+  return map[status]||'neutral';
+}
+
+function statusChip(status,small=false){
+  return '<span class="status-chip status-'+statusKey(status)+(small?' small':'')+'">'+escapeHtml(status||'—')+'</span>';
+}
+
+function vacancyStatusChip(status){
+  return '<span class="status-chip vacancy-'+vacancyStatusKey(status)+' small">'+escapeHtml(status||'—')+'</span>';
+}
+
+function syncIcon(sync){
+  if(sync==='pending')return '<span class="sync-cell pending" title="Синхронизация"><span class="spinner spinner-dark"></span></span>';
+  if(sync==='success')return '<span class="sync-cell success" title="Сохранено">✓</span>';
+  if(sync==='error')return '<span class="sync-cell error" title="Ошибка">!</span>';
+  return '<span class="sync-cell idle">•</span>';
+}
+
+function fullNameOf(item){
+  return [item['Фамилия'],item['Имя'],item['Отчество']].filter(Boolean).join(' ') || item['ФИО'] || '';
 }
 
 function init(){
@@ -182,1563 +160,458 @@ function init(){
 }
 
 function initRouter(){
-  window.addEventListener(
-    'hashchange',
-    applyRoute
-  );
-
+  window.addEventListener('hashchange',applyRoute);
   if(!location.hash){
-    const initial=
-      window.__INITIAL_ROUTE__==='admin'
-        ? 'admin'
-        : 'candidates';
-
-    history.replaceState(
-      null,
-      '',
-      '#/'+initial
-    );
+    history.replaceState(null,'','#/'+(window.__INITIAL_ROUTE__==='admin'?'admin':'candidates'));
   }
-
   applyRoute();
 }
 
 function navigateTo(route){
-  const next=
-    route==='admin'
-      ? 'admin'
-      : 'candidates';
-
-  if(location.hash==='#/'+next){
-    applyRoute();
-    return;
-  }
-
-  location.hash='#/'+next;
+  location.hash='#/'+(route==='admin'?'admin':'candidates');
 }
 
 function applyRoute(){
-  const route=
-    location.hash==='#/admin'
-      ? 'admin'
-      : 'candidates';
-
-  currentRoute=route;
-
-  el('viewCandidates').hidden=
-    route!=='candidates';
-
-  el('viewAdmin').hidden=
-    route!=='admin';
-
-  el('addCandidateTop').hidden=
-    route!=='candidates';
-
-  el('navCandidates')
-    .classList
-    .toggle(
-      'nav-active',
-      route==='candidates'
-    );
-
-  el('navAdmin')
-    .classList
-    .toggle(
-      'nav-active',
-      route==='admin'
-    );
-
-  if(route==='admin' &&
-     typeof renderAdminAll==='function'){
-    renderAdminAll();
-  }
+  const route=location.hash==='#/admin'?'admin':'candidates';
+  el('viewCandidates').hidden=route!=='candidates';
+  el('viewAdmin').hidden=route!=='admin';
+  el('navCandidates').classList.toggle('nav-active',route==='candidates');
+  el('navAdmin').classList.toggle('nav-active',route==='admin');
+  if(route==='admin'&&typeof renderAdminAll==='function')renderAdminAll();
 }
 
 function renderInitialShell(){
-  el('stats').innerHTML=
-    '<div class="stat skeleton-card">'+
-    '<span>Загрузка</span><b>…</b></div>';
-
-  el('board').innerHTML=
-    '<div class="board-placeholder">'+
-    'Кандидаты загружаются в фоне…'+
-    '</div>';
-
+  el('stats').innerHTML='<div class="stat skeleton-card"><span>Загрузка</span><b>…</b></div>';
+  el('board').innerHTML='<div class="board-placeholder">Кандидаты загружаются в фоне…</div>';
   updateSyncStatus();
 }
 
 function preloadAllData(){
-  backgroundCall(
-    'getReferenceData',
-    undefined,
-    data=>{
-      state.vacancies=
-        data.vacancies||[];
+  rpc('getReferenceData').then(data=>{
+    Object.assign(state,{
+      vacancies:data.vacancies||[],
+      sources:data.sources||[],
+      responsibles:data.responsibles||[],
+      interviewTemplates:data.interviewTemplates||[],
+      dictionaries:data.dictionaries||{},
+      transitions:data.transitions||{},
+      pipelineStatuses:data.pipelineStatuses||[]
+    });
+    state.loaded.references=true;
+    populateGlobalFilters();
+    render();
+    if(typeof renderAdminAll==='function')renderAdminAll();
+    updateSyncStatus();
+  }).catch(e=>showToast(e.message||String(e),'error'));
 
-      state.sources=
-        data.sources||[];
+  rpc('getCandidateData').then(data=>{
+    state.candidates=data.candidates||[];
+    state.stats=data.stats||{};
+    state.loaded.candidates=true;
+    populateGlobalFilters();
+    render();
+    updateSyncStatus();
+  }).catch(e=>showToast(e.message||String(e),'error'));
 
-      state.responsibles=
-        data.responsibles||[];
-
-      state.interviewTemplates=
-        data.interviewTemplates||[];
-
-      state.dictionaries=
-        data.dictionaries||{};
-
-      state.transitions=
-        data.transitions||{};
-
-      state.pipelineStatuses=
-        data.pipelineStatuses||[];
-
-      state.loaded.references=true;
-
-      populateGlobalFilters();
-      render();
-
-      if(typeof renderAdminAll==='function'){
-        renderAdminAll();
-      }
-
-      updateSyncStatus();
-    }
-  );
-
-  backgroundCall(
-    'getCandidateData',
-    undefined,
-    data=>{
-      state.candidates=
-        data.candidates||[];
-
-      state.stats=
-        data.stats||{};
-
-      state.loaded.candidates=true;
-
-      populateGlobalFilters();
-      render();
-      updateSyncStatus();
-    }
-  );
-
-  backgroundCall(
-    'getAllInterviews',
-    undefined,
-    data=>{
-      state.interviews=
-        data||[];
-
-      state.loaded.interviews=true;
-
-      if(currentCandidate){
-        setCurrentInterviews(
-          currentCandidate.ID
-        );
-      }
-
-      updateSyncStatus();
-    }
-  );
+  rpc('getAllInterviews').then(data=>{
+    state.interviews=data||[];
+    state.loaded.interviews=true;
+    if(currentCandidate)setCurrentInterviews(currentCandidate.ID);
+    updateSyncStatus();
+  }).catch(e=>showToast(e.message||String(e),'error'));
 }
 
 function updateSyncStatus(){
-  const loaded=
-    Object.values(state.loaded)
-      .filter(Boolean)
-      .length;
-
-  const total=
-    Object.keys(state.loaded)
-      .length;
-
-  const status=el('dataSyncStatus');
-
-  if(loaded===total){
-    status.textContent='Данные загружены';
-    status.classList.add('sync-ready');
-    return;
-  }
-
-  status.textContent=
-    'Загрузка данных '+
-    loaded+
-    '/'+
-    total;
-
-  status.classList.remove('sync-ready');
+  const loaded=Object.values(state.loaded).filter(Boolean).length;
+  const total=Object.keys(state.loaded).length;
+  const node=el('dataSyncStatus');
+  node.textContent=loaded===total?'Данные синхронизированы':'Загрузка данных '+loaded+'/'+total;
+  node.classList.toggle('sync-ready',loaded===total);
 }
 
-function refreshReferences(after){
-  backgroundCall(
-    'getReferenceData',
-    undefined,
-    data=>{
-      state.vacancies=
-        data.vacancies||[];
-
-      state.sources=
-        data.sources||[];
-
-      state.responsibles=
-        data.responsibles||[];
-
-      state.interviewTemplates=
-        data.interviewTemplates||[];
-
-      state.dictionaries=
-        data.dictionaries||{};
-
-      state.transitions=
-        data.transitions||{};
-
-      state.pipelineStatuses=
-        data.pipelineStatuses||[];
-
-      state.loaded.references=true;
-
-      populateGlobalFilters();
-
-      if(typeof renderAdminAll==='function'){
-        renderAdminAll();
-      }
-
-      renderBoard();
-
-      if(after){
-        after();
-      }
-    }
-  );
+async function refreshReferences(){
+  const data=await rpc('getReferenceData');
+  state.vacancies=data.vacancies||[];
+  state.sources=data.sources||[];
+  state.responsibles=data.responsibles||[];
+  state.interviewTemplates=data.interviewTemplates||[];
+  state.dictionaries=data.dictionaries||{};
+  state.transitions=data.transitions||{};
+  state.pipelineStatuses=data.pipelineStatuses||[];
+  state.loaded.references=true;
+  populateGlobalFilters();
+  renderBoard();
+  if(typeof renderAdminAll==='function')renderAdminAll();
 }
 
-function refreshCandidates(after){
-  backgroundCall(
-    'getCandidateData',
-    undefined,
-    data=>{
-      state.candidates=
-        data.candidates||[];
-
-      state.stats=
-        data.stats||{};
-
-      state.loaded.candidates=true;
-
-      populateGlobalFilters();
-      render();
-
-      if(after){
-        after();
-      }
-    }
-  );
+async function refreshCandidates(){
+  const data=await rpc('getCandidateData');
+  state.candidates=data.candidates||[];
+  state.stats=data.stats||{};
+  state.loaded.candidates=true;
+  populateGlobalFilters();
+  render();
 }
 
-function refreshInterviews(after){
-  backgroundCall(
-    'getAllInterviews',
-    undefined,
-    data=>{
-      state.interviews=
-        data||[];
-
-      state.loaded.interviews=true;
-
-      if(currentCandidate){
-        setCurrentInterviews(
-          currentCandidate.ID
-        );
-      }
-
-      if(after){
-        after();
-      }
-    }
-  );
+async function refreshInterviews(){
+  state.interviews=await rpc('getAllInterviews')||[];
+  state.loaded.interviews=true;
+  if(currentCandidate)setCurrentInterviews(currentCandidate.ID);
 }
 
-function refreshAll(after){
-  let remaining=3;
-
-  const done=()=>{
-    remaining--;
-
-    if(remaining===0 && after){
-      after();
-    }
-  };
-
-  refreshReferences(done);
-  refreshCandidates(done);
-  refreshInterviews(done);
+async function refreshAll(){
+  await Promise.all([refreshReferences(),refreshCandidates(),refreshInterviews()]);
+  updateSyncStatus();
 }
 
-function getStatuses(){
-  return state.pipelineStatuses||[];
+async function refreshCandidatesPage(button){
+  await runUiTask({button,pageId:'viewCandidates'},async()=>{
+    await refreshAll();
+    showToast('Данные кандидатов обновлены.');
+  }).catch(()=>{});
 }
 
-function activeVacancies(){
-  return state.vacancies.filter(
-    vacancy=>
-      vacancy['Статус']==='Открыта'
-  );
-}
-
-function responsiblesFor(stage){
-  return state.responsibles.filter(
-    responsible=>
-      (responsible.stages||[])
-        .includes(stage)
-  );
-}
+function getStatuses(){return state.pipelineStatuses||[]}
+function activeVacancies(){return state.vacancies.filter(v=>v['Статус']==='Открыта')}
+function responsiblesFor(stage){return state.responsibles.filter(r=>(r.stages||[]).includes(stage))}
 
 function populateGlobalFilters(){
-  if(!el('filterVacancy')){
-    return;
-  }
-
-  const old={
-    vacancy:value('filterVacancy'),
-    responsible:value('filterResponsible'),
-    source:value('filterSource')
-  };
-
-  el('filterVacancy').innerHTML=
-    option('','Все вакансии')+
-    state.vacancies
-      .map(item=>
-        option(
-          item['Vacancy ID'],
-          item['Вакансия'],
-          item['Vacancy ID']===
-            old.vacancy
-        )
-      )
-      .join('');
-
-  el('filterResponsible').innerHTML=
-    option('','Все ответственные')+
-    state.responsibles
-      .map(item=>
-        option(
-          item['Responsible ID'],
-          item['ФИО'],
-          item['Responsible ID']===
-            old.responsible
-        )
-      )
-      .join('');
-
-  el('filterSource').innerHTML=
-    option('','Все источники')+
-    state.sources
-      .map(item=>
-        option(
-          item['Source ID'],
-          item['Название'],
-          item['Source ID']===
-            old.source
-        )
-      )
-      .join('');
+  if(!el('filterVacancy'))return;
+  const old={v:value('filterVacancy'),r:value('filterResponsible'),s:value('filterSource')};
+  el('filterVacancy').innerHTML=option('','Все вакансии')+state.vacancies.map(v=>option(v['Vacancy ID'],v['Вакансия'],v['Vacancy ID']===old.v)).join('');
+  el('filterResponsible').innerHTML=option('','Все ответственные')+state.responsibles.map(r=>option(r['Responsible ID'],fullNameOf(r),r['Responsible ID']===old.r)).join('');
+  el('filterSource').innerHTML=option('','Все источники')+state.sources.map(s=>option(s['Source ID'],s['Название'],s['Source ID']===old.s)).join('');
 }
 
-function render(){
-  renderStats();
-  renderBoard();
-}
+function render(){renderStats();renderBoard()}
 
 function renderStats(){
-  const stats=state.stats||{};
-
-  if(!state.loaded.candidates){
-    return;
-  }
-
+  if(!state.loaded.candidates)return;
+  const s=state.stats||{};
   el('stats').innerHTML=
-    '<div class="stat">'+
-      '<span>Активные</span>'+
-      '<b>'+(stats.total||0)+'</b>'+
-    '</div>'+
-    '<div class="stat">'+
-      '<span>Архив</span>'+
-      '<b>'+(stats.archived||0)+'</b>'+
-    '</div>'+
-    Object
-      .entries(stats.byStatus||{})
-      .map(([status,count])=>
-        '<div class="stat">'+
-          '<span>'+escapeHtml(status)+'</span>'+
-          '<b>'+count+'</b>'+
-        '</div>'
-      )
-      .join('');
+    '<div class="stat stat-main"><span>Активные</span><b>'+(s.total||0)+'</b></div>'+
+    '<div class="stat"><span>Архив</span><b>'+(s.archived||0)+'</b></div>'+
+    Object.entries(s.byStatus||{}).map(([status,count])=>
+      '<div class="stat stat-status status-bg-'+statusKey(status)+'"><span>'+escapeHtml(status)+'</span><b>'+count+'</b></div>'
+    ).join('');
 }
 
 function filteredCandidates(){
-  const q=
-    value('filterSearch')
-      .trim()
-      .toLowerCase();
-
-  const vacancy=
-    value('filterVacancy');
-
-  const responsible=
-    value('filterResponsible');
-
-  const source=
-    value('filterSource');
-
-  const archived=
-    el('filterArchived').checked;
-
-  return state.candidates.filter(
-    candidate=>{
-      if(
-        archived!==
-        !!candidate.archived
-      ){
-        return false;
-      }
-
-      if(
-        vacancy &&
-        candidate['Vacancy ID']!==vacancy
-      ){
-        return false;
-      }
-
-      if(
-        responsible &&
-        candidate['Responsible ID']!==
-          responsible
-      ){
-        return false;
-      }
-
-      if(
-        source &&
-        candidate['Source ID']!==source
-      ){
-        return false;
-      }
-
-      if(q){
-        const haystack=[
-          candidate['ФИО'],
-          candidate['Телефон'],
-          candidate['Email'],
-          candidate['Telegram'],
-          candidate['Вакансия'],
-          candidate['Ответственный']
-        ]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase();
-
-        if(!haystack.includes(q)){
-          return false;
-        }
-      }
-
-      return true;
+  const q=value('filterSearch').trim().toLowerCase();
+  const vacancy=value('filterVacancy'),responsible=value('filterResponsible'),source=value('filterSource');
+  const archived=el('filterArchived').checked;
+  return state.candidates.filter(c=>{
+    if(archived!==!!c.archived)return false;
+    if(vacancy&&c['Vacancy ID']!==vacancy)return false;
+    if(responsible&&c['Responsible ID']!==responsible)return false;
+    if(source&&c['Source ID']!==source)return false;
+    if(q){
+      const h=[fullNameOf(c),c['Телефон'],c['Email'],c['Telegram'],c['Вакансия'],c['Ответственный']].filter(Boolean).join(' ').toLowerCase();
+      if(!h.includes(q))return false;
     }
-  );
+    return true;
+  });
 }
 
 function renderBoard(){
-  if(!state.loaded.candidates ||
-     !state.loaded.references){
-    return;
-  }
+  if(!state.loaded.candidates||!state.loaded.references)return;
+  const archived=el('filterArchived').checked;
+  const statuses=archived?['Отказ']:getStatuses();
+  const candidates=filteredCandidates();
 
-  const archived=
-    el('filterArchived').checked;
-
-  const statuses=
-    archived
-      ? ['Отказ']
-      : getStatuses();
-
-  const candidates=
-    filteredCandidates();
-
-  el('board').innerHTML=
-    statuses
-      .map(status=>{
-        const list=
-          candidates.filter(
-            candidate=>
-              candidate['Статус']===
-                status
-          );
-
-        const collapsed=
-          collapsedColumns.has(status);
-
-        return (
-          '<section class="column '+
-          (collapsed?'collapsed':'')+
-          '" data-status="'+
-          escapeHtml(status)+
-          '" ondragover="dragOver(event)" '+
-          'ondragleave="dragLeave(event)" '+
-          'ondrop="dropCandidate(event)">'+
-
-            '<div class="column-title">'+
-              '<span>'+
-                escapeHtml(status)+
-                ' ('+list.length+')'+
-              '</span>'+
-              '<button class="icon-button" '+
-                'onclick="event.stopPropagation();'+
-                'toggleColumn(\''+
-                escJs(status)+
-                '\')">'+
-                (collapsed?'›':'‹')+
-              '</button>'+
-            '</div>'+
-
-            '<div class="cards">'+
-              list
-                .map(renderCard)
-                .join('')+
-            '</div>'+
-          '</section>'
-        );
-      })
-      .join('');
+  el('board').innerHTML=statuses.map(status=>{
+    const list=candidates.filter(c=>c['Статус']===status);
+    const collapsed=collapsedColumns.has(status);
+    return '<section class="column column-'+statusKey(status)+' '+(collapsed?'collapsed':'')+'" data-status="'+escapeHtml(status)+'" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropCandidate(event)">'+
+      '<div class="column-title"><div>'+statusChip(status,true)+'<span class="column-count">'+list.length+'</span></div>'+
+      '<button class="icon-button" onclick="event.stopPropagation();toggleColumn(\''+escJs(status)+'\')">'+(collapsed?'›':'‹')+'</button></div>'+
+      '<div class="cards">'+list.map(renderCard).join('')+'</div></section>';
+  }).join('');
 }
 
-function renderCard(candidate){
-  return (
-    '<article class="candidate-card" '+
-      'draggable="'+
-      (!candidate.archived)+
-      '" data-id="'+
-      escapeHtml(candidate.ID)+
-      '" ondragstart="dragStart(event)" '+
-      'ondragend="dragEnd(event)" '+
-      'onclick="openCandidateById(\''+
-      escJs(candidate.ID)+
-      '\')">'+
-
-      '<div class="candidate-name">'+
-        escapeHtml(candidate['ФИО'])+
-      '</div>'+
-
-      '<div class="candidate-meta">'+
-        escapeHtml(
-          candidate['Телефон']||''
-        )+
-      '</div>'+
-
-      '<div class="candidate-meta">'+
-        escapeHtml(
-          candidate['Вакансия']||''
-        )+
-      '</div>'+
-
-      '<div class="candidate-meta">'+
-        escapeHtml(
-          candidate['Ответственный']||''
-        )+
-      '</div>'+
-
-      (
-        candidate['Резюме']
-          ? '<div class="card-actions">'+
-            '<a href="'+
-            escapeHtml(candidate['Резюме'])+
-            '" target="_blank" rel="noopener" '+
-            'onclick="event.stopPropagation()">'+
-            'Резюме</a></div>'
-          : ''
-      )+
-
-      (
-        !candidate.archived
-          ? '<div class="card-actions">'+
-            '<button class="button button-small button-danger" '+
-            'onclick="event.stopPropagation();'+
-            'archiveById(\''+
-            escJs(candidate.ID)+
-            '\')">Архив</button></div>'
-          : ''
-      )+
-    '</article>'
-  );
+function renderCard(c){
+  return '<article class="candidate-card card-'+statusKey(c['Статус'])+'" draggable="'+(!c.archived)+'" data-id="'+escapeHtml(c.ID)+'" ondragstart="dragStart(event)" ondragend="dragEnd(event)" onclick="openCandidateById(\''+escJs(c.ID)+'\')">'+
+    '<div class="candidate-card-top"><div class="candidate-name">'+escapeHtml(fullNameOf(c))+'</div>'+statusChip(c['Статус'],true)+'</div>'+
+    '<div class="candidate-meta-row"><span>☎</span><span>'+escapeHtml(c['Телефон']||'—')+'</span></div>'+
+    '<div class="candidate-meta-row"><span>◫</span><span>'+escapeHtml(c['Вакансия']||'—')+'</span></div>'+
+    '<div class="candidate-meta-row"><span>●</span><span>'+escapeHtml(c['Ответственный']||'—')+'</span></div>'+
+    '<div class="card-actions">'+
+      (c['Резюме']?'<a class="card-link" href="'+escapeHtml(c['Резюме'])+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">Резюме ↗</a>':'<span></span>')+
+      (!c.archived?'<button class="button button-ghost button-small danger-text" onclick="event.stopPropagation();archiveById(\''+escJs(c.ID)+'\',this)">Архив</button>':'')+
+    '</div></article>';
 }
 
-function toggleColumn(status){
-  if(collapsedColumns.has(status)){
-    collapsedColumns.delete(status);
-  }else{
-    collapsedColumns.add(status);
-  }
+function toggleColumn(status){collapsedColumns.has(status)?collapsedColumns.delete(status):collapsedColumns.add(status);renderBoard()}
+function dragStart(e){e.dataTransfer.setData('text/plain',e.currentTarget.dataset.id);e.currentTarget.classList.add('dragging')}
+function dragEnd(e){e.currentTarget.classList.remove('dragging');document.querySelectorAll('.column').forEach(x=>x.classList.remove('drag-over'))}
+function dragOver(e){e.preventDefault();e.currentTarget.classList.add('drag-over')}
+function dragLeave(e){e.currentTarget.classList.remove('drag-over')}
+function dropCandidate(e){e.preventDefault();e.currentTarget.classList.remove('drag-over');startTransition(e.dataTransfer.getData('text/plain'),e.currentTarget.dataset.status)}
 
-  renderBoard();
+function maskKzPhone(input){
+  let digits=input.value.replace(/\D/g,'');
+  if(digits.startsWith('8'))digits='7'+digits.slice(1);
+  if(!digits.startsWith('7'))digits='7'+digits;
+  digits=digits.slice(0,11);
+  const body=digits.slice(1);
+  let out='+7';
+  if(body.length)out+=' '+body.slice(0,3);
+  if(body.length>3)out+=' '+body.slice(3,6);
+  if(body.length>6)out+=' '+body.slice(6,8);
+  if(body.length>8)out+=' '+body.slice(8,10);
+  input.value=out;
 }
 
-function dragStart(event){
-  event.dataTransfer.setData(
-    'text/plain',
-    event.currentTarget.dataset.id
-  );
+function normalizeEmailInput(input){input.value=input.value.replace(/\s/g,'').toLowerCase();input.classList.remove('input-error')}
 
-  event.currentTarget
-    .classList
-    .add('dragging');
+function validateEmailField(input){
+  const valid=!input.value||/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.value);
+  input.classList.toggle('input-error',!valid);
+  const hint=input.id==='candidateEmail'?el('candidateEmailHint'):null;
+  if(hint)hint.textContent=valid?'':'Проверьте формат email';
+  return valid;
 }
 
-function dragEnd(event){
-  event.currentTarget
-    .classList
-    .remove('dragging');
+function formatMoney(v){const d=String(v||'').replace(/\D/g,'');return d?d.replace(/\B(?=(\d{3})+(?!\d))/g,' '):''}
+function formatMoneyInput(input){input.value=formatMoney(input.value)}
 
-  document
-    .querySelectorAll('.column')
-    .forEach(column=>
-      column.classList.remove(
-        'drag-over'
-      )
-    );
-}
-
-function dragOver(event){
-  event.preventDefault();
-
-  event.currentTarget
-    .classList
-    .add('drag-over');
-}
-
-function dragLeave(event){
-  event.currentTarget
-    .classList
-    .remove('drag-over');
-}
-
-function dropCandidate(event){
-  event.preventDefault();
-
-  event.currentTarget
-    .classList
-    .remove('drag-over');
-
-  const id=
-    event.dataTransfer.getData(
-      'text/plain'
-    );
-
-  const status=
-    event.currentTarget.dataset.status;
-
-  startTransition(id,status);
-}
-
-function openCandidateById(id){
-  const candidate=
-    state.candidates.find(
-      item=>
-        String(item.ID)===
-        String(id)
-    );
-
-  if(candidate){
-    openCandidate(candidate);
-  }
-}
+function openCandidateById(id){const c=state.candidates.find(x=>String(x.ID)===String(id));if(c)openCandidate(c)}
 
 function openCandidate(candidate){
-  if(!state.loaded.references){
-    showToast(
-      'Справочники ещё загружаются. Попробуйте через секунду.',
-      'error'
-    );
-    return;
-  }
-
-  currentCandidate=
-    candidate||null;
-
+  if(!state.loaded.references){showToast('Справочники ещё загружаются.','error');return}
+  currentCandidate=candidate||null;
   const isNew=!candidate;
+  el('candidateId').value=candidate?candidate.ID:'';
+  el('candidateLastName').value=candidate?candidate['Фамилия']||'':'';
+  el('candidateFirstName').value=candidate?candidate['Имя']||'':'';
+  el('candidateMiddleName').value=candidate?candidate['Отчество']||'':'';
+  el('candidatePhone').value=candidate?candidate['Телефон']||'':'+7 ';
+  el('candidateEmail').value=candidate?candidate['Email']||'':'';
+  el('candidateTelegram').value=candidate?candidate['Telegram']||'':'';
+  el('candidateSalary').value=candidate?formatMoney(c['Зарплатные ожидания']):'';
+  el('candidateComment').value=candidate?candidate['Комментарий']||'':'';
+  el('candidateTitle').textContent=isNew?'Новый кандидат':fullNameOf(candidate);
 
-  el('candidateId').value=
-    candidate?candidate.ID:'';
+  const status=isNew?'Новый':candidate['Статус'];
+  el('candidateStatusLabel').className='status-chip status-'+statusKey(status);
+  el('candidateStatusLabel').textContent=status;
 
-  el('candidateName').value=
-    candidate
-      ? candidate['ФИО']||''
-      : '';
-
-  el('candidatePhone').value=
-    candidate
-      ? candidate['Телефон']||''
-      : '';
-
-  el('candidateEmail').value=
-    candidate
-      ? candidate['Email']||''
-      : '';
-
-  el('candidateTelegram').value=
-    candidate
-      ? candidate['Telegram']||''
-      : '';
-
-  el('candidateSalary').value=
-    candidate
-      ? formatMoney(
-          candidate[
-            'Зарплатные ожидания'
-          ]
-        )
-      : '';
-
-  el('candidateComment').value=
-    candidate
-      ? candidate['Комментарий']||''
-      : '';
-
-  el('candidateTitle').textContent=
-    isNew
-      ? 'Новый кандидат'
-      : candidate['ФИО'];
-
-  el('candidateStatusLabel')
-    .textContent=
-      isNew
-        ? 'Новый'
-        : candidate['Статус'];
-
-  const vacancies=
-    isNew
-      ? activeVacancies()
-      : state.vacancies;
-
-  el('candidateVacancy').innerHTML=
-    option('','Выберите вакансию')+
-    vacancies
-      .map(item=>
-        option(
-          item['Vacancy ID'],
-          item['Вакансия'],
-          candidate &&
-          item['Vacancy ID']===
-            candidate['Vacancy ID']
-        )
-      )
-      .join('');
-
-  el('candidateSource').innerHTML=
-    option('','Не указан')+
-    state.sources
-      .map(item=>
-        option(
-          item['Source ID'],
-          item['Название'],
-          candidate &&
-          item['Source ID']===
-            candidate['Source ID']
-        )
-      )
-      .join('');
-
-  const stage=
-    isNew
-      ? 'Новый'
-      : candidate['Статус'];
-
-  el('candidateResponsible').innerHTML=
-    option(
-      '',
-      'Выберите ответственного'
-    )+
-    responsiblesFor(stage)
-      .map(item=>
-        option(
-          item['Responsible ID'],
-          item['ФИО'],
-          candidate &&
-          item['Responsible ID']===
-            candidate['Responsible ID']
-        )
-      )
-      .join('');
-
+  const vacancies=isNew?activeVacancies():state.vacancies;
+  el('candidateVacancy').innerHTML=option('','Выберите вакансию')+vacancies.map(v=>option(v['Vacancy ID'],v['Вакансия'],candidate&&v['Vacancy ID']===candidate['Vacancy ID'])).join('');
+  el('candidateSource').innerHTML=option('','Не указан')+state.sources.map(s=>option(s['Source ID'],s['Название'],candidate&&s['Source ID']===candidate['Source ID'])).join('');
+  el('candidateResponsible').innerHTML=option('','Выберите ответственного')+responsiblesFor(status).map(r=>option(r['Responsible ID'],fullNameOf(r),candidate&&r['Responsible ID']===candidate['Responsible ID'])).join('');
   el('candidateResumeFile').value='';
-
-  setLink(
-    'candidateResumeLink',
-    candidate &&
-      candidate['Резюме'],
-    'Открыть резюме'
-  );
-
-  setLink(
-    'candidateFolderLink',
-    candidate &&
-      candidate['Папка кандидата'],
-    'Открыть папку кандидата'
-  );
-
-  renderCandidateLinks(
-    candidate
-      ? candidate.links||[]
-      : []
-  );
-
+  setLink('candidateResumeLink',candidate&&candidate['Резюме'],'Открыть резюме ↗');
+  setLink('candidateFolderLink',candidate&&candidate['Папка кандидата'],'Открыть папку кандидата ↗');
+  renderCandidateLinks(candidate?candidate.links||[]:[]);
   renderTelegramPreview();
-
-  el('archiveCandidateButton')
-    .style
-    .display=
-      candidate &&
-      !candidate.archived
-        ? 'inline-block'
-        : 'none';
-
-  el('historyTabButton')
-    .style
-    .display=
-      candidate
-        ? 'inline-block'
-        : 'none';
-
+  el('archiveCandidateButton').style.display=candidate&&!candidate.archived?'inline-flex':'none';
   renderTransitions();
-
-  el('candidateModal')
-    .classList
-    .add('open');
-
-  showCandidateTab(
-    'candidateDetails',
-    document.querySelector(
-      '#candidateModal .tab'
-    )
-  );
-
-  if(candidate){
-    setCurrentInterviews(
-      candidate.ID
-    );
-  }else{
-    currentInterviews=[];
-    renderInterviewHistory();
-  }
+  el('candidateHistorySection').hidden=isNew;
+  if(candidate)setCurrentInterviews(candidate.ID); else {currentInterviews=[];renderInterviewHistory()}
+  el('candidateModal').classList.add('open');
 }
 
-function closeCandidate(){
-  el('candidateModal')
-    .classList
-    .remove('open');
-
-  currentCandidate=null;
-}
-
-function setLink(
-  id,
-  url,
-  label
-){
-  const anchor=el(id);
-
-  anchor.href=url||'';
-  anchor.textContent=
-    url
-      ? label
-      : '';
-}
-
-function showCandidateTab(
-  id,
-  button
-){
-  document
-    .querySelectorAll(
-      '#candidateModal .tab-section'
-    )
-    .forEach(section=>
-      section.classList.remove(
-        'active'
-      )
-    );
-
-  document
-    .querySelectorAll(
-      '#candidateModal .tab'
-    )
-    .forEach(tab=>
-      tab.classList.remove(
-        'active'
-      )
-    );
-
-  el(id)
-    .classList
-    .add('active');
-
-  if(button){
-    button.classList.add('active');
-  }
-}
+function closeCandidate(){el('candidateModal').classList.remove('open');currentCandidate=null}
+function setLink(id,url,label){const a=el(id);a.href=url||'';a.textContent=url?label:''}
 
 function renderTransitions(){
-  const root=
-    el('candidateTransitions');
-
-  if(
-    !currentCandidate ||
-    currentCandidate.archived
-  ){
-    root.innerHTML='';
-    return;
-  }
-
-  const allowed=
-    state.transitions[
-      currentCandidate['Статус']
-    ]||[];
-
-  root.innerHTML=
-    allowed
-      .map(status=>
-        '<button class="button transition-button" '+
-          'onclick="startTransition(\''+
-          escJs(currentCandidate.ID)+
-          '\',\''+
-          escJs(status)+
-          '\')">→ '+
-          escapeHtml(status)+
-        '</button>'
-      )
-      .join('');
+  const root=el('candidateTransitions');
+  if(!currentCandidate||currentCandidate.archived){root.innerHTML='';return}
+  const allowed=state.transitions[currentCandidate['Статус']]||[];
+  root.innerHTML='<span class="transition-label">Перейти:</span>'+allowed.map(status=>
+    '<button class="transition-pill status-'+statusKey(status)+'" onclick="startTransition(\''+escJs(currentCandidate.ID)+'\',\''+escJs(status)+'\')">'+escapeHtml(status)+'</button>'
+  ).join('');
 }
 
-function renderCandidateLinks(links){
-  el('candidateLinks').innerHTML=
-    (links||[])
-      .map(link=>
-        linkRow(
-          link.name,
-          link.url
-        )
-      )
-      .join('');
-}
-
-function linkRow(
-  name='',
-  url=''
-){
-  return (
-    '<div class="link-item">'+
-      '<input class="other-link-name" '+
-      'placeholder="Название" value="'+
-      escapeHtml(name)+
-      '">'+
-      '<input class="other-link-url" '+
-      'placeholder="https://..." value="'+
-      escapeHtml(url)+
-      '">'+
-      '<button class="button button-small button-danger" '+
-      'type="button" '+
-      'onclick="this.parentElement.remove()">×</button>'+
-    '</div>'
-  );
-}
-
-function addCandidateLink(){
-  el('candidateLinks')
-    .insertAdjacentHTML(
-      'beforeend',
-      linkRow()
-    );
-}
-
-function collectLinks(){
-  return [
-    ...document.querySelectorAll(
-      '#candidateLinks .link-item'
-    )
-  ].map(row=>({
-    name:
-      row.querySelector(
-        '.other-link-name'
-      ).value,
-    url:
-      row.querySelector(
-        '.other-link-url'
-      ).value
-  }));
-}
+function renderCandidateLinks(links){el('candidateLinks').innerHTML=(links||[]).map(l=>linkRow(l.name,l.url)).join('')}
+function linkRow(name='',url=''){return '<div class="link-item"><input class="other-link-name" placeholder="Название" value="'+escapeHtml(name)+'"><input class="other-link-url" placeholder="https://..." value="'+escapeHtml(url)+'"><button class="button button-ghost button-small danger-text" type="button" onclick="this.parentElement.remove()">Удалить</button></div>'}
+function addCandidateLink(){el('candidateLinks').insertAdjacentHTML('beforeend',linkRow())}
+function collectLinks(){return [...document.querySelectorAll('#candidateLinks .link-item')].map(row=>({name:row.querySelector('.other-link-name').value,url:row.querySelector('.other-link-url').value}))}
 
 function renderTelegramPreview(){
-  const raw=
-    value('candidateTelegram')
-      .trim();
-
-  const anchor=
-    el('telegramPreview');
-
-  if(!raw){
-    anchor.textContent='';
-    anchor.removeAttribute('href');
-    return;
-  }
-
+  const raw=value('candidateTelegram').trim(),a=el('telegramPreview');
+  if(!raw){a.textContent='';a.removeAttribute('href');return}
   let url=raw;
-
-  if(!/^https?:\/\//i.test(raw)){
-    const username=
-      raw
-        .replace(/^@/,'')
-        .replace(/^t\.me\//i,'');
-
-    url=
-      'https://t.me/'+
-      username;
-  }
-
-  anchor.href=url;
-  anchor.textContent=url;
-}
-
-function formatMoney(v){
-  const digits=
-    String(v||'')
-      .replace(/\D/g,'');
-
-  return digits
-    ? digits.replace(
-        /\B(?=(\d{3})+(?!\d))/g,
-        ' '
-      )
-    : '';
-}
-
-function formatMoneyInput(input){
-  input.value=
-    formatMoney(input.value);
+  if(!/^https?:\/\//i.test(raw))url='https://t.me/'+raw.replace(/^@/,'').replace(/^t\.me\//i,'');
+  a.href=url;a.textContent=url;
 }
 
 function readResumeFile(){
-  return new Promise(
-    (resolve,reject)=>{
-      const file=
-        el('candidateResumeFile')
-          .files[0];
-
-      if(!file){
-        resolve(null);
-        return;
-      }
-
-      if(
-        file.size>
-        10*1024*1024
-      ){
-        reject(
-          new Error(
-            'Резюме не должно превышать 10 МБ.'
-          )
-        );
-        return;
-      }
-
-      const reader=
-        new FileReader();
-
-      reader.onload=()=>resolve({
-        name:file.name,
-        mimeType:file.type,
-        base64:
-          String(reader.result)
-            .split(',')[1]
-      });
-
-      reader.onerror=()=>reject(
-        new Error(
-          'Не удалось прочитать файл.'
-        )
-      );
-
-      reader.readAsDataURL(file);
-    }
-  );
+  return new Promise((resolve,reject)=>{
+    const file=el('candidateResumeFile').files[0];
+    if(!file){resolve(null);return}
+    if(file.size>10*1024*1024){reject(new Error('Резюме не должно превышать 10 МБ.'));return}
+    const reader=new FileReader();
+    reader.onload=()=>resolve({name:file.name,mimeType:file.type,base64:String(reader.result).split(',')[1]});
+    reader.onerror=()=>reject(new Error('Не удалось прочитать файл.'));
+    reader.readAsDataURL(file);
+  });
 }
 
-async function saveCandidateForm(){
-  try{
-    const resumeFile=
-      await readResumeFile();
-
+async function saveCandidateForm(button){
+  if(!validateEmailField(el('candidateEmail')))return;
+  await runUiTask({button,formId:'candidateForm'},async()=>{
+    const resumeFile=await readResumeFile();
     const payload={
       ID:value('candidateId'),
-      fullName:value('candidateName'),
+      lastName:value('candidateLastName'),
+      firstName:value('candidateFirstName'),
+      middleName:value('candidateMiddleName'),
       vacancyId:value('candidateVacancy'),
       phone:value('candidatePhone'),
       email:value('candidateEmail'),
       telegram:value('candidateTelegram'),
       salary:value('candidateSalary'),
       sourceId:value('candidateSource'),
-      responsibleId:
-        value('candidateResponsible'),
+      responsibleId:value('candidateResponsible'),
       comment:value('candidateComment'),
       links:collectLinks(),
       resumeFile
     };
-
-    call(
-      'saveCandidate',
-      payload,
-      response=>{
-        showToast('Кандидат сохранён.');
-
-        refreshCandidates(()=>{
-          openCandidateById(
-            response.candidate.ID
-          );
-        });
-      }
-    );
-  }catch(error){
-    handleError(error);
-  }
+    const response=await rpc('saveCandidate',payload);
+    const idx=state.candidates.findIndex(x=>x.ID===response.candidate.ID);
+    if(idx>=0)state.candidates[idx]=response.candidate;else state.candidates.push(response.candidate);
+    await refreshCandidates();
+    showToast('Кандидат сохранён.');
+    openCandidateById(response.candidate.ID);
+  }).catch(()=>{});
 }
 
-function archiveCurrentCandidate(){
-  if(currentCandidate){
-    archiveById(
-      currentCandidate.ID
-    );
-  }
+function archiveCurrentCandidate(button){if(currentCandidate)archiveById(currentCandidate.ID,button)}
+
+async function archiveById(id,button){
+  const ok=await showConfirm('Архивировать кандидата? Статус станет «Отказ», причина — «Архивация».','Архивация кандидата');
+  if(!ok)return;
+  await runUiTask({button,formId:currentCandidate&&currentCandidate.ID===id?'candidateForm':null},async()=>{
+    await rpc('archiveCandidate',id);
+    const c=state.candidates.find(x=>x.ID===id);
+    if(c){c.archived=true;c['Статус']='Отказ';c['Причина отказа']='Архивация'}
+    render();
+    if(currentCandidate&&currentCandidate.ID===id)closeCandidate();
+    showToast('Кандидат архивирован.');
+  }).catch(()=>{});
 }
 
-async function archiveById(id){
-  const ok=
-    await showConfirm(
-      'Архивировать кандидата? Статус станет "Отказ", причина — "Архивация".',
-      'Архивация кандидата'
-    );
+function startTransition(id,toStatus){
+  const candidate=state.candidates.find(c=>String(c.ID)===String(id));
+  if(!candidate||candidate.archived||candidate['Статус']===toStatus)return;
+  const allowed=state.transitions[candidate['Статус']]||[];
+  if(!allowed.includes(toStatus)){showToast('Такой переход не разрешён.','error');return}
 
-  if(!ok){
-    return;
-  }
-
-  call(
-    'archiveCandidate',
-    id,
-    ()=>{
-      showToast(
-        'Кандидат архивирован.'
-      );
-
-      closeCandidate();
-      refreshCandidates();
-    }
+  const templates=state.interviewTemplates.filter(t=>
+    String(t['Vacancy ID'])===String(candidate['Vacancy ID']) &&
+    t['Этап']===candidate['Статус']
   );
+
+  pendingTransition={candidate,fromStatus:candidate['Статус'],toStatus,templates};
+  el('transitionTitle').innerHTML=statusChip(candidate['Статус'],true)+' <span class="transition-arrow">→</span> '+statusChip(toStatus,true);
+  el('transitionTemplate').innerHTML=option('','Без шаблона')+templates.map((t,i)=>option(t['Template ID'],t['Название'],i===0)).join('');
+  el('transitionResponsible').innerHTML=option('','Выберите ответственного')+responsiblesFor(toStatus).map(r=>option(r['Responsible ID'],fullNameOf(r),r['Responsible ID']===candidate['Responsible ID'])).join('');
+  el('transitionComment').value='';
+  el('transitionResult').value='';
+  renderTransitionQuestions();
+  el('transitionModal').classList.add('open');
 }
 
-function startTransition(
-  id,
-  toStatus
-){
-  const candidate=
-    state.candidates.find(
-      item=>
-        String(item.ID)===
-        String(id)
-    );
-
-  if(
-    !candidate ||
-    candidate.archived ||
-    candidate['Статус']===toStatus
-  ){
-    return;
-  }
-
-  const allowed=
-    state.transitions[
-      candidate['Статус']
-    ]||[];
-
-  if(!allowed.includes(toStatus)){
-    showToast(
-      'Переход '+
-      candidate['Статус']+
-      ' → '+
-      toStatus+
-      ' не разрешён.',
-      'error'
-    );
-
-    return;
-  }
-
-  call(
-    'getInterviewContext',
-    {
-      candidateId:id,
-      toStatus
-    },
-    context=>{
-      pendingTransition=context;
-
-      el('transitionTitle')
-        .textContent=
-          context.fromStatus+
-          ' → '+
-          context.toStatus;
-
-      el('transitionTemplate')
-        .innerHTML=
-          option('','Без шаблона')+
-          (context.templates||[])
-            .map((template,index)=>
-              option(
-                template['Template ID'],
-                template['Название'],
-                index===0
-              )
-            )
-            .join('');
-
-      const nextResponsibles=
-        responsiblesFor(
-          context.toStatus
-        );
-
-      el('transitionResponsible')
-        .innerHTML=
-          option(
-            '',
-            'Выберите ответственного'
-          )+
-          nextResponsibles
-            .map(item=>
-              option(
-                item['Responsible ID'],
-                item['ФИО'],
-                item['Responsible ID']===
-                  candidate[
-                    'Responsible ID'
-                  ]
-              )
-            )
-            .join('');
-
-      el('transitionComment').value='';
-      el('transitionResult').value='';
-
-      renderTransitionQuestions();
-
-      el('transitionModal')
-        .classList
-        .add('open');
-    }
-  );
-}
-
-function closeTransition(){
-  el('transitionModal')
-    .classList
-    .remove('open');
-
-  pendingTransition=null;
-}
-
-function selectedTransitionTemplate(){
-  const id=
-    value('transitionTemplate');
-
-  return pendingTransition
-    ? (pendingTransition.templates||[])
-        .find(
-          template=>
-            template['Template ID']===id
-        )
-    : null;
-}
+function closeTransition(){el('transitionModal').classList.remove('open');pendingTransition=null}
+function selectedTransitionTemplate(){const id=value('transitionTemplate');return pendingTransition?(pendingTransition.templates||[]).find(t=>t['Template ID']===id):null}
 
 function renderTransitionQuestions(){
-  const template=
-    selectedTransitionTemplate();
-
-  const questions=
-    template
-      ? template.questions||[]
-      : [];
-
-  el('transitionQuestions').innerHTML=
-    questions.length
-      ? '<label>Вопросы и ответы</label>'+
-        questions
-          .map(question=>
-            '<div class="qa">'+
-              '<strong>'+
-                escapeHtml(question)+
-              '</strong>'+
-              '<textarea class="transition-answer" '+
-                'data-question="'+
-                escapeHtml(question)+
-                '" placeholder="Ответ"></textarea>'+
-            '</div>'
-          )
-          .join('')
-      : '<div class="muted">'+
-        'Для этого этапа шаблон вопросов не выбран.'+
-        '</div>';
+  const t=selectedTransitionTemplate(),questions=t?(t.questions||[]):[];
+  el('transitionQuestions').innerHTML=questions.length?'<label>Вопросы и ответы</label>'+questions.map(q=>'<div class="qa"><strong>'+escapeHtml(q)+'</strong><textarea class="transition-answer" data-question="'+escapeHtml(q)+'" placeholder="Ответ"></textarea></div>').join(''):'<div class="empty-state compact">Для этого этапа шаблон вопросов не выбран.</div>';
 }
 
-function submitTransition(){
-  if(!pendingTransition){
-    return;
-  }
-
-  const answers=[
-    ...document.querySelectorAll(
-      '.transition-answer'
-    )
-  ].map(input=>({
-    question:input.dataset.question,
-    answer:input.value
-  }));
-
-  const payload={
-    candidateId:
-      pendingTransition.candidate.ID,
-    toStatus:
-      pendingTransition.toStatus,
-    responsibleId:
-      value('transitionResponsible'),
-    interview:{
-      templateId:
-        value('transitionTemplate'),
-      answers,
-      comment:
-        value('transitionComment'),
-      result:
-        value('transitionResult')
-    }
-  };
-
-  call(
-    'transitionCandidate',
-    payload,
-    ()=>{
-      closeTransition();
-      showToast('Этап кандидата обновлён.');
-
-      refreshCandidates(()=>{
-        openCandidateById(
-          payload.candidateId
-        );
-      });
-
-      refreshInterviews();
-    }
-  );
+async function submitTransition(button){
+  if(!pendingTransition)return;
+  await runUiTask({button,formId:'transitionForm'},async()=>{
+    const answers=[...document.querySelectorAll('.transition-answer')].map(x=>({question:x.dataset.question,answer:x.value}));
+    const payload={
+      candidateId:pendingTransition.candidate.ID,
+      toStatus:pendingTransition.toStatus,
+      responsibleId:value('transitionResponsible'),
+      interview:{
+        templateId:value('transitionTemplate'),
+        answers,
+        comment:value('transitionComment'),
+        result:value('transitionResult')
+      }
+    };
+    const response=await rpc('transitionCandidate',payload);
+    const idx=state.candidates.findIndex(x=>x.ID===payload.candidateId);
+    if(idx>=0)state.candidates[idx]={...state.candidates[idx],...response.candidate};
+    state.interviews.push(response.interview);
+    await refreshCandidates();
+    closeTransition();
+    showToast('Этап кандидата обновлён.');
+    openCandidateById(payload.candidateId);
+  }).catch(()=>{});
 }
 
-function setCurrentInterviews(
-  candidateId
-){
+function setCurrentInterviews(candidateId){
   if(!state.loaded.interviews){
     currentInterviews=[];
-
-    el('interviewHistory')
-      .innerHTML=
-        '<div class="muted">'+
-        'История интервью загружается в фоне…'+
-        '</div>';
-
+    el('interviewHistory').innerHTML='<div class="empty-state compact">История интервью загружается…</div>';
     return;
   }
-
-  currentInterviews=
-    state.interviews.filter(
-      interview=>
-        String(
-          interview['Candidate ID']
-        )===
-        String(candidateId)
-    );
-
+  currentInterviews=state.interviews.filter(i=>String(i['Candidate ID'])===String(candidateId));
   renderInterviewHistory();
 }
 
 function renderInterviewHistory(){
-  el('interviewHistory').innerHTML=
-    currentInterviews.length
-      ? currentInterviews
-          .map(interview=>
-            '<article class="history-card">'+
-              '<div class="history-title">'+
-                '<strong>'+
-                  escapeHtml(
-                    interview['Этап']||
-                    'Этап'
-                  )+
-                  ' → '+
-                  escapeHtml(
-                    interview['To Status']||
-                    ''
-                  )+
-                '</strong>'+
-                '<button class="button button-small" '+
-                  'onclick="editInterview(\''+
-                  escJs(
-                    interview[
-                      'Interview ID'
-                    ]
-                  )+
-                  '\')">Редактировать</button>'+
-              '</div>'+
-              '<div class="muted">'+
-                escapeHtml(
-                  interview['Дата']||''
-                )+
-                ' · '+
-                escapeHtml(
-                  interview['Шаблон']||
-                  'Без шаблона'
-                )+
-              '</div>'+
-              (interview.answers||[])
-                .map(answer=>
-                  '<div class="qa">'+
-                    '<strong>'+
-                      escapeHtml(
-                        answer.question
-                      )+
-                    '</strong>'+
-                    escapeHtml(
-                      answer.answer
-                    )+
-                  '</div>'
-                )
-                .join('')+
-              '<div class="qa">'+
-                '<strong>Комментарий</strong>'+
-                escapeHtml(
-                  interview['Комментарий']||
-                  '—'
-                )+
-              '</div>'+
-              '<div class="qa">'+
-                '<strong>Результат</strong>'+
-                escapeHtml(
-                  interview['Результат']||
-                  '—'
-                )+
-              '</div>'+
-            '</article>'
-          )
-          .join('')
-      : '<div class="muted">'+
-        'Результатов интервью пока нет.'+
-        '</div>';
+  el('interviewHistory').innerHTML=currentInterviews.length?currentInterviews.map(i=>
+    '<article class="history-card">'+
+      '<div class="history-title"><div>'+statusChip(i['Этап']||'—',true)+' <span class="transition-arrow">→</span> '+statusChip(i['To Status']||'—',true)+'</div>'+
+      '<button class="button button-ghost button-small" onclick="editInterview(\''+escJs(i['Interview ID'])+'\')">Редактировать</button></div>'+
+      '<div class="muted history-meta">'+escapeHtml(i['Дата']||'')+' · '+escapeHtml(i['Шаблон']||'Без шаблона')+'</div>'+
+      (i.answers||[]).map(a=>'<div class="qa"><strong>'+escapeHtml(a.question)+'</strong><div>'+escapeHtml(a.answer||'—')+'</div></div>').join('')+
+      '<div class="qa"><strong>Комментарий</strong><div>'+escapeHtml(i['Комментарий']||'—')+'</div></div>'+
+      '<div class="qa"><strong>Результат</strong><div>'+escapeHtml(i['Результат']||'—')+'</div></div>'+
+    '</article>'
+  ).join(''):'<div class="empty-state compact">Результатов интервью пока нет.</div>';
 }
 
 function editInterview(id){
-  editingInterview=
-    currentInterviews.find(
-      interview=>
-        interview['Interview ID']===id
-    );
-
-  if(!editingInterview){
-    return;
-  }
-
-  el('editInterviewQuestions')
-    .innerHTML=
-      (editingInterview.answers||[])
-        .map(answer=>
-          '<div class="qa">'+
-            '<strong>'+
-              escapeHtml(
-                answer.question
-              )+
-            '</strong>'+
-            '<textarea class="edit-answer" '+
-              'data-question="'+
-              escapeHtml(
-                answer.question
-              )+
-              '">'+
-              escapeHtml(
-                answer.answer
-              )+
-            '</textarea>'+
-          '</div>'
-        )
-        .join('');
-
-  el('editInterviewComment').value=
-    editingInterview['Комментарий']||'';
-
-  el('editInterviewResult').value=
-    editingInterview['Результат']||'';
-
-  el('interviewEditModal')
-    .classList
-    .add('open');
+  editingInterview=currentInterviews.find(i=>i['Interview ID']===id);
+  if(!editingInterview)return;
+  el('editInterviewQuestions').innerHTML=(editingInterview.answers||[]).map(a=>'<div class="qa"><strong>'+escapeHtml(a.question)+'</strong><textarea class="edit-answer" data-question="'+escapeHtml(a.question)+'">'+escapeHtml(a.answer)+'</textarea></div>').join('');
+  el('editInterviewComment').value=editingInterview['Комментарий']||'';
+  el('editInterviewResult').value=editingInterview['Результат']||'';
+  el('interviewEditModal').classList.add('open');
 }
 
-function closeInterviewEdit(){
-  el('interviewEditModal')
-    .classList
-    .remove('open');
+function closeInterviewEdit(){el('interviewEditModal').classList.remove('open');editingInterview=null}
 
-  editingInterview=null;
+async function saveInterviewEdit(button){
+  if(!editingInterview)return;
+  await runUiTask({button,formId:'interviewEditForm'},async()=>{
+    const payload={
+      id:editingInterview['Interview ID'],
+      answers:[...document.querySelectorAll('.edit-answer')].map(x=>({question:x.dataset.question,answer:x.value})),
+      comment:value('editInterviewComment'),
+      result:value('editInterviewResult')
+    };
+    const res=await rpc('updateInterview',payload);
+    const idx=state.interviews.findIndex(i=>i['Interview ID']===payload.id);
+    if(idx>=0)state.interviews[idx]=res.interview;
+    closeInterviewEdit();
+    setCurrentInterviews(currentCandidate.ID);
+    showToast('Результат интервью обновлён.');
+  }).catch(()=>{});
 }
 
-function saveInterviewEdit(){
-  if(!editingInterview){
-    return;
-  }
-
-  const payload={
-    id:
-      editingInterview[
-        'Interview ID'
-      ],
-    answers:[
-      ...document.querySelectorAll(
-        '.edit-answer'
-      )
-    ].map(input=>({
-      question:
-        input.dataset.question,
-      answer:
-        input.value
-    })),
-    comment:
-      value('editInterviewComment'),
-    result:
-      value('editInterviewResult')
-  };
-
-  call(
-    'updateInterview',
-    payload,
-    ()=>{
-      closeInterviewEdit();
-      showToast(
-        'Результат интервью обновлён.'
-      );
-
-      refreshInterviews();
-    }
-  );
+async function softDeleteInterview(button){
+  if(!editingInterview)return;
+  const id=editingInterview['Interview ID'];
+  const ok=await showConfirm('Удалить результат интервью? Запись останется в Google Sheets как soft deleted.','Удаление интервью');
+  if(!ok)return;
+  await runUiTask({button,formId:'interviewEditForm'},async()=>{
+    await rpc('deleteInterview',id);
+    state.interviews=state.interviews.filter(i=>i['Interview ID']!==id);
+    closeInterviewEdit();
+    setCurrentInterviews(currentCandidate.ID);
+    showToast('Интервью удалено.');
+  }).catch(()=>{});
 }
 
 init();
