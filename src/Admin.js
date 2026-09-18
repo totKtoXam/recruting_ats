@@ -1,33 +1,20 @@
 function getVacancies() {
   return rowsToObjects_(
-    getSheet_(
-      APP_CONFIG.SHEETS.VACANCIES
-    )
-  );
+    getSheet_(APP_CONFIG.SHEETS.VACANCIES)
+  ).filter(item => !isSoftDeleted_(item));
 }
 
 
 function saveVacancy(input) {
-  const name = String(
-    input && input.name || ''
-  ).trim();
-
-  const status = String(
-    input && input.status || ''
-  ).trim();
+  const name = String(input && input.name || '').trim();
+  const status = String(input && input.status || '').trim();
 
   if (!name) {
-    throw new Error(
-      'Название вакансии обязательно.'
-    );
+    throw new Error('Название вакансии обязательно.');
   }
 
-  if (
-    !APP_CONFIG.VACANCY_STATUSES.includes(status)
-  ) {
-    throw new Error(
-      'Некорректный статус вакансии.'
-    );
+  if (!APP_CONFIG.VACANCY_STATUSES.includes(status)) {
+    throw new Error('Некорректный статус вакансии.');
   }
 
   const existing = input.id
@@ -44,97 +31,74 @@ function saveVacancy(input) {
     APP_CONFIG.SHEETS.VACANCIES,
     'Vacancy ID',
     {
-      'Vacancy ID':
-        input.id ||
-        Utilities.getUuid(),
+      ...existing,
+      'Vacancy ID': input.id || Utilities.getUuid(),
       'Вакансия': name,
       'Статус': status,
-      'Комментарий':
-        String(input.comment || '').trim(),
+      'Комментарий': String(input.comment || '').trim(),
       'Дата создания':
-        existing &&
-        existing['Дата создания']
+        existing && existing['Дата создания']
           ? existing['Дата создания']
           : now,
-      'Дата изменения': now
+      'Дата изменения': now,
+      'Удален': false,
+      'Дата удаления': ''
     }
   );
 
-  return {
-    ok: true,
-    vacancy: entity
-  };
+  return { ok: true, vacancy: entity };
 }
 
 
 function deleteVacancy(id) {
-  const candidates = getCandidates();
-
-  if (
-    candidates.some(candidate =>
-      String(candidate['Vacancy ID']) ===
-      String(id)
-    )
-  ) {
-    throw new Error(
-      'Нельзя удалить вакансию: к ней привязаны кандидаты. Переведите вакансию в статус "Закрыта".'
-    );
-  }
-
-  const templates = getInterviewTemplates();
-
-  if (
-    templates.some(template =>
-      String(template['Vacancy ID']) ===
-      String(id)
-    )
-  ) {
-    throw new Error(
-      'Нельзя удалить вакансию: к ней привязаны шаблоны интервью.'
-    );
-  }
-
-  return deleteRowById_(
+  const result = softDeleteById_(
     APP_CONFIG.SHEETS.VACANCIES,
     'Vacancy ID',
     id
   );
+
+  rowsToObjects_(
+    getSheet_(
+      APP_CONFIG.SHEETS.INTERVIEW_TEMPLATES
+    )
+  )
+    .filter(template =>
+      !isSoftDeleted_(template) &&
+      String(template['Vacancy ID']) === String(id)
+    )
+    .forEach(template =>
+      softDeleteById_(
+        APP_CONFIG.SHEETS.INTERVIEW_TEMPLATES,
+        'Template ID',
+        template['Template ID']
+      )
+    );
+
+  return result;
 }
 
 
 function getSources() {
   return rowsToObjects_(
-    getSheet_(
-      APP_CONFIG.SHEETS.SOURCES
-    )
-  );
+    getSheet_(APP_CONFIG.SHEETS.SOURCES)
+  ).filter(item => !isSoftDeleted_(item));
 }
 
 
 function saveSource(input) {
-  const name = String(
-    input && input.name || ''
-  ).trim();
+  const name = String(input && input.name || '').trim();
 
   if (!name) {
-    throw new Error(
-      'Название источника обязательно.'
-    );
+    throw new Error('Название источника обязательно.');
   }
 
-  const duplicate = getSources()
-    .some(source =>
-      source['Название']
-        .toLowerCase() ===
-        name.toLowerCase() &&
-      String(source['Source ID']) !==
-        String(input.id || '')
-    );
+  const duplicate = getSources().some(source =>
+    source['Название'].toLowerCase() === name.toLowerCase() &&
+    String(source['Source ID']) !== String(input.id || '')
+  );
 
   if (duplicate) {
-    throw new Error(
-      'Источник с таким названием уже существует.'
-    );
+    throw new Error('Источник с таким названием уже существует.');
   }
 
   const existing = input.id
@@ -151,41 +115,25 @@ function saveSource(input) {
     APP_CONFIG.SHEETS.SOURCES,
     'Source ID',
     {
-      'Source ID':
-        input.id ||
-        Utilities.getUuid(),
+      ...existing,
+      'Source ID': input.id || Utilities.getUuid(),
       'Название': name,
       'Дата создания':
-        existing &&
-        existing['Дата создания']
+        existing && existing['Дата создания']
           ? existing['Дата создания']
           : now,
-      'Дата изменения': now
+      'Дата изменения': now,
+      'Удален': false,
+      'Дата удаления': ''
     }
   );
 
-  return {
-    ok: true,
-    source: entity
-  };
+  return { ok: true, source: entity };
 }
 
 
 function deleteSource(id) {
-  const candidates = getCandidates();
-
-  if (
-    candidates.some(candidate =>
-      String(candidate['Source ID']) ===
-      String(id)
-    )
-  ) {
-    throw new Error(
-      'Нельзя удалить источник: он используется кандидатами.'
-    );
-  }
-
-  return deleteRowById_(
+  return softDeleteById_(
     APP_CONFIG.SHEETS.SOURCES,
     'Source ID',
     id
@@ -195,51 +143,49 @@ function deleteSource(id) {
 
 function getResponsibles() {
   return rowsToObjects_(
-    getSheet_(
-      APP_CONFIG.SHEETS.RESPONSIBLES
-    )
-  ).map(item => ({
-    ...item,
-    stages: parseJson_(
-      item['Доступные этапы'],
-      []
-    )
-  }));
+    getSheet_(APP_CONFIG.SHEETS.RESPONSIBLES)
+  )
+    .filter(item => !isSoftDeleted_(item))
+    .map(item => {
+      const fallback = splitFullName_(item['ФИО']);
+
+      return {
+        ...item,
+        'Фамилия': item['Фамилия'] || fallback.lastName,
+        'Имя': item['Имя'] || fallback.firstName,
+        'Отчество': item['Отчество'] || fallback.middleName,
+        stages: parseJson_(item['Доступные этапы'], [])
+      };
+    });
 }
 
 
 function saveResponsible(input) {
-  const name = String(
-    input && input.name || ''
-  ).trim();
-
-  const email = validateEmail_(
-    input && input.email
+  const lastName = normalizeNamePart_(input && input.lastName);
+  const firstName = normalizeNamePart_(input && input.firstName);
+  const middleName = normalizeNamePart_(input && input.middleName);
+  const fullName = composeFullName_(
+    lastName,
+    firstName,
+    middleName
   );
 
-  const stages = Array.isArray(
-    input && input.stages
-  )
+  const email = validateEmail_(input && input.email);
+
+  const stages = Array.isArray(input && input.stages)
     ? input.stages
     : [];
 
-  if (!name) {
-    throw new Error(
-      'ФИО ответственного обязательно.'
-    );
+  if (!lastName || !firstName) {
+    throw new Error('Фамилия и имя ответственного обязательны.');
   }
 
   if (!stages.length) {
-    throw new Error(
-      'Выберите хотя бы один доступный этап.'
-    );
+    throw new Error('Выберите хотя бы один доступный этап.');
   }
 
-  const invalid = stages.filter(
-    stage =>
-      !APP_CONFIG.PIPELINE_STATUSES.includes(
-        stage
-      )
+  const invalid = stages.filter(stage =>
+    !APP_CONFIG.PIPELINE_STATUSES.includes(stage)
   );
 
   if (invalid.length) {
@@ -263,19 +209,21 @@ function saveResponsible(input) {
     APP_CONFIG.SHEETS.RESPONSIBLES,
     'Responsible ID',
     {
-      'Responsible ID':
-        input.id ||
-        Utilities.getUuid(),
-      'ФИО': name,
+      ...existing,
+      'Responsible ID': input.id || Utilities.getUuid(),
+      'Фамилия': lastName,
+      'Имя': firstName,
+      'Отчество': middleName,
+      'ФИО': fullName,
       'Email': email,
-      'Доступные этапы':
-        stringifyJson_(stages),
+      'Доступные этапы': stringifyJson_(stages),
       'Дата создания':
-        existing &&
-        existing['Дата создания']
+        existing && existing['Дата создания']
           ? existing['Дата создания']
           : now,
-      'Дата изменения': now
+      'Дата изменения': now,
+      'Удален': false,
+      'Дата удаления': ''
     }
   );
 
@@ -290,20 +238,7 @@ function saveResponsible(input) {
 
 
 function deleteResponsible(id) {
-  const candidates = getCandidates();
-
-  if (
-    candidates.some(candidate =>
-      String(candidate['Responsible ID']) ===
-      String(id)
-    )
-  ) {
-    throw new Error(
-      'Нельзя удалить ответственного: он назначен кандидатам.'
-    );
-  }
-
-  return deleteRowById_(
+  return softDeleteById_(
     APP_CONFIG.SHEETS.RESPONSIBLES,
     'Responsible ID',
     id
@@ -316,59 +251,36 @@ function getInterviewTemplates() {
     getSheet_(
       APP_CONFIG.SHEETS.INTERVIEW_TEMPLATES
     )
-  ).map(item => ({
-    ...item,
-    questions: parseJson_(
-      item['Вопросы'],
-      []
-    )
-  }));
+  )
+    .filter(item => !isSoftDeleted_(item))
+    .map(item => ({
+      ...item,
+      questions: parseJson_(item['Вопросы'], [])
+    }));
 }
 
 
 function saveInterviewTemplate(input) {
-  const name = String(
-    input && input.name || ''
-  ).trim();
+  const name = String(input && input.name || '').trim();
+  const vacancyId = String(input && input.vacancyId || '').trim();
+  const stage = String(input && input.stage || '').trim();
 
-  const vacancyId = String(
-    input && input.vacancyId || ''
-  ).trim();
-
-  const stage = String(
-    input && input.stage || ''
-  ).trim();
-
-  const questions = Array.isArray(
-    input && input.questions
-  )
+  const questions = Array.isArray(input && input.questions)
     ? input.questions
-        .map(question =>
-          String(question || '').trim()
-        )
+        .map(question => String(question || '').trim())
         .filter(Boolean)
     : [];
 
   if (!name) {
-    throw new Error(
-      'Название шаблона обязательно.'
-    );
+    throw new Error('Название шаблона обязательно.');
   }
 
   if (!vacancyId) {
-    throw new Error(
-      'Вакансия обязательна.'
-    );
+    throw new Error('Вакансия обязательна.');
   }
 
-  if (
-    !APP_CONFIG.PIPELINE_STATUSES.includes(
-      stage
-    )
-  ) {
-    throw new Error(
-      'Выберите корректный этап.'
-    );
+  if (!APP_CONFIG.PIPELINE_STATUSES.includes(stage)) {
+    throw new Error('Выберите корректный этап.');
   }
 
   const vacancy = findById_(
@@ -377,10 +289,8 @@ function saveInterviewTemplate(input) {
     vacancyId
   );
 
-  if (!vacancy) {
-    throw new Error(
-      'Вакансия не найдена.'
-    );
+  if (!vacancy || isSoftDeleted_(vacancy)) {
+    throw new Error('Вакансия не найдена.');
   }
 
   const existing = input.id
@@ -397,21 +307,20 @@ function saveInterviewTemplate(input) {
     APP_CONFIG.SHEETS.INTERVIEW_TEMPLATES,
     'Template ID',
     {
-      'Template ID':
-        input.id ||
-        Utilities.getUuid(),
+      ...existing,
+      'Template ID': input.id || Utilities.getUuid(),
       'Название': name,
       'Vacancy ID': vacancyId,
       'Вакансия': vacancy['Вакансия'],
       'Этап': stage,
-      'Вопросы':
-        stringifyJson_(questions),
+      'Вопросы': stringifyJson_(questions),
       'Дата создания':
-        existing &&
-        existing['Дата создания']
+        existing && existing['Дата создания']
           ? existing['Дата создания']
           : now,
-      'Дата изменения': now
+      'Дата изменения': now,
+      'Удален': false,
+      'Дата удаления': ''
     }
   );
 
@@ -426,7 +335,7 @@ function saveInterviewTemplate(input) {
 
 
 function deleteInterviewTemplate(id) {
-  return deleteRowById_(
+  return softDeleteById_(
     APP_CONFIG.SHEETS.INTERVIEW_TEMPLATES,
     'Template ID',
     id
@@ -435,13 +344,8 @@ function deleteInterviewTemplate(id) {
 
 
 function getDictionaries() {
-  const sheet = getSheet_(
-    APP_CONFIG.SHEETS.DICTS
-  );
-
-  const values = sheet
-    .getDataRange()
-    .getDisplayValues();
+  const sheet = getSheet_(APP_CONFIG.SHEETS.DICTS);
+  const values = sheet.getDataRange().getDisplayValues();
 
   if (!values.length) {
     return {};
@@ -450,20 +354,16 @@ function getDictionaries() {
   const headers = values[0];
   const result = {};
 
-  headers.forEach(
-    (header, columnIndex) => {
-      if (!header) {
-        return;
-      }
-
-      result[header] = values
-        .slice(1)
-        .map(row =>
-          row[columnIndex]
-        )
-        .filter(Boolean);
+  headers.forEach((header, columnIndex) => {
+    if (!header) {
+      return;
     }
-  );
+
+    result[header] = values
+      .slice(1)
+      .map(row => row[columnIndex])
+      .filter(Boolean);
+  });
 
   return result;
 }
