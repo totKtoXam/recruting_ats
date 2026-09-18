@@ -488,25 +488,36 @@ function normalizeProfileUrl_(value, type) {
     return '';
   }
 
-  let url = raw;
-
-  if (!/^https?:\/\//i.test(url)) {
-    if (type === 'github') {
-      url =
-        'https://github.com/' +
-        url.replace(/^@/, '');
-    } else if (type === 'linkedin') {
-      const clean = url
-        .replace(/^@/, '')
-        .replace(/^linkedin\.com\//i, '');
-
-      url =
-        'https://www.linkedin.com/' +
-        (clean.startsWith('in/')
-          ? clean
-          : 'in/' + clean);
-    }
+  if (/^https?:\/\//i.test(raw)) {
+    return validateHttpUrl_(raw);
   }
 
-  return validateHttpUrl_(url);
+  if (type === 'github') {
+    const clean = raw
+      .replace(/^@/, '')
+      .replace(/^(?:www\.)?github\.com\//i, '')
+      .replace(/^\/+/, '');
+
+    return validateHttpUrl_(
+      'https://github.com/' + clean
+    );
+  }
+
+  if (type === 'linkedin') {
+    const clean = raw
+      .replace(/^@/, '')
+      .replace(/^(?:www\.)?linkedin\.com\//i, '')
+      .replace(/^\/+/, '');
+
+    return validateHttpUrl_(
+      'https://www.linkedin.com/' +
+      (
+        clean.startsWith('in/')
+          ? clean
+          : 'in/' + clean
+      )
+    );
+  }
+
+  return validateHttpUrl_(raw);
 }
