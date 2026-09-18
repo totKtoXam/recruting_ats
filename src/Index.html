@@ -2,43 +2,71 @@
 <html>
 <head>
   <base target="_top">
-
   <meta charset="utf-8">
-
   <meta
     name="viewport"
     content="width=device-width, initial-scale=1"
   >
-
   <?!= include('Styles'); ?>
 </head>
-
 <body>
   <header class="topbar">
     <div>
       <h1>Recruiting ATS</h1>
       <div class="subtitle">
-        Кандидаты и интервью
+        Кандидаты, интервью и вакансии
       </div>
     </div>
 
-    <button
-      class="button button-primary"
-      onclick="openCandidate()"
-    >
-      + Добавить кандидата
-    </button>
+    <nav class="top-actions">
+      <button
+        class="button button-secondary"
+        onclick="openAdmin()"
+      >
+        Админ-панель
+      </button>
+
+      <button
+        class="button button-primary"
+        onclick="openCandidate()"
+      >
+        + Кандидат
+      </button>
+    </nav>
   </header>
 
   <main class="page">
-    <section class="toolbar">
+    <section class="filters">
       <input
-        id="search"
-        class="search"
+        id="filterSearch"
         type="search"
-        placeholder="Поиск по ФИО, вакансии, контактам..."
+        placeholder="ФИО, телефон, email, Telegram..."
         oninput="renderBoard()"
       >
+
+      <select
+        id="filterVacancy"
+        onchange="renderBoard()"
+      ></select>
+
+      <select
+        id="filterResponsible"
+        onchange="renderBoard()"
+      ></select>
+
+      <select
+        id="filterSource"
+        onchange="renderBoard()"
+      ></select>
+
+      <label class="checkbox">
+        <input
+          id="filterArchived"
+          type="checkbox"
+          onchange="renderBoard()"
+        >
+        Архив
+      </label>
     </section>
 
     <section
@@ -53,26 +81,312 @@
   </main>
 
   <div
-    id="modal"
+    id="candidateModal"
     class="modal"
-    onclick="handleModalBackdrop(event)"
+  >
+    <div class="panel panel-wide">
+      <div class="panel-header">
+        <div>
+          <h2 id="candidateTitle">
+            Новый кандидат
+          </h2>
+          <div
+            id="candidateStatusLabel"
+            class="badge"
+          ></div>
+        </div>
+
+        <button
+          class="button button-secondary"
+          onclick="closeCandidate()"
+        >
+          Закрыть
+        </button>
+      </div>
+
+      <div
+        id="candidateTransitions"
+        class="transition-bar"
+      ></div>
+
+      <div class="tabs">
+        <button
+          class="tab active"
+          onclick="showCandidateTab('candidateDetails', this)"
+        >
+          Карточка
+        </button>
+
+        <button
+          id="historyTabButton"
+          class="tab"
+          onclick="showCandidateTab('candidateHistory', this)"
+        >
+          Результаты интервью
+        </button>
+      </div>
+
+      <section
+        id="candidateDetails"
+        class="tab-section active"
+      >
+        <input
+          id="candidateId"
+          type="hidden"
+        >
+
+        <div class="form-grid">
+          <div class="field">
+            <label>ФИО *</label>
+            <input id="candidateName">
+          </div>
+
+          <div class="field">
+            <label>Вакансия *</label>
+            <select id="candidateVacancy"></select>
+          </div>
+
+          <div class="field">
+            <label>Телефон *</label>
+            <input
+              id="candidatePhone"
+              placeholder="+7 7XX XXX XX XX"
+            >
+          </div>
+
+          <div class="field">
+            <label>Email</label>
+            <input
+              id="candidateEmail"
+              type="email"
+            >
+          </div>
+
+          <div class="field">
+            <label>Telegram</label>
+            <input
+              id="candidateTelegram"
+              oninput="renderTelegramPreview()"
+              placeholder="@username или https://t.me/username"
+            >
+            <a
+              id="telegramPreview"
+              class="preview-link"
+              target="_blank"
+              rel="noopener"
+            ></a>
+          </div>
+
+          <div class="field">
+            <label>ЗП ожидания</label>
+            <input
+              id="candidateSalary"
+              inputmode="numeric"
+              placeholder="500 000"
+              oninput="formatMoneyInput(this)"
+            >
+          </div>
+
+          <div class="field">
+            <label>Источник</label>
+            <select id="candidateSource"></select>
+          </div>
+
+          <div class="field">
+            <label>Ответственный *</label>
+            <select id="candidateResponsible"></select>
+          </div>
+
+          <div class="field full">
+            <label>Резюме *</label>
+            <input
+              id="candidateResumeFile"
+              type="file"
+              accept=".pdf,.doc,.docx"
+            >
+            <a
+              id="candidateResumeLink"
+              class="preview-link"
+              target="_blank"
+              rel="noopener"
+            ></a>
+          </div>
+
+          <div class="field full">
+            <label>Папка кандидата</label>
+            <a
+              id="candidateFolderLink"
+              class="preview-link"
+              target="_blank"
+              rel="noopener"
+            ></a>
+          </div>
+
+          <div class="field full">
+            <label>Комментарий</label>
+            <textarea id="candidateComment"></textarea>
+          </div>
+
+          <div class="field full">
+            <div class="field-header">
+              <label>Иные ссылки</label>
+              <button
+                class="button button-small"
+                type="button"
+                onclick="addCandidateLink()"
+              >
+                + Ссылка
+              </button>
+            </div>
+            <div id="candidateLinks"></div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button
+            id="archiveCandidateButton"
+            class="button button-danger left"
+            onclick="archiveCurrentCandidate()"
+            style="display:none"
+          >
+            Архивировать
+          </button>
+
+          <button
+            class="button button-primary"
+            onclick="saveCandidateForm()"
+          >
+            Сохранить
+          </button>
+        </div>
+      </section>
+
+      <section
+        id="candidateHistory"
+        class="tab-section"
+      >
+        <div id="interviewHistory"></div>
+      </section>
+    </div>
+  </div>
+
+  <div
+    id="transitionModal"
+    class="modal modal-top"
   >
     <div class="panel">
       <div class="panel-header">
         <div>
-          <h2 id="modalTitle">
-            Кандидат
-          </h2>
-
+          <h2>Результат этапа</h2>
           <div
-            id="candidateIdLabel"
+            id="transitionTitle"
             class="muted"
           ></div>
         </div>
 
         <button
           class="button button-secondary"
-          onclick="closeModal()"
+          onclick="closeTransition()"
+        >
+          Закрыть
+        </button>
+      </div>
+
+      <div class="form-grid one">
+        <div class="field">
+          <label>Шаблон вопросов</label>
+          <select
+            id="transitionTemplate"
+            onchange="renderTransitionQuestions()"
+          ></select>
+        </div>
+
+        <div class="field">
+          <label>Ответственный на следующем этапе *</label>
+          <select id="transitionResponsible"></select>
+        </div>
+
+        <div
+          id="transitionQuestions"
+          class="field full"
+        ></div>
+
+        <div class="field full">
+          <label>Комментарии</label>
+          <textarea id="transitionComment"></textarea>
+        </div>
+
+        <div class="field full">
+          <label>Результат *</label>
+          <textarea id="transitionResult"></textarea>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button
+          class="button button-primary"
+          onclick="submitTransition()"
+        >
+          Сохранить результат и перейти
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div
+    id="interviewEditModal"
+    class="modal modal-top"
+  >
+    <div class="panel">
+      <div class="panel-header">
+        <h2>Редактирование результата</h2>
+        <button
+          class="button button-secondary"
+          onclick="closeInterviewEdit()"
+        >
+          Закрыть
+        </button>
+      </div>
+
+      <div id="editInterviewQuestions"></div>
+
+      <div class="field">
+        <label>Комментарий</label>
+        <textarea id="editInterviewComment"></textarea>
+      </div>
+
+      <div class="field">
+        <label>Результат</label>
+        <textarea id="editInterviewResult"></textarea>
+      </div>
+
+      <div class="actions">
+        <button
+          class="button button-primary"
+          onclick="saveInterviewEdit()"
+        >
+          Сохранить
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div
+    id="adminModal"
+    class="modal"
+  >
+    <div class="panel panel-admin">
+      <div class="panel-header">
+        <div>
+          <h2>Админ-панель</h2>
+          <div class="muted">
+            Справочники и шаблоны
+          </div>
+        </div>
+
+        <button
+          class="button button-secondary"
+          onclick="closeAdmin()"
         >
           Закрыть
         </button>
@@ -81,325 +395,52 @@
       <div class="tabs">
         <button
           class="tab active"
-          onclick="showTab('candidate', this)"
+          onclick="showAdminTab('adminVacancies', this)"
         >
-          Карточка
+          Вакансии
         </button>
 
         <button
           class="tab"
-          onclick="showTab('interviews', this)"
+          onclick="showAdminTab('adminSources', this)"
         >
-          Интервью
+          Источники
+        </button>
+
+        <button
+          class="tab"
+          onclick="showAdminTab('adminResponsibles', this)"
+        >
+          Ответственные
+        </button>
+
+        <button
+          class="tab"
+          onclick="showAdminTab('adminTemplates', this)"
+        >
+          Шаблоны интервью
         </button>
       </div>
 
       <section
-        id="candidate"
-        class="tab-section active"
-      >
-        <div class="form-grid">
-          <input
-            type="hidden"
-            id="ID"
-          >
-
-          <div class="field">
-            <label for="ФИО">
-              ФИО
-            </label>
-
-            <input id="ФИО">
-          </div>
-
-          <div class="field">
-            <label for="Вакансия">
-              Вакансия
-            </label>
-
-            <input
-              id="Вакансия"
-              list="vacanciesList"
-            >
-
-            <datalist
-              id="vacanciesList"
-            ></datalist>
-          </div>
-
-          <div class="field">
-            <label for="Статус">
-              Статус
-            </label>
-
-            <select id="Статус"></select>
-          </div>
-
-          <div class="field">
-            <label for="Источник">
-              Источник
-            </label>
-
-            <select id="Источник"></select>
-          </div>
-
-          <div class="field">
-            <label for="Телефон">
-              Телефон
-            </label>
-
-            <input id="Телефон">
-          </div>
-
-          <div class="field">
-            <label for="Email">
-              Email
-            </label>
-
-            <input
-              id="Email"
-              type="email"
-            >
-          </div>
-
-          <div class="field">
-            <label for="Telegram">
-              Telegram
-            </label>
-
-            <input id="Telegram">
-          </div>
-
-          <div class="field">
-            <label for="Зарплатные ожидания">
-              Зарплатные ожидания
-            </label>
-
-            <input id="Зарплатные ожидания">
-          </div>
-
-          <div class="field">
-            <label for="Ответственный">
-              Ответственный
-            </label>
-
-            <input id="Ответственный">
-          </div>
-
-          <div class="field">
-            <label for="Следующий контакт">
-              Следующий контакт
-            </label>
-
-            <input
-              id="Следующий контакт"
-              type="date"
-            >
-          </div>
-
-          <div class="field full">
-            <label for="Резюме">
-              Резюме
-            </label>
-
-            <input
-              id="Резюме"
-              placeholder="Ссылка на резюме"
-            >
-          </div>
-
-          <div class="field full">
-            <label for="Папка кандидата">
-              Папка кандидата
-            </label>
-
-            <div class="link-row">
-              <input
-                id="Папка кандидата"
-                readonly
-              >
-
-              <button
-                class="button button-secondary"
-                onclick="openCandidateFolder()"
-                type="button"
-              >
-                Открыть
-              </button>
-            </div>
-          </div>
-
-          <div class="field full">
-            <label for="Итог">
-              Итог
-            </label>
-
-            <textarea id="Итог"></textarea>
-          </div>
-
-          <div class="field full">
-            <label for="Причина отказа">
-              Причина отказа
-            </label>
-
-            <textarea
-              id="Причина отказа"
-            ></textarea>
-          </div>
-
-          <div class="field full">
-            <label for="Комментарий">
-              Комментарий
-            </label>
-
-            <textarea id="Комментарий"></textarea>
-          </div>
-        </div>
-
-        <div class="actions">
-          <button
-            id="deleteBtn"
-            class="button button-danger left"
-            onclick="removeCandidate()"
-            style="display:none"
-          >
-            Удалить
-          </button>
-
-          <button
-            class="button button-primary"
-            onclick="saveCandidate()"
-          >
-            Сохранить
-          </button>
-        </div>
-      </section>
+        id="adminVacancies"
+        class="admin-section active"
+      ></section>
 
       <section
-        id="interviews"
-        class="tab-section"
-      >
-        <div id="interviewList"></div>
+        id="adminSources"
+        class="admin-section"
+      ></section>
 
-        <h3>
-          Добавить интервью
-        </h3>
+      <section
+        id="adminResponsibles"
+        class="admin-section"
+      ></section>
 
-        <div class="form-grid">
-          <div class="field">
-            <label for="ivType">
-              Тип интервью
-            </label>
-
-            <select id="ivType"></select>
-          </div>
-
-          <div class="field">
-            <label for="ivInterviewer">
-              Интервьюер
-            </label>
-
-            <input id="ivInterviewer">
-          </div>
-
-          <div class="field full">
-            <label for="ivQuestion">
-              Вопрос
-            </label>
-
-            <textarea id="ivQuestion"></textarea>
-          </div>
-
-          <div class="field full">
-            <label for="ivAnswer">
-              Ответ
-            </label>
-
-            <textarea id="ivAnswer"></textarea>
-          </div>
-
-          <div class="field">
-            <label for="ivHard">
-              Hard Skills
-            </label>
-
-            <input id="ivHard">
-          </div>
-
-          <div class="field">
-            <label for="ivSoft">
-              Soft Skills
-            </label>
-
-            <input id="ivSoft">
-          </div>
-
-          <div class="field">
-            <label for="ivMotivation">
-              Мотивация
-            </label>
-
-            <input id="ivMotivation">
-          </div>
-
-          <div class="field">
-            <label for="ivPotential">
-              Потенциал
-            </label>
-
-            <input id="ivPotential">
-          </div>
-
-          <div class="field full">
-            <label for="ivStrengths">
-              Сильные стороны
-            </label>
-
-            <textarea id="ivStrengths"></textarea>
-          </div>
-
-          <div class="field full">
-            <label for="ivWeaknesses">
-              Слабые стороны
-            </label>
-
-            <textarea id="ivWeaknesses"></textarea>
-          </div>
-
-          <div class="field full">
-            <label for="ivResult">
-              Итог интервью
-            </label>
-
-            <textarea id="ivResult"></textarea>
-          </div>
-
-          <div class="field">
-            <label for="ivRecommendation">
-              Рекомендация
-            </label>
-
-            <select id="ivRecommendation"></select>
-          </div>
-
-          <div class="field full">
-            <label for="ivComment">
-              Комментарий
-            </label>
-
-            <textarea id="ivComment"></textarea>
-          </div>
-        </div>
-
-        <div class="actions">
-          <button
-            class="button button-primary"
-            onclick="addInterview()"
-          >
-            Добавить интервью
-          </button>
-        </div>
-      </section>
+      <section
+        id="adminTemplates"
+        class="admin-section"
+      ></section>
     </div>
   </div>
 
