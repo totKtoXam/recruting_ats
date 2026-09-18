@@ -48,32 +48,32 @@ const APP_CONFIG = Object.freeze({
     'Hired': ['Offer']
   }),
 
-  MAX_RESUME_BYTES: 10 * 1024 * 1024
+  MAX_RESUME_BYTES: 10 * 1024 * 1024,
+
+  // Bootstrap values for the current installation.
+  // Google access permissions still protect the underlying resources.
+  DEFAULT_SPREADSHEET_ID:
+    '1xPEAjQ0O1H680orKt0as06EkYE6BkC8seedxLvHy2os',
+
+  DEFAULT_CANDIDATES_FOLDER_ID:
+    '1SAAxC0qYse1gRx9U0pQurfC3Kh_ec0YV'
 });
 
 
 function getRuntimeConfig_() {
   const props = PropertiesService.getScriptProperties();
 
-  const spreadsheetId = props.getProperty(
-    APP_CONFIG.PROPERTIES.SPREADSHEET_ID
-  );
+  const spreadsheetId =
+    props.getProperty(
+      APP_CONFIG.PROPERTIES.SPREADSHEET_ID
+    ) ||
+    APP_CONFIG.DEFAULT_SPREADSHEET_ID;
 
-  const candidatesFolderId = props.getProperty(
-    APP_CONFIG.PROPERTIES.CANDIDATES_FOLDER_ID
-  );
-
-  if (!spreadsheetId) {
-    throw new Error(
-      'Не задан Script Property SPREADSHEET_ID. См. README.md.'
-    );
-  }
-
-  if (!candidatesFolderId) {
-    throw new Error(
-      'Не задан Script Property CANDIDATES_FOLDER_ID. См. README.md.'
-    );
-  }
+  const candidatesFolderId =
+    props.getProperty(
+      APP_CONFIG.PROPERTIES.CANDIDATES_FOLDER_ID
+    ) ||
+    APP_CONFIG.DEFAULT_CANDIDATES_FOLDER_ID;
 
   return {
     spreadsheetId,
