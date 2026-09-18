@@ -1,0 +1,111 @@
+openapi: 3.1.0
+info:
+  title: Recruiting ATS Resume Intake API
+  version: 1.0.0
+  description: Creates prefilled candidate drafts in Recruiting ATS.
+servers:
+  - url: https://script.google.com/macros/s/REPLACE_WITH_DEPLOYMENT_ID
+paths:
+  /exec:
+    get:
+      operationId: getReferences
+      summary: Get ATS reference data
+      parameters:
+        - name: api
+          in: query
+          required: true
+          schema:
+            type: string
+            const: references
+      security:
+        - ApiKeyQuery: []
+      responses:
+        "200":
+          description: Reference data
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    post:
+      operationId: createCandidateDraft
+      summary: Create a prefilled candidate draft
+      parameters:
+        - name: api
+          in: query
+          required: true
+          schema:
+            type: string
+            const: candidate-draft
+      security:
+        - ApiKeyQuery: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CandidateDraftRequest"
+      responses:
+        "200":
+          description: Draft URL and metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+components:
+  securitySchemes:
+    ApiKeyQuery:
+      type: apiKey
+      in: query
+      name: api_key
+  schemas:
+    CandidateDraftRequest:
+      type: object
+      properties:
+        lastName:
+          type: string
+        firstName:
+          type: string
+        middleName:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+        telegram:
+          type: string
+        github:
+          type: string
+        linkedin:
+          type: string
+        salary:
+          oneOf:
+            - type: number
+            - type: string
+        vacancyId:
+          type: string
+        sourceId:
+          type: string
+        responsibleId:
+          type: string
+        comment:
+          type: string
+        links:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              url:
+                type: string
+        resume:
+          type: object
+          properties:
+            name:
+              type: string
+            mimeType:
+              type: string
+            base64:
+              type: string
