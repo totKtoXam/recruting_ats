@@ -1,67 +1,41 @@
 <div class="page-header">
   <div>
-    <h2>Настройки ATS</h2>
+    <h2>Админ-панель</h2>
     <p class="page-description">
-      Вакансии, источники, ответственные и шаблоны интервью.
+      Справочники, вакансии и шаблоны интервью.
     </p>
+  </div>
+
+  <div class="page-actions">
+    <button class="button button-secondary" onclick="refreshAdminPage(this)">
+      <span class="button-icon">↻</span>
+      <span>Обновить</span>
+    </button>
   </div>
 </div>
 
 <div class="tabs admin-tabs">
-  <button
-    class="tab active"
-    data-admin-tab="vacancies"
-    onclick="showAdminTab('vacancies', this)"
-  >
-    Вакансии
-  </button>
-
-  <button
-    class="tab"
-    data-admin-tab="sources"
-    onclick="showAdminTab('sources', this)"
-  >
-    Источники
-  </button>
-
-  <button
-    class="tab"
-    data-admin-tab="responsibles"
-    onclick="showAdminTab('responsibles', this)"
-  >
-    Ответственные
-  </button>
-
-  <button
-    class="tab"
-    data-admin-tab="templates"
-    onclick="showAdminTab('templates', this)"
-  >
-    Шаблоны интервью
-  </button>
+  <button class="tab active" onclick="showAdminTab('vacancies', this)">Вакансии</button>
+  <button class="tab" onclick="showAdminTab('sources', this)">Источники</button>
+  <button class="tab" onclick="showAdminTab('responsibles', this)">Ответственные</button>
 </div>
 
-<section
-  id="admin-vacancies"
-  class="admin-page-section active"
->
+<section id="admin-vacancies" class="admin-page-section active">
   <div class="admin-layout">
-    <aside class="admin-form-card">
+    <aside id="vacancyForm" class="admin-form-card">
       <div class="section-title-row">
-        <h3 id="vacancyFormTitle">Новая вакансия</h3>
-        <button
-          class="button button-small button-secondary"
-          onclick="resetVacancyForm()"
-        >
-          Очистить
-        </button>
+        <div>
+          <div class="eyebrow">Вакансия</div>
+          <h3 id="vacancyFormTitle">Новая вакансия</h3>
+        </div>
+        <button class="button button-ghost button-small" onclick="resetVacancyForm()">Очистить</button>
       </div>
 
       <input id="vacancyId" type="hidden">
 
       <div class="field">
         <label for="vacancyName">Название *</label>
-        <input id="vacancyName">
+        <input id="vacancyName" placeholder="Например: Middle .NET Developer">
       </div>
 
       <div class="field">
@@ -79,186 +53,155 @@
       </div>
 
       <div class="actions">
-        <button
-          class="button button-primary"
-          onclick="saveVacancyForm()"
-        >
-          Сохранить
-        </button>
+        <button class="button button-primary" onclick="saveVacancyForm(this)">Сохранить вакансию</button>
+      </div>
+
+      <div id="vacancyTemplatesPanel" class="nested-panel">
+        <div class="nested-panel-header">
+          <div>
+            <div class="eyebrow">Внутри вакансии</div>
+            <h4>Шаблоны интервью</h4>
+          </div>
+          <span id="vacancyTemplateCount" class="counter-badge">0</span>
+        </div>
+
+        <div id="vacancyTemplateEmpty" class="empty-state compact">
+          Сначала сохраните или выберите вакансию.
+        </div>
+
+        <div id="templateEditor" hidden>
+          <input id="templateId" type="hidden">
+
+          <div class="field">
+            <label for="templateName">Название шаблона *</label>
+            <input id="templateName" placeholder="Техническое интервью">
+          </div>
+
+          <div class="field">
+            <label for="templateStage">Этап *</label>
+            <select id="templateStage"></select>
+          </div>
+
+          <div class="field">
+            <label for="templateQuestions">Вопросы</label>
+            <textarea
+              id="templateQuestions"
+              class="questions-textarea"
+              placeholder="Один вопрос на строку"
+            ></textarea>
+          </div>
+
+          <div class="actions compact-actions">
+            <button class="button button-ghost" onclick="resetTemplateForm()">Очистить</button>
+            <button class="button button-primary" onclick="saveTemplateForm(this)">Сохранить шаблон</button>
+          </div>
+
+          <div id="vacancyTemplateList" class="template-list"></div>
+        </div>
       </div>
     </aside>
 
     <div class="admin-list-card">
       <div class="section-title-row">
-        <h3>Вакансии</h3>
-        <span id="vacancyCount" class="muted"></span>
+        <div>
+          <h3>Вакансии</h3>
+          <p class="muted">Шаблоны интервью отображаются прямо внутри вакансии.</p>
+        </div>
+        <span id="vacancyCount" class="counter-badge"></span>
       </div>
       <div id="vacancyList"></div>
     </div>
   </div>
 </section>
 
-<section
-  id="admin-sources"
-  class="admin-page-section"
->
+<section id="admin-sources" class="admin-page-section">
   <div class="admin-layout">
-    <aside class="admin-form-card">
+    <aside id="sourceForm" class="admin-form-card">
       <div class="section-title-row">
-        <h3 id="sourceFormTitle">Новый источник</h3>
-        <button
-          class="button button-small button-secondary"
-          onclick="resetSourceForm()"
-        >
-          Очистить
-        </button>
+        <div>
+          <div class="eyebrow">Справочник</div>
+          <h3 id="sourceFormTitle">Новый источник</h3>
+        </div>
+        <button class="button button-ghost button-small" onclick="resetSourceForm()">Очистить</button>
       </div>
 
       <input id="sourceId" type="hidden">
 
       <div class="field">
         <label for="sourceName">Название *</label>
-        <input id="sourceName">
+        <input id="sourceName" placeholder="LinkedIn">
       </div>
 
       <div class="actions">
-        <button
-          class="button button-primary"
-          onclick="saveSourceForm()"
-        >
-          Сохранить
-        </button>
+        <button class="button button-primary" onclick="saveSourceForm(this)">Сохранить</button>
       </div>
     </aside>
 
     <div class="admin-list-card">
       <div class="section-title-row">
         <h3>Источники</h3>
-        <span id="sourceCount" class="muted"></span>
+        <span id="sourceCount" class="counter-badge"></span>
       </div>
       <div id="sourceList"></div>
     </div>
   </div>
 </section>
 
-<section
-  id="admin-responsibles"
-  class="admin-page-section"
->
+<section id="admin-responsibles" class="admin-page-section">
   <div class="admin-layout">
-    <aside class="admin-form-card">
+    <aside id="responsibleForm" class="admin-form-card">
       <div class="section-title-row">
-        <h3 id="responsibleFormTitle">
-          Новый ответственный
-        </h3>
-        <button
-          class="button button-small button-secondary"
-          onclick="resetResponsibleForm()"
-        >
-          Очистить
-        </button>
+        <div>
+          <div class="eyebrow">Ответственный</div>
+          <h3 id="responsibleFormTitle">Новый ответственный</h3>
+        </div>
+        <button class="button button-ghost button-small" onclick="resetResponsibleForm()">Очистить</button>
       </div>
 
       <input id="responsibleId" type="hidden">
 
-      <div class="field">
-        <label for="responsibleName">ФИО *</label>
-        <input id="responsibleName">
+      <div class="form-grid form-grid-3">
+        <div class="field">
+          <label for="responsibleLastName">Фамилия *</label>
+          <input id="responsibleLastName">
+        </div>
+        <div class="field">
+          <label for="responsibleFirstName">Имя *</label>
+          <input id="responsibleFirstName">
+        </div>
+        <div class="field">
+          <label for="responsibleMiddleName">Отчество</label>
+          <input id="responsibleMiddleName">
+        </div>
       </div>
 
       <div class="field">
         <label for="responsibleEmail">Email</label>
-        <input id="responsibleEmail" type="email">
+        <input
+          id="responsibleEmail"
+          type="email"
+          placeholder="name@example.com"
+          oninput="normalizeEmailInput(this)"
+          onblur="validateEmailField(this)"
+        >
       </div>
 
       <div class="field">
         <label>Доступные этапы *</label>
-        <div
-          id="responsibleStages"
-          class="stage-multiselect"
-        ></div>
+        <div id="responsibleStages" class="stage-multiselect"></div>
       </div>
 
       <div class="actions">
-        <button
-          class="button button-primary"
-          onclick="saveResponsibleForm()"
-        >
-          Сохранить
-        </button>
+        <button class="button button-primary" onclick="saveResponsibleForm(this)">Сохранить</button>
       </div>
     </aside>
 
     <div class="admin-list-card">
       <div class="section-title-row">
         <h3>Ответственные</h3>
-        <span id="responsibleCount" class="muted"></span>
+        <span id="responsibleCount" class="counter-badge"></span>
       </div>
       <div id="responsibleList"></div>
-    </div>
-  </div>
-</section>
-
-<section
-  id="admin-templates"
-  class="admin-page-section"
->
-  <div class="admin-layout">
-    <aside class="admin-form-card">
-      <div class="section-title-row">
-        <h3 id="templateFormTitle">
-          Новый шаблон интервью
-        </h3>
-        <button
-          class="button button-small button-secondary"
-          onclick="resetTemplateForm()"
-        >
-          Очистить
-        </button>
-      </div>
-
-      <input id="templateId" type="hidden">
-
-      <div class="field">
-        <label for="templateName">Название *</label>
-        <input id="templateName">
-      </div>
-
-      <div class="field">
-        <label for="templateVacancy">Вакансия *</label>
-        <select id="templateVacancy"></select>
-      </div>
-
-      <div class="field">
-        <label for="templateStage">Этап *</label>
-        <select id="templateStage"></select>
-      </div>
-
-      <div class="field">
-        <label for="templateQuestions">Вопросы</label>
-        <textarea
-          id="templateQuestions"
-          class="questions-textarea"
-          placeholder="Один вопрос на строку"
-        ></textarea>
-      </div>
-
-      <div class="actions">
-        <button
-          class="button button-primary"
-          onclick="saveTemplateForm()"
-        >
-          Сохранить
-        </button>
-      </div>
-    </aside>
-
-    <div class="admin-list-card">
-      <div class="section-title-row">
-        <h3>Шаблоны интервью</h3>
-        <span id="templateCount" class="muted"></span>
-      </div>
-      <div id="templateList"></div>
     </div>
   </div>
 </section>
