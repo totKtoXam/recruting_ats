@@ -320,11 +320,17 @@ function saveTransitionInterview_(
     }
 
     const missingQuestions =
-      templateQuestions.filter(question =>
-        !answers.some(item =>
-          item.question === question &&
-          Boolean(item.answer)
-        )
+      templateQuestions.filter(
+        (question, index) => {
+          const answer =
+            answers[index];
+
+          return (
+            !answer ||
+            answer.question !== question ||
+            !answer.answer
+          );
+        }
       );
 
     if (missingQuestions.length) {
