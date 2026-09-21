@@ -124,6 +124,7 @@ function ensureSchema_() {
     'Email',
     'ФИО',
     'Avatar URL',
+    'IsActive',
     'Дата создания',
     'Последний вход'
   ];
