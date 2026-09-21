@@ -59,14 +59,45 @@ function getArchivedCandidates() {
 }
 
 
-function getStats() {
-  const active = getCandidates();
-  const archived =
-    getArchivedCandidates();
+function getArchivedCandidateCount_() {
+  const sheet = getSheet_(
+    APP_CONFIG.SHEETS.ARCHIVED_CANDIDATES
+  );
 
+  const lastRow = sheet.getLastRow();
+
+  if (lastRow < 2) {
+    return 0;
+  }
+
+  const headers = getHeaders_(sheet);
+  const idIndex = headers.indexOf('ID');
+
+  if (idIndex < 0) {
+    return Math.max(0, lastRow - 1);
+  }
+
+  return sheet
+    .getRange(
+      2,
+      idIndex + 1,
+      lastRow - 1,
+      1
+    )
+    .getDisplayValues()
+    .flat()
+    .filter(Boolean)
+    .length;
+}
+
+
+function calculateStats_(
+  active,
+  archivedCount
+) {
   const byStatus = {};
 
-  active.forEach(candidate => {
+  (active || []).forEach(candidate => {
     const status =
       candidate['Статус'] ||
       'Без статуса';
@@ -76,10 +107,21 @@ function getStats() {
   });
 
   return {
-    total: active.length,
-    archived: archived.length,
+    total: (active || []).length,
+    archived:
+      Number(archivedCount || 0),
     byStatus
   };
+}
+
+
+function getStats() {
+  const active = getCandidates();
+
+  return calculateStats_(
+    active,
+    getArchivedCandidateCount_()
+  );
 }
 
 
