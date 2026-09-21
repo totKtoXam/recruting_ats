@@ -186,6 +186,46 @@ function saveResponsible(input) {
 
   const email = validateEmail_(input && input.email);
 
+  const userId = String(
+    input &&
+    input.userId !== undefined
+      ? input.userId || ''
+      : ''
+  ).trim();
+
+  if (userId) {
+    const user = findById_(
+      APP_CONFIG.SHEETS.USERS,
+      'User ID',
+      userId
+    );
+
+    if (!user) {
+      throw new Error(
+        'Выбранный пользователь не найден.'
+      );
+    }
+
+    const linked = rowsToObjects_(
+      getSheet_(
+        APP_CONFIG.SHEETS.RESPONSIBLES
+      )
+    ).find(item =>
+      !isSoftDeleted_(item) &&
+      String(item['User ID'] || '') === userId &&
+      String(item['Responsible ID'] || '') !==
+        String(input && input.id || '')
+    );
+
+    if (linked) {
+      throw new Error(
+        'Этот пользователь уже привязан к ответственному "' +
+        linked['ФИО'] +
+        '".'
+      );
+    }
+  }
+
   const stages = Array.isArray(input && input.stages)
     ? input.stages
     : [];
@@ -237,6 +277,7 @@ function saveResponsible(input) {
       'Отчество': middleName,
       'ФИО': fullName,
       'Email': email,
+      'User ID': userId,
       'Доступные этапы': stringifyJson_(stages),
       'Дата создания':
         existing && existing['Дата создания']
