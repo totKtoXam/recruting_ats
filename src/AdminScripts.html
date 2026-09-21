@@ -1,7 +1,7 @@
 <script>
 function renderAdminAll(){
   if(!state.loaded.references){
-    ['vacancyList','sourceList','responsibleList','userList'].forEach(id=>{
+    ['vacancyList','sourceList','responsibleList'].forEach(id=>{
       if(el(id))el(id).innerHTML='<div class="empty-state compact">Данные загружаются в фоне…</div>';
     });
     return;
@@ -9,7 +9,6 @@ function renderAdminAll(){
 
   renderVacancies();
   renderSources();
-  renderUsers();
   renderResponsibles();
   renderResponsibleUserOptions();
   renderResponsibleStageOptions();
@@ -573,27 +572,6 @@ function renderResponsibleUserOptions(selected){
         String(user['User ID'])===current
       )
     ).join('');
-}
-
-function renderUsers(){
-  if(!el('userList'))return;
-
-  const users=state.users||[];
-  el('userCount').textContent=users.length+' шт.';
-
-  const rows=users.map(user=>({
-    cells:[
-      user['ФИО']||'—',
-      user.Email||'—',
-      user['Google Subject']||'—',
-      user['Последний вход']||'—'
-    ]
-  }));
-
-  el('userList').innerHTML=adminTable(
-    ['ФИО','Email','Google Subject','Последний вход'],
-    rows
-  );
 }
 
 function renderResponsibles(){
