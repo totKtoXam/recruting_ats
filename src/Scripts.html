@@ -17,7 +17,7 @@ let state={
     references:false,
     candidates:false,
     archivedCandidates:false,
-    interviews:false
+    users:false
   }
 };
 
@@ -29,6 +29,11 @@ let currentInterviews=[];
 let editingInterview=null;
 let confirmResolver=null;
 let resumeUploading=false;
+let archivedCandidatesLoadPromise=null;
+let adminUsersLoadPromise=null;
+const interviewLoadPromises={};
+const candidateDetailsLoadPromises={};
+const loadedInterviewCandidateIds=new Set();
 const collapsedColumns=new Set();
 
 function el(id){return document.getElementById(id)}
@@ -214,7 +219,13 @@ function applyRoute(){
   el('navCandidates').classList.toggle('nav-active',route.page==='candidates');
   el('navAdmin').classList.toggle('nav-active',route.page==='admin');
 
-  if(route.page==='admin'&&typeof renderAdminAll==='function')renderAdminAll();
+  if(route.page==='admin'){
+    if(typeof renderAdminAll==='function')renderAdminAll();
+    if(state.loaded.references){
+      ensureAdminUsersLoaded().catch(()=>{});
+    }
+  }
+
   maybeOpenCandidateFromRoute();
 }
 
@@ -228,7 +239,7 @@ function candidateById(id){
   );
 }
 
-function maybeOpenCandidateFromRoute(){
+async function maybeOpenCandidateFromRoute(){
   const route=getRoute();
 
   if(
@@ -239,8 +250,31 @@ function maybeOpenCandidateFromRoute(){
     return;
   }
 
-  const candidate=
+  let candidate=
     candidateById(route.candidateId);
+
+  if(
+    !candidate &&
+    !state.loaded.archivedCandidates
+  ){
+    try{
+      await ensureArchivedCandidatesLoaded();
+    }catch(error){
+      return;
+    }
+
+    const latestRoute=getRoute();
+
+    if(
+      latestRoute.candidateId!==
+      route.candidateId
+    ){
+      return;
+    }
+
+    candidate=
+      candidateById(route.candidateId);
+  }
 
   if(
     candidate &&
@@ -248,7 +282,10 @@ function maybeOpenCandidateFromRoute(){
       .classList
       .contains('open')
   ){
-    openCandidate(candidate,false);
+    openCandidateById(
+      candidate.ID,
+      false
+    );
   }
 }
 
@@ -286,55 +323,142 @@ function renderInitialShell(){
   updateSyncStatus();
 }
 
-function preloadAllData(){
-  rpc('getReferenceData').then(data=>{
-    Object.assign(state,{
-      vacancies:data.vacancies||[],
-      sources:data.sources||[],
-      responsibles:data.responsibles||[],
-      users:data.users||[],
-      currentUser:data.currentUser||null,
-      interviewTemplates:data.interviewTemplates||[],
-      dictionaries:data.dictionaries||{},
-      transitions:data.transitions||{},
-      pipelineStatuses:data.pipelineStatuses||[]
-    });
-    state.loaded.references=true;
-    populateGlobalFilters();
-    renderCurrentUser();
-    render();
-    if(typeof renderAdminAll==='function')renderAdminAll();
-    updateSyncStatus();
-    maybeOpenCandidateFromRoute();
-    maybeLoadInitialDraft();
-  }).catch(e=>showToast(e.message||String(e),'error'));
+function applyBootstrapData(data){
+  Object.assign(state,{
+    candidates:data.candidates||[],
+    stats:data.stats||{},
+    vacancies:data.vacancies||[],
+    sources:data.sources||[],
+    responsibles:data.responsibles||[],
+    currentUser:data.currentUser||null,
+    interviewTemplates:data.interviewTemplates||[],
+    dictionaries:data.dictionaries||{},
+    transitions:data.transitions||{},
+    pipelineStatuses:data.pipelineStatuses||[]
+  });
 
-  rpc('getCandidateData').then(data=>{
-    state.candidates=data.candidates||[];
-    state.stats=data.stats||{};
-    state.loaded.candidates=true;
-    populateGlobalFilters();
-    render();
-    updateSyncStatus();
-    maybeOpenCandidateFromRoute();
-  }).catch(e=>showToast(e.message||String(e),'error'));
+  state.loaded.references=true;
+  state.loaded.candidates=true;
 
-  rpc('getArchivedCandidateData').then(data=>{
-    state.archivedCandidates=
-      data.archivedCandidates||[];
-    state.loaded.archivedCandidates=true;
-    render();
-    updateSyncStatus();
-    maybeOpenCandidateFromRoute();
-  }).catch(e=>showToast(e.message||String(e),'error'));
+  populateGlobalFilters();
+  renderCurrentUser();
+  render();
 
-  rpc('getAllInterviews').then(data=>{
-    state.interviews=data||[];
-    state.loaded.interviews=true;
-    if(currentCandidate)setCurrentInterviews(currentCandidate.ID);
-    updateSyncStatus();
-  }).catch(e=>showToast(e.message||String(e),'error'));
+  if(typeof renderAdminAll==='function'){
+    renderAdminAll();
+  }
+
+  updateSyncStatus();
+  maybeOpenCandidateFromRoute();
+  maybeLoadInitialDraft();
+
+  if(getRoute().page==='admin'){
+    ensureAdminUsersLoaded().catch(()=>{});
+  }
 }
+
+
+function preloadAllData(){
+  rpc('getBootstrapData')
+    .then(applyBootstrapData)
+    .catch(error=>
+      showToast(
+        error&&error.message
+          ? error.message
+          : String(error),
+        'error'
+      )
+    );
+}
+
+
+async function ensureAdminUsersLoaded(force=false){
+  if(
+    state.loaded.users &&
+    !force
+  ){
+    return state.users;
+  }
+
+  if(
+    adminUsersLoadPromise &&
+    !force
+  ){
+    return adminUsersLoadPromise;
+  }
+
+  adminUsersLoadPromise=
+    rpc('getAdminUserData')
+      .then(data=>{
+        state.users=
+          data.users||[];
+        state.loaded.users=true;
+
+        if(typeof renderAdminAll==='function'){
+          renderAdminAll();
+        }
+
+        return state.users;
+      })
+      .finally(()=>{
+        adminUsersLoadPromise=null;
+      });
+
+  return adminUsersLoadPromise;
+}
+
+
+async function ensureArchivedCandidatesLoaded(force=false){
+  if(
+    state.loaded.archivedCandidates &&
+    !force
+  ){
+    return state.archivedCandidates;
+  }
+
+  if(
+    archivedCandidatesLoadPromise &&
+    !force
+  ){
+    return archivedCandidatesLoadPromise;
+  }
+
+  archivedCandidatesLoadPromise=
+    rpc('getArchivedCandidateData')
+      .then(data=>{
+        state.archivedCandidates=
+          data.archivedCandidates||[];
+        state.loaded.archivedCandidates=true;
+        render();
+        return state.archivedCandidates;
+      })
+      .finally(()=>{
+        archivedCandidatesLoadPromise=null;
+      });
+
+  return archivedCandidatesLoadPromise;
+}
+
+
+async function toggleArchivedFilter(){
+  if(el('filterArchived').checked){
+    try{
+      await ensureArchivedCandidatesLoaded();
+    }catch(error){
+      el('filterArchived').checked=false;
+      showToast(
+        error&&error.message
+          ? error.message
+          : String(error),
+        'error'
+      );
+      return;
+    }
+  }
+
+  renderBoard();
+}
+
 
 function maybeLoadInitialDraft(){
   const token=
@@ -512,11 +636,19 @@ function applyCandidateDraft(draft){
 
 
 function updateSyncStatus(){
-  const loaded=Object.values(state.loaded).filter(Boolean).length;
-  const total=Object.keys(state.loaded).length;
+  const ready=
+    state.loaded.references&&
+    state.loaded.candidates;
+
   const node=el('dataSyncStatus');
-  node.textContent=loaded===total?'Данные синхронизированы':'Загрузка данных '+loaded+'/'+total;
-  node.classList.toggle('sync-ready',loaded===total);
+  node.textContent=
+    ready
+      ? 'Данные синхронизированы'
+      : 'Загрузка данных…';
+  node.classList.toggle(
+    'sync-ready',
+    ready
+  );
 }
 
 async function refreshReferences(){
@@ -534,6 +666,7 @@ async function refreshReferences(){
   if(typeof renderAdminAll==='function')renderAdminAll();
 }
 
+
 async function refreshCandidates(){
   const data=await rpc('getCandidateData');
   state.candidates=data.candidates||[];
@@ -543,34 +676,62 @@ async function refreshCandidates(){
   render();
 }
 
+
 async function refreshArchivedCandidates(){
-  const data=
-    await rpc(
-      'getArchivedCandidateData'
-    );
-
-  state.archivedCandidates=
-    data.archivedCandidates||[];
-
-  state.loaded.archivedCandidates=true;
-  render();
+  return ensureArchivedCandidatesLoaded(true);
 }
+
 
 async function refreshInterviews(){
-  state.interviews=await rpc('getAllInterviews')||[];
-  state.loaded.interviews=true;
-  if(currentCandidate)setCurrentInterviews(currentCandidate.ID);
+  if(!currentCandidate){
+    return [];
+  }
+
+  return loadCandidateInterviews(
+    currentCandidate.ID,
+    true
+  );
 }
 
+
+async function refreshBootstrapData(){
+  const data=
+    await rpc('getBootstrapData');
+
+  applyBootstrapData(data);
+}
+
+
 async function refreshAll(){
-  await Promise.all([
-    refreshReferences(),
-    refreshCandidates(),
-    refreshArchivedCandidates(),
-    refreshInterviews()
-  ]);
+  await refreshBootstrapData();
+
+  const extra=[];
+
+  if(
+    state.loaded.archivedCandidates ||
+    el('filterArchived').checked
+  ){
+    extra.push(
+      refreshArchivedCandidates()
+    );
+  }
+
+  if(currentCandidate){
+    extra.push(
+      refreshInterviews()
+    );
+  }
+
+  if(getRoute().page==='admin'){
+    extra.push(
+      ensureAdminUsersLoaded(true)
+    );
+  }
+
+  await Promise.all(extra);
   updateSyncStatus();
 }
+
 
 async function refreshCandidatesPage(button){
   await runUiTask({button,pageId:'viewCandidates',label:'Обновление…'},async()=>{
@@ -578,6 +739,32 @@ async function refreshCandidatesPage(button){
     showToast('Данные кандидатов обновлены.');
   }).catch(()=>{});
 }
+
+
+function recalculateStatsLocal(archivedDelta=0){
+  const byStatus={};
+
+  state.candidates.forEach(candidate=>{
+    const status=
+      candidate['Статус']||
+      'Без статуса';
+
+    byStatus[status]=
+      (byStatus[status]||0)+1;
+  });
+
+  state.stats={
+    total:state.candidates.length,
+    archived:Math.max(
+      0,
+      Number(
+        state.stats.archived||0
+      )+Number(archivedDelta||0)
+    ),
+    byStatus
+  };
+}
+
 
 function getStatuses(){return state.pipelineStatuses||[]}
 function activeVacancies(){return state.vacancies.filter(v=>v['Статус']==='Открыта')}
@@ -1191,11 +1378,98 @@ function renderCandidateSourceIcon(){
   node.textContent=brand.text;
 }
 
-function openCandidateById(id,setHash=true){
-  const c=candidateById(id);
-  if(!c)return;
-  if(setHash)history.pushState(null,'','#/candidate/'+encodeURIComponent(id));
-  openCandidate(c,false);
+async function loadCandidateDetails(
+  id,
+  force=false
+){
+  const key=String(id);
+  const current=candidateById(key);
+
+  if(
+    current &&
+    current._detailsLoaded &&
+    !force
+  ){
+    return current;
+  }
+
+  if(
+    candidateDetailsLoadPromises[key] &&
+    !force
+  ){
+    return candidateDetailsLoadPromises[key];
+  }
+
+  candidateDetailsLoadPromises[key]=
+    rpc('getCandidateDetails',id)
+      .then(details=>{
+        const collection=
+          details.archived
+            ? state.archivedCandidates
+            : state.candidates;
+
+        const index=
+          collection.findIndex(item=>
+            String(item.ID)===key
+          );
+
+        const merged={
+          ...(index>=0
+            ? collection[index]
+            : {}),
+          ...details,
+          _detailsLoaded:true
+        };
+
+        if(index>=0){
+          collection[index]=merged;
+        }else{
+          collection.unshift(merged);
+        }
+
+        return merged;
+      })
+      .finally(()=>{
+        delete candidateDetailsLoadPromises[key];
+      });
+
+  return candidateDetailsLoadPromises[key];
+}
+
+
+async function openCandidateById(
+  id,
+  setHash=true
+){
+  const summary=candidateById(id);
+
+  if(!summary)return;
+
+  if(setHash){
+    history.pushState(
+      null,
+      '',
+      '#/candidate/'+
+      encodeURIComponent(id)
+    );
+  }
+
+  try{
+    const candidate=
+      await loadCandidateDetails(id);
+
+    openCandidate(
+      candidate,
+      false
+    );
+  }catch(error){
+    showToast(
+      error&&error.message
+        ? error.message
+        : String(error),
+      'error'
+    );
+  }
 }
 
 function ensureCurrentOption(select,entityId,label){
@@ -1264,8 +1538,18 @@ function openCandidate(candidate){
   el('shareCandidateButton').hidden=isNew;
   el('archiveCandidateButton').hidden=isNew||candidate.archived;
 
-  if(candidate)setCurrentInterviews(candidate.ID);
-  else{
+  if(candidate){
+    setCurrentInterviews(candidate.ID);
+    loadCandidateInterviews(candidate.ID)
+      .catch(error=>
+        showToast(
+          error&&error.message
+            ? error.message
+            : String(error),
+          'error'
+        )
+      );
+  }else{
     currentInterviews=[];
     renderInterviewHistory();
   }
@@ -1604,7 +1888,8 @@ async function saveCandidateForm(button){
       const response=await rpc('saveCandidate',payload);
       const saved={
         ...response.candidate,
-        _sync:'success'
+        _sync:'success',
+        _detailsLoaded:true
       };
 
       const savedCollection=
@@ -1643,7 +1928,7 @@ async function saveCandidateForm(button){
         savedCollection.unshift(saved);
       }
 
-      state.stats=await rpc('getStats');
+      recalculateStatsLocal();
       render();
       currentCandidate=saved;
       currentCandidateDraft=null;
@@ -1733,7 +2018,8 @@ async function archiveById(id,button){
 
       const archived={
         ...response.candidate,
-        archived:true
+        archived:true,
+        _detailsLoaded:true
       };
 
       const archiveIndex=
@@ -1752,8 +2038,7 @@ async function archiveById(id,button){
           .unshift(archived);
       }
 
-      state.stats=
-        await rpc('getStats');
+      recalculateStatsLocal(1);
 
       render();
 
@@ -1926,8 +2211,20 @@ async function submitTransition(button){
     const response=await rpc('transitionCandidate',payload);
     const idx=state.candidates.findIndex(x=>x.ID===payload.candidateId);
     if(idx>=0)state.candidates[idx]={...state.candidates[idx],...response.candidate};
-    state.interviews.push(response.interview);
-    state.stats=await rpc('getStats');
+    const interviewKey=
+      String(payload.candidateId);
+
+    if(
+      loadedInterviewCandidateIds.has(
+        interviewKey
+      )
+    ){
+      state.interviews.push(
+        response.interview
+      );
+    }
+
+    recalculateStatsLocal();
     closeTransition();
     render();
     openCandidateById(payload.candidateId,false);
@@ -1936,13 +2233,87 @@ async function submitTransition(button){
 }
 
 function setCurrentInterviews(candidateId){
-  if(!state.loaded.interviews){
+  const key=String(candidateId);
+
+  if(
+    !loadedInterviewCandidateIds.has(
+      key
+    )
+  ){
     currentInterviews=[];
     el('interviewHistory').innerHTML='<div class="empty-state compact">История интервью загружается…</div>';
     return;
   }
-  currentInterviews=state.interviews.filter(i=>String(i['Candidate ID'])===String(candidateId));
+
+  currentInterviews=
+    state.interviews.filter(i=>
+      String(i['Candidate ID'])===key
+    );
+
   renderInterviewHistory();
+}
+
+
+async function loadCandidateInterviews(
+  candidateId,
+  force=false
+){
+  const key=String(candidateId);
+
+  if(
+    loadedInterviewCandidateIds.has(key) &&
+    !force
+  ){
+    setCurrentInterviews(candidateId);
+    return currentInterviews;
+  }
+
+  if(
+    interviewLoadPromises[key] &&
+    !force
+  ){
+    return interviewLoadPromises[key];
+  }
+
+  if(
+    currentCandidate &&
+    String(currentCandidate.ID)===key
+  ){
+    setCurrentInterviews(candidateId);
+  }
+
+  interviewLoadPromises[key]=
+    rpc('getInterviews',candidateId)
+      .then(data=>{
+        state.interviews=
+          state.interviews.filter(item=>
+            String(
+              item['Candidate ID']
+            )!==key
+          );
+
+        state.interviews.push(
+          ...(data||[])
+        );
+
+        loadedInterviewCandidateIds.add(
+          key
+        );
+
+        if(
+          currentCandidate &&
+          String(currentCandidate.ID)===key
+        ){
+          setCurrentInterviews(candidateId);
+        }
+
+        return data||[];
+      })
+      .finally(()=>{
+        delete interviewLoadPromises[key];
+      });
+
+  return interviewLoadPromises[key];
 }
 
 function renderInterviewHistory(){

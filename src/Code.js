@@ -1,5 +1,5 @@
 function doGet(event) {
-  ensureSchema_();
+  ensureSchemaVersion_();
 
   const template =
     HtmlService.createTemplateFromFile('Index');
@@ -41,14 +41,31 @@ function include(filename) {
 }
 
 
+const REFERENCE_CACHE_KEY =
+  'ats:reference-data:v' +
+  APP_CONFIG.SCHEMA_VERSION;
+
+
 function getReferenceData() {
-  ensureSchema_();
+  const cache =
+    CacheService.getScriptCache();
 
-  const currentUser = getCurrentUser();
+  const cached =
+    cache.get(
+      REFERENCE_CACHE_KEY
+    );
 
-  return {
-    currentUser,
-    users: getUsers(),
+  if (cached) {
+    try {
+      return JSON.parse(cached);
+    } catch (error) {
+      cache.remove(
+        REFERENCE_CACHE_KEY
+      );
+    }
+  }
+
+  const data = {
     vacancies: getVacancies(),
     sources: getSources(),
     responsibles: getResponsibles(),
@@ -57,38 +74,96 @@ function getReferenceData() {
     transitions: APP_CONFIG.TRANSITIONS,
     pipelineStatuses: APP_CONFIG.PIPELINE_STATUSES
   };
+
+  try {
+    cache.put(
+      REFERENCE_CACHE_KEY,
+      JSON.stringify(data),
+      300
+    );
+  } catch (error) {
+    console.warn(
+      'Не удалось закэшировать справочники: ' +
+      (
+        error &&
+        error.message
+          ? error.message
+          : String(error)
+      )
+    );
+  }
+
+  return data;
+}
+
+
+function invalidateReferenceCache_() {
+  CacheService
+    .getScriptCache()
+    .remove(
+      REFERENCE_CACHE_KEY
+    );
 }
 
 
 function getCandidateData() {
-  ensureSchema_();
+  const candidates =
+    getCandidateSummaries();
 
   return {
-    candidates: getCandidates(),
-    stats: getStats()
+    candidates,
+    stats: calculateStats_(
+      candidates,
+      getArchivedCandidateCount_()
+    )
   };
 }
 
 
 function getArchivedCandidateData() {
-  ensureSchema_();
-
   return {
     archivedCandidates:
-      getArchivedCandidates()
+      getArchivedCandidateSummaries()
+  };
+}
+
+
+function getAdminUserData() {
+  return {
+    users: getUsers()
+  };
+}
+
+
+function getBootstrapData() {
+  ensureSchemaVersion_();
+
+  const currentUser =
+    toPublicUser_(
+      getCurrentUser()
+    );
+
+  const references =
+    getReferenceData();
+
+  const candidates =
+    getCandidateSummaries();
+
+  const stats =
+    calculateStats_(
+      candidates,
+      getArchivedCandidateCount_()
+    );
+
+  return {
+    currentUser,
+    ...references,
+    candidates,
+    stats
   };
 }
 
 
 function getInitialData() {
-  const references = getReferenceData();
-  const candidateData = getCandidateData();
-  const archivedData =
-    getArchivedCandidateData();
-
-  return {
-    ...references,
-    ...candidateData,
-    ...archivedData
-  };
+  return getBootstrapData();
 }

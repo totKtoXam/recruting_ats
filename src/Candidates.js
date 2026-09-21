@@ -31,6 +31,39 @@ function mapCandidate_(candidate, archivedOverride) {
 }
 
 
+function mapCandidateSummary_(
+  candidate,
+  archivedOverride
+) {
+  const fallback =
+    splitFullName_(candidate['ФИО']);
+
+  const mapped = {
+    ...candidate,
+    'Фамилия':
+      candidate['Фамилия'] ||
+      fallback.lastName,
+    'Имя':
+      candidate['Имя'] ||
+      fallback.firstName,
+    'Отчество':
+      candidate['Отчество'] ||
+      fallback.middleName,
+    archived:
+      archivedOverride !== undefined
+        ? archivedOverride
+        : String(
+            candidate['Архивирован'] || ''
+          ).toLowerCase() === 'true'
+  };
+
+  delete mapped['Иные ссылки'];
+  delete mapped['Версии резюме'];
+
+  return mapped;
+}
+
+
 function getCandidates() {
   return rowsToObjects_(
     getSheet_(
@@ -38,6 +71,20 @@ function getCandidates() {
     )
   ).map(candidate =>
     mapCandidate_(
+      candidate,
+      false
+    )
+  );
+}
+
+
+function getCandidateSummaries() {
+  return rowsToObjects_(
+    getSheet_(
+      APP_CONFIG.SHEETS.CANDIDATES
+    )
+  ).map(candidate =>
+    mapCandidateSummary_(
       candidate,
       false
     )
@@ -59,14 +106,81 @@ function getArchivedCandidates() {
 }
 
 
-function getStats() {
-  const active = getCandidates();
-  const archived =
-    getArchivedCandidates();
+function getArchivedCandidateSummaries() {
+  return rowsToObjects_(
+    getSheet_(
+      APP_CONFIG.SHEETS.ARCHIVED_CANDIDATES
+    )
+  ).map(candidate =>
+    mapCandidateSummary_(
+      candidate,
+      true
+    )
+  );
+}
 
+
+function getCandidateDetails(candidateId) {
+  const storage =
+    findCandidateStorage_(
+      candidateId
+    );
+
+  if (!storage) {
+    throw new Error(
+      'Кандидат не найден.'
+    );
+  }
+
+  return mapCandidate_(
+    objectFromRow_(
+      storage.found.headers,
+      storage.found.values
+    ),
+    storage.archived
+  );
+}
+
+
+function getArchivedCandidateCount_() {
+  const sheet = getSheet_(
+    APP_CONFIG.SHEETS.ARCHIVED_CANDIDATES
+  );
+
+  const lastRow = sheet.getLastRow();
+
+  if (lastRow < 2) {
+    return 0;
+  }
+
+  const headers = getHeaders_(sheet);
+  const idIndex = headers.indexOf('ID');
+
+  if (idIndex < 0) {
+    return Math.max(0, lastRow - 1);
+  }
+
+  return sheet
+    .getRange(
+      2,
+      idIndex + 1,
+      lastRow - 1,
+      1
+    )
+    .getDisplayValues()
+    .flat()
+    .filter(Boolean)
+    .length;
+}
+
+
+function calculateStats_(
+  active,
+  archivedCount
+) {
   const byStatus = {};
 
-  active.forEach(candidate => {
+  (active || []).forEach(candidate => {
     const status =
       candidate['Статус'] ||
       'Без статуса';
@@ -76,10 +190,21 @@ function getStats() {
   });
 
   return {
-    total: active.length,
-    archived: archived.length,
+    total: (active || []).length,
+    archived:
+      Number(archivedCount || 0),
     byStatus
   };
+}
+
+
+function getStats() {
+  const active = getCandidates();
+
+  return calculateStats_(
+    active,
+    getArchivedCandidateCount_()
+  );
 }
 
 

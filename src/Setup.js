@@ -1,11 +1,62 @@
 function setupApplication() {
   ensureSchema_();
+
+  PropertiesService
+    .getScriptProperties()
+    .setProperty(
+      APP_CONFIG.PROPERTIES.SCHEMA_VERSION,
+      String(APP_CONFIG.SCHEMA_VERSION)
+    );
+
   ensureSpreadsheetMenuTrigger_();
 
   return {
     ok: true,
     sheets: Object.values(APP_CONFIG.SHEETS)
   };
+}
+
+
+function ensureSchemaVersion_() {
+  const properties =
+    PropertiesService.getScriptProperties();
+
+  const expected =
+    String(APP_CONFIG.SCHEMA_VERSION);
+
+  if (
+    properties.getProperty(
+      APP_CONFIG.PROPERTIES.SCHEMA_VERSION
+    ) === expected
+  ) {
+    return false;
+  }
+
+  const lock =
+    LockService.getScriptLock();
+
+  lock.waitLock(30000);
+
+  try {
+    if (
+      properties.getProperty(
+        APP_CONFIG.PROPERTIES.SCHEMA_VERSION
+      ) === expected
+    ) {
+      return false;
+    }
+
+    ensureSchema_();
+
+    properties.setProperty(
+      APP_CONFIG.PROPERTIES.SCHEMA_VERSION,
+      expected
+    );
+
+    return true;
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 
