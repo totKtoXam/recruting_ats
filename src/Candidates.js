@@ -313,6 +313,7 @@ function findCandidateStorage_(candidateId) {
 function saveCandidate(payload) {
   validateCandidate_(payload);
 
+  const changedBy = getCurrentUser();
   const isNew = !payload.ID;
 
   let sheet = getSheet_(
@@ -811,6 +812,17 @@ function saveCandidate(payload) {
         headers,
         row
       );
+  }
+
+  if (isNew) {
+    appendCandidateTransitionStatusLog_({
+      candidate,
+      fromStatus: '',
+      toStatus: candidateStatus,
+      responsible,
+      changedBy,
+      comment: 'Кандидат создан'
+    });
   }
 
   if (

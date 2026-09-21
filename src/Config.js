@@ -6,6 +6,8 @@ const APP_CONFIG = Object.freeze({
     VACANCIES: 'Вакансии',
     SOURCES: 'Источники',
     RESPONSIBLES: 'Ответственные',
+    USERS: 'Пользователи',
+    CANDIDATE_TRANSITION_STATUS_LOG: 'Candidate Transition Status Log',
     INTERVIEW_TEMPLATES: 'Шаблоны интервью',
     CANDIDATE_DRAFTS: 'Черновики кандидатов',
     DICTS: 'Справочники'

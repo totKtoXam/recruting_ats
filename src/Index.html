@@ -18,6 +18,13 @@
 
     <nav class="top-actions">
       <span id="dataSyncStatus" class="sync-status">Загрузка данных…</span>
+      <div id="currentUserBadge" class="current-user-badge" hidden>
+        <img id="currentUserAvatar" class="current-user-avatar" alt="">
+        <span class="current-user-text">
+          <strong id="currentUserName"></strong>
+          <small id="currentUserEmail"></small>
+        </span>
+      </div>
       <button id="navCandidates" class="nav-button" onclick="navigateTo('candidates')">Кандидаты</button>
       <button id="navAdmin" class="nav-button" onclick="navigateTo('admin')">Админ-панель</button>
     </nav>

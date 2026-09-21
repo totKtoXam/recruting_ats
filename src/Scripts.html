@@ -5,6 +5,8 @@ let state={
   vacancies:[],
   sources:[],
   responsibles:[],
+  users:[],
+  currentUser:null,
   interviewTemplates:[],
   dictionaries:{},
   transitions:{},
@@ -250,6 +252,34 @@ function maybeOpenCandidateFromRoute(){
   }
 }
 
+function renderCurrentUser(){
+  const user=state.currentUser;
+  const badge=el('currentUserBadge');
+  if(!badge)return;
+
+  if(!user){
+    badge.hidden=true;
+    return;
+  }
+
+  const avatar=el('currentUserAvatar');
+  const name=el('currentUserName');
+  const email=el('currentUserEmail');
+
+  if(avatar){
+    if(user['Avatar URL']){
+      avatar.src=user['Avatar URL'];
+      avatar.hidden=false;
+    }else{
+      avatar.hidden=true;
+    }
+  }
+
+  if(name)name.textContent=user['ФИО']||user.Email||'Google User';
+  if(email)email.textContent=user.Email||'';
+  badge.hidden=false;
+}
+
 function renderInitialShell(){
   el('stats').innerHTML='<div class="stat skeleton-card"><span>Загрузка</span><b>…</b></div>';
   el('board').innerHTML='<div class="board-placeholder">Кандидаты загружаются в фоне…</div>';
@@ -262,6 +292,8 @@ function preloadAllData(){
       vacancies:data.vacancies||[],
       sources:data.sources||[],
       responsibles:data.responsibles||[],
+      users:data.users||[],
+      currentUser:data.currentUser||null,
       interviewTemplates:data.interviewTemplates||[],
       dictionaries:data.dictionaries||{},
       transitions:data.transitions||{},
@@ -269,6 +301,7 @@ function preloadAllData(){
     });
     state.loaded.references=true;
     populateGlobalFilters();
+    renderCurrentUser();
     render();
     if(typeof renderAdminAll==='function')renderAdminAll();
     updateSyncStatus();

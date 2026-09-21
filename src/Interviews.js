@@ -108,6 +108,8 @@ function transitionCandidate(input) {
     );
   }
 
+  const changedBy = getCurrentUser();
+
   const sheet = getSheet_(
     APP_CONFIG.SHEETS.CANDIDATES
   );
@@ -191,6 +193,19 @@ function transitionCandidate(input) {
       found.headers.length
     )
     .setValues([row]);
+
+  appendCandidateTransitionStatusLog_({
+    candidate,
+    fromStatus,
+    toStatus: input.toStatus,
+    responsible,
+    changedBy,
+    comment:
+      input.interview &&
+      input.interview.comment
+        ? input.interview.comment
+        : ''
+  });
 
   return {
     ok: true,
