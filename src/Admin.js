@@ -353,7 +353,14 @@ function saveInterviewTemplate(input) {
   const name = String(input && input.name || '').trim();
   const vacancyId = String(input && input.vacancyId || '').trim();
   const stage = String(input && input.stage || '').trim();
-  const required = Boolean(input && input.required);
+  const required =
+    input &&
+    (
+      input.required === true ||
+      String(
+        input.required || ''
+      ).toLowerCase() === 'true'
+    );
 
   const questions = Array.isArray(input && input.questions)
     ? input.questions
