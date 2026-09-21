@@ -114,7 +114,7 @@ function getCurrentUser() {
     getCurrentGoogleIdentity_();
 
   const lock =
-    LockService.getScriptLock();
+    LockService.getUserLock();
 
   lock.waitLock(30000);
 
