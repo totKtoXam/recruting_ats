@@ -24,7 +24,23 @@ function decodeIdentityTokenPayload_(token) {
 
 
 function getCurrentGoogleIdentity_() {
-  const token = ScriptApp.getIdentityToken();
+  let token = '';
+
+  try {
+    token =
+      ScriptApp.getIdentityToken() ||
+      '';
+  } catch (error) {
+    console.warn(
+      'Google identity token недоступен: ' +
+      (
+        error &&
+        error.message
+          ? error.message
+          : String(error)
+      )
+    );
+  }
 
   let claims = {};
 
