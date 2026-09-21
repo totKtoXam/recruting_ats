@@ -110,11 +110,40 @@ function ensureSchema_() {
     'Отчество',
     'ФИО',
     'Email',
+    'User ID',
     'Доступные этапы',
     'Дата создания',
     'Дата изменения',
     'Удален',
     'Дата удаления'
+  ];
+
+  schemas[APP_CONFIG.SHEETS.USERS] = [
+    'User ID',
+    'Google Subject',
+    'Email',
+    'ФИО',
+    'Avatar URL',
+    'Дата создания',
+    'Последний вход'
+  ];
+
+  schemas[
+    APP_CONFIG.SHEETS.CANDIDATE_TRANSITION_STATUS_LOG
+  ] = [
+    'Transition ID',
+    'Candidate ID',
+    '№ кандидата',
+    'ФИО',
+    'From Status',
+    'To Status',
+    'Responsible ID',
+    'Ответственный',
+    'Changed By User ID',
+    'Changed By',
+    'Changed By Email',
+    'Комментарий',
+    'Дата'
   ];
 
   schemas[APP_CONFIG.SHEETS.INTERVIEW_TEMPLATES] = [
