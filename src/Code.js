@@ -42,7 +42,8 @@ function include(filename) {
 
 
 const REFERENCE_CACHE_KEY =
-  'ats:reference-data:v1';
+  'ats:reference-data:v' +
+  APP_CONFIG.SCHEMA_VERSION;
 
 
 function getReferenceData() {
