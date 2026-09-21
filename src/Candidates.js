@@ -310,6 +310,91 @@ function findCandidateStorage_(candidateId) {
 }
 
 
+function resolveCandidateResponsible_(
+  responsibleId,
+  label,
+  requiredStages
+) {
+  const id = String(
+    responsibleId || ''
+  ).trim();
+
+  if (!id) {
+    throw new Error(
+      label + ' обязателен.'
+    );
+  }
+
+  const responsible = findById_(
+    APP_CONFIG.SHEETS.RESPONSIBLES,
+    'Responsible ID',
+    id
+  );
+
+  if (
+    !responsible ||
+    isSoftDeleted_(responsible)
+  ) {
+    throw new Error(
+      label + ' не найден или удалён.'
+    );
+  }
+
+  const stages = parseJson_(
+    responsible['Доступные этапы'],
+    []
+  );
+
+  const missingStages =
+    (requiredStages || [])
+      .filter(stage =>
+        !stages.includes(stage)
+      );
+
+  if (missingStages.length) {
+    throw new Error(
+      label +
+      ' не имеет доступа к этапам: ' +
+      missingStages.join(', ') +
+      '.'
+    );
+  }
+
+  return responsible;
+}
+
+
+function getCandidateStageResponsible_(
+  candidate,
+  stage
+) {
+  if (stage === 'HR screening') {
+    return resolveCandidateResponsible_(
+      candidate['HR Responsible ID'],
+      'Ответственный HR',
+      ['HR screening']
+    );
+  }
+
+  if (
+    stage ===
+    'Техническое интервью'
+  ) {
+    return resolveCandidateResponsible_(
+      candidate['Tech Interviewer ID'],
+      'Ответственный тех. интервьювер',
+      ['Техническое интервью']
+    );
+  }
+
+  return resolveCandidateResponsible_(
+    candidate['Responsible ID'],
+    'Рекрутер',
+    APP_CONFIG.PIPELINE_STATUSES
+  );
+}
+
+
 function saveCandidate(payload) {
   validateCandidate_(payload);
 
@@ -390,68 +475,54 @@ function saveCandidate(payload) {
     );
   }
 
-  const responsibleId =
+  const recruiterId =
     String(
+      payload.recruiterId ||
       payload.responsibleId ||
       existing['Responsible ID'] ||
       ''
     ).trim();
 
-  const responsible = findById_(
-    APP_CONFIG.SHEETS.RESPONSIBLES,
-    'Responsible ID',
-    responsibleId
-  );
-
-  if (!responsible) {
-    throw new Error(
-      'Ответственный не найден.'
-    );
-  }
-
-  const responsibleChanged =
+  const hrResponsibleId =
     String(
-      existing[
-        'Responsible ID'
-      ] || ''
-    ) !== responsibleId;
+      payload.hrResponsibleId ||
+      existing['HR Responsible ID'] ||
+      ''
+    ).trim();
 
-  if (
-    (isNew || responsibleChanged) &&
-    isSoftDeleted_(responsible)
-  ) {
-    throw new Error(
-      'Выбранный ответственный удалён.'
+  const techInterviewerId =
+    String(
+      payload.techInterviewerId ||
+      existing['Tech Interviewer ID'] ||
+      ''
+    ).trim();
+
+  const recruiter =
+    resolveCandidateResponsible_(
+      recruiterId,
+      'Рекрутер',
+      APP_CONFIG.PIPELINE_STATUSES
     );
-  }
+
+  const hrResponsible =
+    resolveCandidateResponsible_(
+      hrResponsibleId,
+      'Ответственный HR',
+      ['HR screening']
+    );
+
+  const techInterviewer =
+    resolveCandidateResponsible_(
+      techInterviewerId,
+      'Ответственный тех. интервьювер',
+      ['Техническое интервью']
+    );
 
   const candidateStatus =
     isNew
       ? 'Новый'
       : existing['Статус'] ||
         'Новый';
-
-  const responsibleStages =
-    parseJson_(
-      responsible[
-        'Доступные этапы'
-      ],
-      []
-    );
-
-  if (
-    !isArchivedStorage &&
-    (isNew || responsibleChanged) &&
-    !responsibleStages.includes(
-      candidateStatus
-    )
-  ) {
-    throw new Error(
-      'Выбранный ответственный недоступен для этапа "' +
-      candidateStatus +
-      '".'
-    );
-  }
 
   const sourceId =
     String(
@@ -742,11 +813,23 @@ function saveCandidate(payload) {
     'Зарплатные ожидания':
       salary,
     'Responsible ID':
-      responsible[
+      recruiter[
         'Responsible ID'
       ],
     'Ответственный':
-      responsible['ФИО'],
+      recruiter['ФИО'],
+    'HR Responsible ID':
+      hrResponsible[
+        'Responsible ID'
+      ],
+    'Ответственный HR':
+      hrResponsible['ФИО'],
+    'Tech Interviewer ID':
+      techInterviewer[
+        'Responsible ID'
+      ],
+    'Ответственный тех. интервьювер':
+      techInterviewer['ФИО'],
     'Резюме':
       latestResume.url || '',
     'Resume File ID':
@@ -819,7 +902,7 @@ function saveCandidate(payload) {
       candidate,
       fromStatus: '',
       toStatus: candidateStatus,
-      responsible,
+      responsible: recruiter,
       changedBy,
       comment: 'Кандидат создан'
     });
@@ -899,9 +982,24 @@ function validateCandidate_(
     );
   }
 
-  if (!payload.responsibleId) {
+  if (
+    !payload.recruiterId &&
+    !payload.responsibleId
+  ) {
     throw new Error(
-      'Ответственный обязателен.'
+      'Рекрутер обязателен.'
+    );
+  }
+
+  if (!payload.hrResponsibleId) {
+    throw new Error(
+      'Ответственный HR обязателен.'
+    );
+  }
+
+  if (!payload.techInterviewerId) {
+    throw new Error(
+      'Ответственный тех. интервьювер обязателен.'
     );
   }
 }

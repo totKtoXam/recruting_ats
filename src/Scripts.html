@@ -457,17 +457,48 @@ function applyCandidateDraft(draft){
       data.sourceId;
   }
 
+  const draftRecruiterId=
+    data.recruiterId||
+    data.responsibleId||
+    '';
+
   if(
-    data.responsibleId &&
+    draftRecruiterId &&
     [
-      ...el('candidateResponsible').options
+      ...el('candidateRecruiter').options
     ].some(option=>
       option.value===
-      String(data.responsibleId)
+      String(draftRecruiterId)
     )
   ){
-    el('candidateResponsible').value=
-      data.responsibleId;
+    el('candidateRecruiter').value=
+      draftRecruiterId;
+  }
+
+  if(
+    data.hrResponsibleId &&
+    [
+      ...el('candidateHrResponsible').options
+    ].some(option=>
+      option.value===
+      String(data.hrResponsibleId)
+    )
+  ){
+    el('candidateHrResponsible').value=
+      data.hrResponsibleId;
+  }
+
+  if(
+    data.techInterviewerId &&
+    [
+      ...el('candidateTechInterviewer').options
+    ].some(option=>
+      option.value===
+      String(data.techInterviewerId)
+    )
+  ){
+    el('candidateTechInterviewer').value=
+      data.techInterviewerId;
   }
 
   renderCandidateLinks(
@@ -551,12 +582,21 @@ async function refreshCandidatesPage(button){
 function getStatuses(){return state.pipelineStatuses||[]}
 function activeVacancies(){return state.vacancies.filter(v=>v['Статус']==='Открыта')}
 function responsiblesFor(stage){return state.responsibles.filter(r=>(r.stages||[]).includes(stage))}
+function recruiters(){return state.responsibles.filter(r=>(state.pipelineStatuses||[]).every(stage=>(r.stages||[]).includes(stage)))}
+function candidateAssignedResponsible(candidate,stage){
+  if(!candidate)return null;
+  let id='';
+  if(stage==='HR screening')id=candidate['HR Responsible ID']||'';
+  else if(stage==='Техническое интервью')id=candidate['Tech Interviewer ID']||'';
+  else id=candidate['Responsible ID']||'';
+  return state.responsibles.find(r=>String(r['Responsible ID'])===String(id))||null;
+}
 
 function populateGlobalFilters(){
   if(!el('filterVacancy'))return;
   const old={v:value('filterVacancy'),r:value('filterResponsible'),s:value('filterSource')};
   el('filterVacancy').innerHTML=option('','Все вакансии')+state.vacancies.map(v=>option(v['Vacancy ID'],'№'+(v['№']||'—')+' · '+v['Вакансия'],v['Vacancy ID']===old.v)).join('');
-  el('filterResponsible').innerHTML=option('','Все ответственные')+state.responsibles.map(r=>option(r['Responsible ID'],fullNameOf(r),r['Responsible ID']===old.r)).join('');
+  el('filterResponsible').innerHTML=option('','Все рекрутеры')+recruiters().map(r=>option(r['Responsible ID'],fullNameOf(r),r['Responsible ID']===old.r)).join('');
   el('filterSource').innerHTML=option('','Все источники')+state.sources.map(s=>option(s['Source ID'],sourceOptionLabel(s),s['Source ID']===old.s)).join('');
 }
 
@@ -691,7 +731,9 @@ function filteredCandidates(){
         c['GitHub'],
         c['LinkedIn'],
         c['Вакансия'],
-        c['Ответственный']
+        c['Ответственный'],
+        c['Ответственный HR'],
+        c['Ответственный тех. интервьювер']
       ]
         .filter(Boolean)
         .join(' ')
@@ -903,8 +945,14 @@ function renderCard(c){
     escapeHtml(c['Вакансия']||'—')+
     '</span></div>'+
 
-    '<div class="candidate-meta-row"><span>●</span><span>'+
+    '<div class="candidate-meta-row"><span>●</span><span><strong>Рекрутер:</strong> '+
     escapeHtml(c['Ответственный']||'—')+
+    '</span></div>'+
+    '<div class="candidate-meta-row"><span>H</span><span><strong>HR:</strong> '+
+    escapeHtml(c['Ответственный HR']||'—')+
+    '</span></div>'+
+    '<div class="candidate-meta-row"><span>T</span><span><strong>Тех. интервью:</strong> '+
+    escapeHtml(c['Ответственный тех. интервьювер']||'—')+
     '</span></div>'+
 
     (
@@ -999,8 +1047,12 @@ async function copyCandidatePreview(id,button){
       (candidate['Телефон']||'—'),
     'Вакансия: '+
       (candidate['Вакансия']||'—'),
-    'Ответственный: '+
-      (candidate['Ответственный']||'—')
+    'Рекрутер: '+
+      (candidate['Ответственный']||'—'),
+    'Ответственный HR: '+
+      (candidate['Ответственный HR']||'—'),
+    'Ответственный тех. интервьювер: '+
+      (candidate['Ответственный тех. интервьювер']||'—')
   ];
 
   if(candidate['Источник']){
@@ -1191,8 +1243,14 @@ function openCandidate(candidate){
   el('candidateSource').innerHTML=option('','Не указан')+state.sources.map(s=>option(s['Source ID'],sourceOptionLabel(s),candidate&&s['Source ID']===candidate['Source ID'])).join('');
   if(candidate&&candidate['Source ID'])ensureCurrentOption(el('candidateSource'),candidate['Source ID'],candidate['Источник']);
 
-  el('candidateResponsible').innerHTML=option('','Выберите ответственного')+responsiblesFor(status).map(r=>option(r['Responsible ID'],fullNameOf(r),candidate&&r['Responsible ID']===candidate['Responsible ID'])).join('');
-  if(candidate&&candidate['Responsible ID'])ensureCurrentOption(el('candidateResponsible'),candidate['Responsible ID'],candidate['Ответственный']);
+  el('candidateRecruiter').innerHTML=option('','Выберите рекрутера')+recruiters().map(r=>option(r['Responsible ID'],fullNameOf(r),candidate&&r['Responsible ID']===candidate['Responsible ID'])).join('');
+  if(candidate&&candidate['Responsible ID'])ensureCurrentOption(el('candidateRecruiter'),candidate['Responsible ID'],candidate['Ответственный']);
+
+  el('candidateHrResponsible').innerHTML=option('','Выберите HR')+responsiblesFor('HR screening').map(r=>option(r['Responsible ID'],fullNameOf(r),candidate&&r['Responsible ID']===candidate['HR Responsible ID'])).join('');
+  if(candidate&&candidate['HR Responsible ID'])ensureCurrentOption(el('candidateHrResponsible'),candidate['HR Responsible ID'],candidate['Ответственный HR']);
+
+  el('candidateTechInterviewer').innerHTML=option('','Выберите тех. интервьювера')+responsiblesFor('Техническое интервью').map(r=>option(r['Responsible ID'],fullNameOf(r),candidate&&r['Responsible ID']===candidate['Tech Interviewer ID'])).join('');
+  if(candidate&&candidate['Tech Interviewer ID'])ensureCurrentOption(el('candidateTechInterviewer'),candidate['Tech Interviewer ID'],candidate['Ответственный тех. интервьювер']);
 
   el('candidateResumeFile').value='';
   renderSelectedResumeFile();
@@ -1374,7 +1432,9 @@ function nextCandidateNumber(){
 
 function buildOptimisticCandidate(payload,resumeFile,existing,tempId){
   const vacancy=state.vacancies.find(v=>v['Vacancy ID']===payload.vacancyId);
-  const responsible=state.responsibles.find(r=>r['Responsible ID']===payload.responsibleId);
+  const recruiter=state.responsibles.find(r=>r['Responsible ID']===payload.recruiterId);
+  const hrResponsible=state.responsibles.find(r=>r['Responsible ID']===payload.hrResponsibleId);
+  const techInterviewer=state.responsibles.find(r=>r['Responsible ID']===payload.techInterviewerId);
   const source=state.sources.find(s=>s['Source ID']===payload.sourceId);
   const fullName=[payload.lastName,payload.firstName,payload.middleName].filter(Boolean).join(' ');
   const versions=[...(existing?.resumeVersions||[])];
@@ -1408,8 +1468,12 @@ function buildOptimisticCandidate(payload,resumeFile,existing,tempId){
     'Source ID':payload.sourceId,
     'Источник':source?source['Название']:'',
     'Зарплатные ожидания':String(payload.salary||'').replace(/\D/g,''),
-    'Responsible ID':payload.responsibleId,
-    'Ответственный':responsible?fullNameOf(responsible):'',
+    'Responsible ID':payload.recruiterId,
+    'Ответственный':recruiter?fullNameOf(recruiter):'',
+    'HR Responsible ID':payload.hrResponsibleId,
+    'Ответственный HR':hrResponsible?fullNameOf(hrResponsible):'',
+    'Tech Interviewer ID':payload.techInterviewerId,
+    'Ответственный тех. интервьювер':techInterviewer?fullNameOf(techInterviewer):'',
     'Комментарий':payload.comment,
     links:payload.links||[],
     resumeVersions:versions,
@@ -1486,14 +1550,24 @@ async function saveCandidateForm(button){
       linkedin:value('candidateLinkedin'),
       salary:value('candidateSalary'),
       sourceId:value('candidateSource'),
-      responsibleId:value('candidateResponsible'),
+      recruiterId:value('candidateRecruiter'),
+      hrResponsibleId:value('candidateHrResponsible'),
+      techInterviewerId:value('candidateTechInterviewer'),
       comment:value('candidateComment'),
       links:collectLinks(),
       resumeFile
     };
 
-    if(!payload.lastName||!payload.firstName||!payload.vacancyId||!payload.phone||!payload.responsibleId){
-      showToast('Заполните обязательные поля.','error');
+    if(
+      !payload.lastName||
+      !payload.firstName||
+      !payload.vacancyId||
+      !payload.phone||
+      !payload.recruiterId||
+      !payload.hrResponsibleId||
+      !payload.techInterviewerId
+    ){
+      showToast('Заполните обязательные поля, включая рекрутера, HR и тех. интервьювера.','error');
       return;
     }
 
@@ -1750,17 +1824,47 @@ function startTransition(id,toStatus){
     t['Этап']===candidate['Статус']
   );
 
-  pendingTransition={candidate,fromStatus:candidate['Статус'],toStatus,templates};
+  const requiredTemplate=templates.find(t=>t.required)||null;
+  const nextResponsible=candidateAssignedResponsible(candidate,toStatus);
+
+  if(!nextResponsible){
+    showToast('Для следующего этапа не назначен ответственный. Заполните карточку кандидата.','error');
+    return;
+  }
+
+  pendingTransition={
+    candidate,
+    fromStatus:candidate['Статус'],
+    toStatus,
+    templates,
+    requiredTemplate,
+    nextResponsible
+  };
+
   el('transitionTitle').innerHTML=statusChip(candidate['Статус'],true)+' <span class="transition-arrow">→</span> '+statusChip(toStatus,true);
-  el('transitionTemplate').innerHTML=option('','Без шаблона')+templates.map((t,i)=>option(t['Template ID'],'№'+(t['№']||'—')+' · '+t['Название'],i===0)).join('');
-  el('transitionResponsible').innerHTML=option('','Выберите ответственного')+responsiblesFor(toStatus).map(r=>option(r['Responsible ID'],fullNameOf(r),r['Responsible ID']===candidate['Responsible ID'])).join('');
+
+  const templateSelect=el('transitionTemplate');
+  templateSelect.disabled=!!requiredTemplate;
+  templateSelect.innerHTML=requiredTemplate
+    ? option(
+        requiredTemplate['Template ID'],
+        'Обязательный · №'+(requiredTemplate['№']||'—')+' · '+requiredTemplate['Название'],
+        true
+      )
+    : option('','Без шаблона')+templates.map((t,i)=>option(t['Template ID'],'№'+(t['№']||'—')+' · '+t['Название'],i===0)).join('');
+
+  el('transitionResponsibleDisplay').value=fullNameOf(nextResponsible);
   el('transitionComment').value='';
   el('transitionResult').value='';
   renderTransitionQuestions();
   el('transitionModal').classList.add('open');
 }
 
-function closeTransition(){el('transitionModal').classList.remove('open');pendingTransition=null}
+function closeTransition(){
+  el('transitionModal').classList.remove('open');
+  el('transitionTemplate').disabled=false;
+  pendingTransition=null;
+}
 function selectedTransitionTemplate(){const id=value('transitionTemplate');return pendingTransition?(pendingTransition.templates||[]).find(t=>t['Template ID']===id):null}
 
 function renderTransitionQuestions(){
@@ -1768,7 +1872,7 @@ function renderTransitionQuestions(){
   const questions=template?(template.questions||[]):[];
 
   el('transitionQuestions').innerHTML=questions.length
-    ?'<label>Вопросы и ответы</label>'+questions.map((q,index)=>
+    ?'<label>'+(template&&template.required?'Вопросы и ответы *':'Вопросы и ответы')+'</label>'+questions.map((q,index)=>
       '<div class="qa interview-question"><div class="question-number">'+(index+1)+'</div><div><strong>'+escapeHtml(q)+'</strong><textarea class="transition-answer" data-question="'+escapeHtml(q)+'" placeholder="Ответ кандидата"></textarea></div></div>'
     ).join('')
     :'<div class="empty-state compact">Для этого этапа шаблон вопросов не выбран.</div>';
@@ -1778,16 +1882,44 @@ async function submitTransition(button){
   if(!pendingTransition)return;
 
   await runUiTask({button,formId:'transitionForm',label:'Сохранение…'},async()=>{
-    const answers=[...document.querySelectorAll('.transition-answer')].map(x=>({question:x.dataset.question,answer:x.value}));
+    const answers=[...document.querySelectorAll('.transition-answer')].map(x=>({
+      question:x.dataset.question,
+      answer:x.value.trim()
+    }));
+
+    const result=value('transitionResult').trim();
+    const selectedTemplate=selectedTransitionTemplate();
+
+    if(!result){
+      showToast('Укажите результат интервью/этапа.','error');
+      return;
+    }
+
+    if(pendingTransition.requiredTemplate){
+      if(
+        !selectedTemplate||
+        String(selectedTemplate['Template ID'])!==
+          String(pendingTransition.requiredTemplate['Template ID'])
+      ){
+        showToast('Для перехода необходимо заполнить обязательный шаблон.','error');
+        return;
+      }
+
+      const missing=answers.filter(item=>!item.answer);
+      if(missing.length){
+        showToast('Заполните все вопросы обязательного шаблона.','error');
+        return;
+      }
+    }
+
     const payload={
       candidateId:pendingTransition.candidate.ID,
       toStatus:pendingTransition.toStatus,
-      responsibleId:value('transitionResponsible'),
       interview:{
         templateId:value('transitionTemplate'),
         answers,
         comment:value('transitionComment'),
-        result:value('transitionResult')
+        result
       }
     };
 

@@ -61,7 +61,7 @@
       </div>
 
       <div class="field compact">
-        <label>Ответственный</label>
+        <label>Рекрутер</label>
         <select id="filterResponsible" onchange="renderBoard()"></select>
       </div>
 
@@ -147,8 +147,19 @@
             </div>
 
             <div class="field">
-              <label>Ответственный *</label>
-              <select id="candidateResponsible"></select>
+              <label>Рекрутер *</label>
+              <select id="candidateRecruiter"></select>
+              <small class="field-hint">Только ответственные с доступом ко всем этапам.</small>
+            </div>
+
+            <div class="field">
+              <label>Ответственный HR *</label>
+              <select id="candidateHrResponsible"></select>
+            </div>
+
+            <div class="field">
+              <label>Ответственный тех. интервьювер *</label>
+              <select id="candidateTechInterviewer"></select>
             </div>
 
             <div class="field">
@@ -296,8 +307,8 @@
           </div>
 
           <div class="field">
-            <label>Ответственный на следующем этапе *</label>
-            <select id="transitionResponsible"></select>
+            <label>Ответственный на следующем этапе</label>
+            <input id="transitionResponsibleDisplay" readonly>
           </div>
 
           <div id="transitionQuestions" class="field full"></div>
