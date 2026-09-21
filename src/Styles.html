@@ -1528,4 +1528,66 @@ input:disabled,select:disabled,textarea:disabled,button:disabled{opacity:.58;cur
   .column{flex-basis:calc(100vw - 28px);min-width:calc(100vw - 28px)}
 }
 
+
+.current-user-badge{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:0;
+  padding:4px 8px;
+  border:1px solid var(--border);
+  border-radius:10px;
+  background:var(--surface);
+}
+
+.current-user-avatar{
+  width:28px;
+  height:28px;
+  border-radius:50%;
+  object-fit:cover;
+  flex:0 0 auto;
+}
+
+.current-user-text{
+  display:flex;
+  flex-direction:column;
+  min-width:0;
+  max-width:190px;
+  line-height:1.15;
+}
+
+.current-user-text strong,
+.current-user-text small{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.current-user-text strong{
+  font-size:12px;
+}
+
+.current-user-text small{
+  margin-top:2px;
+  color:var(--muted);
+  font-size:10px;
+}
+
+.field-hint{
+  margin-top:6px;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.35;
+}
+
+@media (max-width: 720px){
+  .current-user-text{
+    display:none;
+  }
+
+  .current-user-badge{
+    padding:4px;
+  }
+}
+
 </style>
