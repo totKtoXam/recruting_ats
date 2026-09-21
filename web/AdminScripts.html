@@ -1,0 +1,708 @@
+<script>
+function renderAdminAll(){
+  if(!state.loaded.references){
+    ['vacancyList','sourceList','responsibleList'].forEach(id=>{
+      if(el(id))el(id).innerHTML='<div class="empty-state compact">Данные загружаются в фоне…</div>';
+    });
+    return;
+  }
+
+  renderVacancies();
+  renderSources();
+  renderResponsibles();
+  renderResponsibleUserOptions();
+  renderResponsibleStageOptions();
+  renderTemplateStageOptions();
+  renderVacancyTemplatesForSelected();
+  renderSourceFormIcon();
+}
+
+async function refreshAdminPage(button){
+  await runUiTask({button,pageId:'viewAdmin',label:'Обновление…'},async()=>{
+    await refreshAll();
+    showToast('Справочники обновлены.');
+  }).catch(()=>{});
+}
+
+function showAdminTab(name,button){
+  document.querySelectorAll('.admin-page-section').forEach(section=>section.classList.remove('active'));
+  document.querySelectorAll('.admin-tabs .tab').forEach(tab=>tab.classList.remove('active'));
+  el('admin-'+name).classList.add('active');
+  if(button)button.classList.add('active');
+}
+
+function adminTable(headers,rows){
+  return '<div class="table-scroll"><table class="admin-table"><thead><tr>'+
+    headers.map(header=>'<th>'+escapeHtml(header)+'</th>').join('')+
+    '</tr></thead><tbody>'+
+    (rows.length
+      ? rows.map(row=>
+          '<tr class="'+[
+            row._class||'',
+            row._selected?'selected-row':'',
+            row._clickable?'clickable-row':''
+          ].filter(Boolean).join(' ')+'" '+
+          (row._onclick?'onclick="'+row._onclick+'"':'')+'>'+
+            row.cells.map(cell=>'<td>'+(cell&&cell.html!==undefined?cell.html:escapeHtml(cell??''))+'</td>').join('')+
+          '</tr>'
+        ).join('')
+      : '<tr><td colspan="'+headers.length+'" class="empty-cell">Нет данных</td></tr>')+
+    '</tbody></table></div>';
+}
+
+function deleteCell(deleteFn,id,pending){
+  if(pending){
+    return '<button class="button button-ghost button-small" disabled><span class="spinner spinner-dark"></span></button>';
+  }
+  return '<button class="button button-ghost button-small danger-text" onclick="event.stopPropagation();'+deleteFn+'(\''+escJs(id)+'\',this)">Удалить</button>';
+}
+
+function entityId(collectionName,item){
+  const keys={
+    vacancies:'Vacancy ID',
+    sources:'Source ID',
+    responsibles:'Responsible ID',
+    interviewTemplates:'Template ID'
+  };
+  return item[keys[collectionName]];
+}
+
+function nextEntityNumber(collectionName){
+  return state[collectionName].reduce((max,item)=>Math.max(max,Number(item['№']||0)||0),0)+1;
+}
+
+function clearSyncLater(collectionName,id){
+  setTimeout(()=>{
+    const item=state[collectionName].find(x=>String(entityId(collectionName,x))===String(id));
+    if(item&&item._sync==='success'){
+      delete item._sync;
+      renderAdminAll();
+    }
+  },1800);
+}
+
+async function optimisticSave({
+  collectionName,
+  idKey,
+  payload,
+  localEntity,
+  rpcName,
+  responseKey,
+  button,
+  formId,
+  onSuccess
+}){
+  const snapshot=state[collectionName].map(x=>({
+    ...x,
+    stages:x.stages?[...x.stages]:x.stages,
+    questions:x.questions?[...x.questions]:x.questions
+  }));
+
+  const existingId=payload.id||'';
+  const localId=existingId||('tmp_'+collectionName+'_'+Date.now());
+  const existing=state[collectionName].find(x=>String(x[idKey])===String(existingId));
+
+  const optimistic={
+    ...(existing||{}),
+    ...localEntity,
+    [idKey]:localId,
+    '№':existing?.['№']||nextEntityNumber(collectionName),
+    _sync:'pending',
+    _temp:!existingId
+  };
+
+  if(existing){
+    state[collectionName][state[collectionName].indexOf(existing)]=optimistic;
+  }else{
+    state[collectionName].unshift(optimistic);
+  }
+
+  renderAdminAll();
+
+  try{
+    await runUiTask({button,formId,label:'Сохранение…'},async()=>{
+      const response=await rpc(rpcName,payload);
+      const serverEntity=response[responseKey];
+      const index=state[collectionName].findIndex(x=>String(x[idKey])===String(localId));
+      const normalized={...serverEntity,_sync:'success'};
+
+      if(collectionName==='responsibles')normalized.stages=localEntity.stages||[];
+      if(collectionName==='interviewTemplates')normalized.questions=localEntity.questions||[];
+
+      if(index>=0)state[collectionName][index]=normalized;
+      else state[collectionName].unshift(normalized);
+
+      if(onSuccess)onSuccess(normalized,localId);
+      renderAdminAll();
+      clearSyncLater(collectionName,serverEntity[idKey]);
+    });
+  }catch(error){
+    state[collectionName]=snapshot;
+    renderAdminAll();
+  }
+}
+
+async function optimisticDelete({collectionName,id,rpcName,button,onSuccess}){
+  const snapshot=state[collectionName].map(x=>({...x}));
+  const item=state[collectionName].find(x=>String(entityId(collectionName,x))===String(id));
+  if(!item)return;
+
+  item._sync='pending';
+  renderAdminAll();
+
+  try{
+    await runUiTask({button,label:'Удаление…'},async()=>{
+      await rpc(rpcName,id);
+      item._sync='success';
+      renderAdminAll();
+
+      setTimeout(()=>{
+        state[collectionName]=state[collectionName].filter(x=>String(entityId(collectionName,x))!==String(id));
+        if(onSuccess)onSuccess();
+        renderAdminAll();
+      },450);
+    });
+  }catch(error){
+    state[collectionName]=snapshot;
+    renderAdminAll();
+  }
+}
+
+function renderVacancies(){
+  el('vacancyCount').textContent=state.vacancies.length+' шт.';
+  const selected=value('vacancyId');
+
+  const rows=state.vacancies.map(v=>{
+    const templates=state.interviewTemplates.filter(t=>String(t['Vacancy ID'])===String(v['Vacancy ID']));
+    const templateHtml=templates.length
+      ? '<div class="chip-wrap">'+templates.slice(0,4).map(t=>'<span class="mini-chip status-'+statusKey(t['Этап'])+'">№'+escapeHtml(t['№']||'—')+' '+escapeHtml(t['Название'])+'</span>').join('')+(templates.length>4?'<span class="more-chip">+'+(templates.length-4)+'</span>':'')+'</div>'
+      : '<span class="muted">Нет шаблонов</span>';
+
+    return {
+      _class:v._sync==='pending'?'row-pending':'',
+      _selected:String(selected)===String(v['Vacancy ID']),
+      _clickable:true,
+      _onclick:"editVacancy('"+escJs(v['Vacancy ID'])+"')",
+      cells:[
+        {html:syncIcon(v._sync)},
+        v['№']||'—',
+        v['Вакансия'],
+        {html:vacancyStatusChip(v['Статус'])},
+        {html:templateHtml},
+        {html:deleteCell('deleteVacancyUi',v['Vacancy ID'],v._sync==='pending')}
+      ]
+    };
+  });
+
+  el('vacancyList').innerHTML=adminTable(['','№','Вакансия','Статус','Шаблоны',''],rows);
+}
+
+function resetVacancyForm(){
+  el('vacancyId').value='';
+  el('vacancyName').value='';
+  el('vacancyStatus').value='Открыта';
+  el('vacancyComment').value='';
+  el('vacancyFormTitle').textContent='Новая вакансия';
+  resetTemplateForm();
+  renderVacancies();
+  renderVacancyTemplatesForSelected();
+}
+
+function editVacancy(id){
+  const vacancy=state.vacancies.find(x=>String(x['Vacancy ID'])===String(id));
+  if(!vacancy||vacancy._sync==='pending')return;
+
+  el('vacancyId').value=id;
+  el('vacancyName').value=vacancy['Вакансия']||'';
+  el('vacancyStatus').value=vacancy['Статус']||'Открыта';
+  el('vacancyComment').value=vacancy['Комментарий']||'';
+  el('vacancyFormTitle').textContent='№'+(vacancy['№']||'—')+' · '+vacancy['Вакансия'];
+  resetTemplateForm();
+  renderVacancies();
+  renderVacancyTemplatesForSelected();
+}
+
+async function saveVacancyForm(button){
+  const name=value('vacancyName').trim();
+  if(!name){
+    showToast('Укажите название вакансии.','error');
+    return;
+  }
+
+  const id=value('vacancyId');
+  const payload={
+    id,
+    name,
+    status:value('vacancyStatus'),
+    comment:value('vacancyComment')
+  };
+
+  await optimisticSave({
+    collectionName:'vacancies',
+    idKey:'Vacancy ID',
+    payload,
+    localEntity:{
+      'Вакансия':name,
+      'Статус':payload.status,
+      'Комментарий':payload.comment
+    },
+    rpcName:'saveVacancy',
+    responseKey:'vacancy',
+    button,
+    formId:'vacancyForm',
+    onSuccess:saved=>{
+      el('vacancyId').value=saved['Vacancy ID'];
+      el('vacancyFormTitle').textContent='№'+(saved['№']||'—')+' · '+saved['Вакансия'];
+      populateGlobalFilters();
+      showToast('Вакансия сохранена.');
+    }
+  });
+}
+
+async function deleteVacancyUi(id,button){
+  const vacancy=state.vacancies.find(x=>String(x['Vacancy ID'])===String(id));
+  const ok=await showConfirm(
+    'Удалить вакансию «'+(vacancy?vacancy['Вакансия']:'')+'»? Она останется в базе как soft deleted.',
+    'Soft delete'
+  );
+  if(!ok)return;
+
+  await optimisticDelete({
+    collectionName:'vacancies',
+    id,
+    rpcName:'deleteVacancy',
+    button,
+    onSuccess:()=>{
+      state.interviewTemplates=state.interviewTemplates.filter(t=>String(t['Vacancy ID'])!==String(id));
+      if(String(value('vacancyId'))===String(id))resetVacancyForm();
+      populateGlobalFilters();
+      showToast('Вакансия удалена.');
+    }
+  });
+}
+
+function renderTemplateStageOptions(selected){
+  if(!el('templateStage'))return;
+  const current=selected!==undefined?selected:value('templateStage');
+  el('templateStage').innerHTML=option('','Выберите этап')+
+    state.pipelineStatuses.map(status=>option(status,status,status===current)).join('');
+}
+
+function questionRow(question=''){
+  return '<div class="question-editor-row">'+
+    '<span class="question-drag">⋮⋮</span>'+
+    '<input class="template-question" placeholder="Введите вопрос" value="'+escapeHtml(question)+'">'+
+    '<button class="button button-ghost button-small danger-text" type="button" onclick="this.parentElement.remove();renumberTemplateQuestions()">×</button>'+
+  '</div>';
+}
+
+function addTemplateQuestion(question=''){
+  el('templateQuestionsList').insertAdjacentHTML('beforeend',questionRow(question));
+  renumberTemplateQuestions();
+}
+
+function renumberTemplateQuestions(){
+  [...document.querySelectorAll('#templateQuestionsList .question-editor-row')].forEach((row,index)=>{
+    row.dataset.number=String(index+1);
+    row.querySelector('.question-drag').textContent=(index+1)+'.';
+  });
+}
+
+function collectTemplateQuestions(){
+  return [...document.querySelectorAll('.template-question')]
+    .map(input=>input.value.trim())
+    .filter(Boolean);
+}
+
+function resetTemplateForm(){
+  if(!el('templateId'))return;
+  el('templateId').value='';
+  el('templateName').value='';
+  el('templateQuestionsList').innerHTML='';
+  el('templateRequired').checked=false;
+  renderTemplateStageOptions('');
+  addTemplateQuestion('');
+  renderVacancyTemplatesForSelected();
+}
+
+function editTemplate(id){
+  const template=state.interviewTemplates.find(x=>String(x['Template ID'])===String(id));
+  if(!template||template._sync==='pending')return;
+
+  if(String(value('vacancyId'))!==String(template['Vacancy ID'])){
+    editVacancy(template['Vacancy ID']);
+  }
+
+  el('templateId').value=id;
+  el('templateName').value=template['Название']||'';
+  el('templateRequired').checked=!!template.required;
+  renderTemplateStageOptions(template['Этап']);
+  el('templateQuestionsList').innerHTML='';
+  (template.questions||[]).forEach(question=>addTemplateQuestion(question));
+  if(!(template.questions||[]).length)addTemplateQuestion('');
+  renderVacancyTemplatesForSelected();
+}
+
+function renderVacancyTemplatesForSelected(){
+  const vacancyId=value('vacancyId');
+  const editor=el('templateEditor');
+  const empty=el('vacancyTemplateEmpty');
+
+  if(!vacancyId){
+    editor.hidden=true;
+    empty.hidden=false;
+    el('vacancyTemplateCount').textContent='0';
+    return;
+  }
+
+  editor.hidden=false;
+  empty.hidden=true;
+  const selectedTemplate=value('templateId');
+  const templates=state.interviewTemplates.filter(t=>String(t['Vacancy ID'])===String(vacancyId));
+
+  el('vacancyTemplateCount').textContent=templates.length;
+
+  el('vacancyTemplateList').innerHTML=templates.length
+    ? templates.map(t=>
+      '<div class="template-row '+(t._sync==='pending'?'row-pending ':'')+(String(selectedTemplate)===String(t['Template ID'])?'selected-template':'')+'" onclick="editTemplate(\''+escJs(t['Template ID'])+'\')">'+
+        syncIcon(t._sync)+
+        '<div class="template-row-main">'+
+          '<strong>№'+escapeHtml(t['№']||'—')+' · '+escapeHtml(t['Название'])+'</strong>'+
+          '<div class="chip-wrap">'+
+            statusChip(t['Этап'],true)+
+            (t.required?'<span class="mini-chip">Обязательный</span>':'')+
+          '</div>'+
+          '<small>'+escapeHtml(String((t.questions||[]).length))+' вопросов</small>'+
+        '</div>'+
+        '<button class="button button-ghost button-small danger-text" onclick="event.stopPropagation();deleteTemplateUi(\''+escJs(t['Template ID'])+'\',this)">Удалить</button>'+
+      '</div>'
+    ).join('')
+    : '<div class="empty-state compact">Шаблонов пока нет.</div>';
+}
+
+async function saveTemplateForm(button){
+  const vacancyId=value('vacancyId');
+  const name=value('templateName').trim();
+  const stage=value('templateStage');
+  const required=el('templateRequired').checked;
+  const questions=collectTemplateQuestions();
+
+  if(!vacancyId){
+    showToast('Сначала сохраните вакансию.','error');
+    return;
+  }
+  if(!name){
+    showToast('Укажите название шаблона.','error');
+    return;
+  }
+  if(!stage){
+    showToast('Выберите этап.','error');
+    return;
+  }
+  if(!questions.length){
+    showToast('Добавьте хотя бы один вопрос.','error');
+    return;
+  }
+
+  const id=value('templateId');
+  const vacancy=state.vacancies.find(v=>String(v['Vacancy ID'])===String(vacancyId));
+
+  await optimisticSave({
+    collectionName:'interviewTemplates',
+    idKey:'Template ID',
+    payload:{id,name,vacancyId,stage,required,questions},
+    localEntity:{
+      'Название':name,
+      'Vacancy ID':vacancyId,
+      'Вакансия':vacancy?vacancy['Вакансия']:'',
+      'Этап':stage,
+      'Обязательный':required,
+      required,
+      questions
+    },
+    rpcName:'saveInterviewTemplate',
+    responseKey:'template',
+    button,
+    formId:'vacancyForm',
+    onSuccess:saved=>{
+      el('templateId').value=saved['Template ID'];
+      showToast('Шаблон интервью сохранён.');
+    }
+  });
+}
+
+async function deleteTemplateUi(id,button){
+  const template=state.interviewTemplates.find(x=>String(x['Template ID'])===String(id));
+  const ok=await showConfirm('Удалить шаблон «'+(template?template['Название']:'')+'»?','Soft delete');
+  if(!ok)return;
+
+  await optimisticDelete({
+    collectionName:'interviewTemplates',
+    id,
+    rpcName:'deleteInterviewTemplate',
+    button,
+    onSuccess:()=>{
+      if(String(value('templateId'))===String(id))resetTemplateForm();
+      showToast('Шаблон удалён.');
+    }
+  });
+}
+
+function renderSourceFormIcon(){
+  const node=el('sourceFormIcon');
+  if(!node)return;
+  const brand=sourceBrand(value('sourceName'));
+  node.className='brand-icon brand-'+brand.key;
+  node.textContent=brand.text;
+}
+
+function renderSources(){
+  el('sourceCount').textContent=state.sources.length+' шт.';
+  const selected=value('sourceId');
+
+  const rows=state.sources.map(source=>({
+    _class:source._sync==='pending'?'row-pending':'',
+    _selected:String(selected)===String(source['Source ID']),
+    _clickable:true,
+    _onclick:"editSource('"+escJs(source['Source ID'])+"')",
+    cells:[
+      {html:syncIcon(source._sync)},
+      source['№']||'—',
+      {html:'<div class="source-name-cell">'+sourceIconHtml(source['Название'])+'<span>'+escapeHtml(source['Название'])+'</span></div>'},
+      {html:deleteCell('deleteSourceUi',source['Source ID'],source._sync==='pending')}
+    ]
+  }));
+
+  el('sourceList').innerHTML=adminTable(['','№','Источник',''],rows);
+}
+
+function resetSourceForm(){
+  el('sourceId').value='';
+  el('sourceName').value='';
+  el('sourceFormTitle').textContent='Новый источник';
+  renderSourceFormIcon();
+  renderSources();
+}
+
+function editSource(id){
+  const source=state.sources.find(x=>String(x['Source ID'])===String(id));
+  if(!source||source._sync==='pending')return;
+
+  el('sourceId').value=id;
+  el('sourceName').value=source['Название']||'';
+  el('sourceFormTitle').textContent='№'+(source['№']||'—')+' · '+source['Название'];
+  renderSourceFormIcon();
+  renderSources();
+}
+
+async function saveSourceForm(button){
+  const name=value('sourceName').trim();
+  if(!name){
+    showToast('Укажите название источника.','error');
+    return;
+  }
+
+  const id=value('sourceId');
+
+  await optimisticSave({
+    collectionName:'sources',
+    idKey:'Source ID',
+    payload:{id,name},
+    localEntity:{'Название':name},
+    rpcName:'saveSource',
+    responseKey:'source',
+    button,
+    formId:'sourceForm',
+    onSuccess:saved=>{
+      el('sourceId').value=saved['Source ID'];
+      el('sourceFormTitle').textContent='№'+(saved['№']||'—')+' · '+saved['Название'];
+      populateGlobalFilters();
+      renderSourceFormIcon();
+      showToast('Источник сохранён.');
+    }
+  });
+}
+
+async function deleteSourceUi(id,button){
+  const source=state.sources.find(x=>String(x['Source ID'])===String(id));
+  const ok=await showConfirm('Удалить источник «'+(source?source['Название']:'')+'»?','Soft delete');
+  if(!ok)return;
+
+  await optimisticDelete({
+    collectionName:'sources',
+    id,
+    rpcName:'deleteSource',
+    button,
+    onSuccess:()=>{
+      if(String(value('sourceId'))===String(id))resetSourceForm();
+      populateGlobalFilters();
+      showToast('Источник удалён.');
+    }
+  });
+}
+
+function renderResponsibleStageOptions(selected){
+  if(!el('responsibleStages'))return;
+  const current=selected!==undefined
+    ? selected
+    : [...document.querySelectorAll('.responsible-stage:checked')].map(x=>x.value);
+
+  el('responsibleStages').innerHTML=state.pipelineStatuses.map(stage=>
+    '<label class="stage-check status-soft-'+statusKey(stage)+'">'+
+      '<input type="checkbox" class="responsible-stage" value="'+escapeHtml(stage)+'" '+(current.includes(stage)?'checked':'')+'>'+
+      '<span>'+escapeHtml(stage)+'</span>'+
+    '</label>'
+  ).join('');
+}
+
+function userDisplayName(user){
+  if(!user)return '—';
+  const name=user['ФИО']||user.Email||'Пользователь';
+  return user.Email&&user.Email!==name
+    ? name+' · '+user.Email
+    : name;
+}
+
+function renderResponsibleUserOptions(selected){
+  const select=el('responsibleUserId');
+  if(!select)return;
+
+  const current=selected!==undefined
+    ? String(selected||'')
+    : String(select.value||'');
+
+  select.innerHTML=
+    option('','Не привязан',!current)+
+    (state.users||[]).map(user=>
+      option(
+        user['User ID'],
+        userDisplayName(user),
+        String(user['User ID'])===current
+      )
+    ).join('');
+}
+
+function renderResponsibles(){
+  el('responsibleCount').textContent=state.responsibles.length+' шт.';
+  const selected=value('responsibleId');
+
+  const rows=state.responsibles.map(responsible=>{
+    const linkedUser=(state.users||[]).find(user=>
+      String(user['User ID'])===String(responsible['User ID']||'')
+    );
+
+    return {
+    _class:responsible._sync==='pending'?'row-pending':'',
+    _selected:String(selected)===String(responsible['Responsible ID']),
+    _clickable:true,
+    _onclick:"editResponsible('"+escJs(responsible['Responsible ID'])+"')",
+    cells:[
+      {html:syncIcon(responsible._sync)},
+      responsible['№']||'—',
+      responsible['Фамилия']||'',
+      responsible['Имя']||'',
+      responsible['Отчество']||'',
+      responsible['Email']||'',
+      linkedUser?userDisplayName(linkedUser):'—',
+      {html:'<div class="chip-wrap">'+(responsible.stages||[]).map(stage=>statusChip(stage,true)).join('')+'</div>'},
+      {html:deleteCell('deleteResponsibleUi',responsible['Responsible ID'],responsible._sync==='pending')}
+    ]
+  };
+  });
+
+  el('responsibleList').innerHTML=adminTable(['','№','Фамилия','Имя','Отчество','Email','Пользователь','Этапы',''],rows);
+}
+
+function resetResponsibleForm(){
+  el('responsibleId').value='';
+  el('responsibleLastName').value='';
+  el('responsibleFirstName').value='';
+  el('responsibleMiddleName').value='';
+  el('responsibleEmail').value='';
+  el('responsibleUserId').value='';
+  el('responsibleFormTitle').textContent='Новый ответственный';
+  renderResponsibleUserOptions('');
+  renderResponsibleStageOptions([]);
+  renderResponsibles();
+}
+
+function editResponsible(id){
+  const responsible=state.responsibles.find(x=>String(x['Responsible ID'])===String(id));
+  if(!responsible||responsible._sync==='pending')return;
+
+  el('responsibleId').value=id;
+  el('responsibleLastName').value=responsible['Фамилия']||'';
+  el('responsibleFirstName').value=responsible['Имя']||'';
+  el('responsibleMiddleName').value=responsible['Отчество']||'';
+  el('responsibleEmail').value=responsible['Email']||'';
+  el('responsibleFormTitle').textContent='№'+(responsible['№']||'—')+' · '+fullNameOf(responsible);
+  renderResponsibleUserOptions(responsible['User ID']||'');
+  renderResponsibleStageOptions(responsible.stages||[]);
+  renderResponsibles();
+}
+
+async function saveResponsibleForm(button){
+  const lastName=value('responsibleLastName').trim();
+  const firstName=value('responsibleFirstName').trim();
+  const middleName=value('responsibleMiddleName').trim();
+  const email=value('responsibleEmail');
+  const userId=value('responsibleUserId');
+  const stages=[...document.querySelectorAll('.responsible-stage:checked')].map(x=>x.value);
+
+  if(!lastName||!firstName){
+    showToast('Фамилия и имя обязательны.','error');
+    return;
+  }
+  if(!stages.length){
+    showToast('Выберите хотя бы один этап.','error');
+    return;
+  }
+  if(!validateEmailField(el('responsibleEmail')))return;
+
+  const id=value('responsibleId');
+  const fullName=[lastName,firstName,middleName].filter(Boolean).join(' ');
+
+  await optimisticSave({
+    collectionName:'responsibles',
+    idKey:'Responsible ID',
+    payload:{id,lastName,firstName,middleName,email,userId,stages},
+    localEntity:{
+      'Фамилия':lastName,
+      'Имя':firstName,
+      'Отчество':middleName,
+      'ФИО':fullName,
+      'Email':email,
+      'User ID':userId,
+      stages
+    },
+    rpcName:'saveResponsible',
+    responseKey:'responsible',
+    button,
+    formId:'responsibleForm',
+    onSuccess:saved=>{
+      el('responsibleId').value=saved['Responsible ID'];
+      el('responsibleFormTitle').textContent='№'+(saved['№']||'—')+' · '+fullNameOf(saved);
+      populateGlobalFilters();
+      showToast('Ответственный сохранён.');
+    }
+  });
+}
+
+async function deleteResponsibleUi(id,button){
+  const responsible=state.responsibles.find(x=>String(x['Responsible ID'])===String(id));
+  const ok=await showConfirm('Удалить ответственного «'+(responsible?fullNameOf(responsible):'')+'»?','Soft delete');
+  if(!ok)return;
+
+  await optimisticDelete({
+    collectionName:'responsibles',
+    id,
+    rpcName:'deleteResponsible',
+    button,
+    onSuccess:()=>{
+      if(String(value('responsibleId'))===String(id))resetResponsibleForm();
+      populateGlobalFilters();
+      showToast('Ответственный удалён.');
+    }
+  });
+}
+</script>
