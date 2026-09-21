@@ -16,7 +16,6 @@
   <button class="tab active" onclick="showAdminTab('vacancies', this)">Вакансии</button>
   <button class="tab" onclick="showAdminTab('sources', this)">Источники</button>
   <button class="tab" onclick="showAdminTab('responsibles', this)">Ответственные</button>
-  <button class="tab" onclick="showAdminTab('users', this)">Пользователи</button>
 </div>
 
 <section id="admin-vacancies" class="admin-page-section active">
@@ -152,19 +151,6 @@
         <button class="button button-primary" onclick="saveSourceForm(this)">Сохранить</button>
       </div>
     </aside>
-  </div>
-</section>
-
-<section id="admin-users" class="admin-page-section">
-  <div class="admin-list-card directory-table-card">
-    <div class="section-title-row">
-      <div>
-        <h3>Пользователи</h3>
-        <p class="muted">Создаются автоматически при первом входе через Google.</p>
-      </div>
-      <span id="userCount" class="counter-badge"></span>
-    </div>
-    <div id="userList"></div>
   </div>
 </section>
 
