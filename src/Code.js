@@ -1,5 +1,5 @@
 function doGet(event) {
-  ensureSchema_();
+  ensureSchemaVersion_();
 
   const template =
     HtmlService.createTemplateFromFile('Index');
@@ -42,13 +42,7 @@ function include(filename) {
 
 
 function getReferenceData() {
-  ensureSchema_();
-
-  const currentUser = getCurrentUser();
-
   return {
-    currentUser,
-    users: getUsers(),
     vacancies: getVacancies(),
     sources: getSources(),
     responsibles: getResponsibles(),
@@ -61,18 +55,19 @@ function getReferenceData() {
 
 
 function getCandidateData() {
-  ensureSchema_();
+  const candidates = getCandidates();
 
   return {
-    candidates: getCandidates(),
-    stats: getStats()
+    candidates,
+    stats: calculateStats_(
+      candidates,
+      getArchivedCandidateCount_()
+    )
   };
 }
 
 
 function getArchivedCandidateData() {
-  ensureSchema_();
-
   return {
     archivedCandidates:
       getArchivedCandidates()
@@ -80,15 +75,40 @@ function getArchivedCandidateData() {
 }
 
 
-function getInitialData() {
-  const references = getReferenceData();
-  const candidateData = getCandidateData();
-  const archivedData =
-    getArchivedCandidateData();
+function getAdminUserData() {
+  return {
+    users: getUsers()
+  };
+}
+
+
+function getBootstrapData() {
+  ensureSchemaVersion_();
+
+  const currentUser =
+    getCurrentUser();
+
+  const references =
+    getReferenceData();
+
+  const candidates =
+    getCandidates();
+
+  const stats =
+    calculateStats_(
+      candidates,
+      getArchivedCandidateCount_()
+    );
 
   return {
+    currentUser,
     ...references,
-    ...candidateData,
-    ...archivedData
+    candidates,
+    stats
   };
+}
+
+
+function getInitialData() {
+  return getBootstrapData();
 }
