@@ -1,20 +1,37 @@
-function getSpreadsheet_() {
-  const config = getRuntimeConfig_();
+let spreadsheetCache_ = null;
+let sheetCache_ = {};
 
-  return SpreadsheetApp.openById(
-    config.spreadsheetId
-  );
+
+function getSpreadsheet_() {
+  if (!spreadsheetCache_) {
+    const config = getRuntimeConfig_();
+
+    spreadsheetCache_ =
+      SpreadsheetApp.openById(
+        config.spreadsheetId
+      );
+  }
+
+  return spreadsheetCache_;
 }
 
 
 function getSheet_(name) {
-  const sheet = getSpreadsheet_().getSheetByName(name);
+  if (sheetCache_[name]) {
+    return sheetCache_[name];
+  }
+
+  const sheet =
+    getSpreadsheet_()
+      .getSheetByName(name);
 
   if (!sheet) {
     throw new Error(
       'Не найден обязательный лист: ' + name
     );
   }
+
+  sheetCache_[name] = sheet;
 
   return sheet;
 }
