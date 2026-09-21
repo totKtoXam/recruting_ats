@@ -268,26 +268,31 @@ function getCurrentUser() {
 }
 
 
+function toPublicUser_(user) {
+  return {
+    'User ID':
+      user['User ID'] || '',
+    'Email':
+      user.Email || '',
+    'ФИО':
+      user['ФИО'] || '',
+    'Avatar URL':
+      user['Avatar URL'] || '',
+    'IsActive':
+      user.IsActive,
+    'Последний вход':
+      user['Последний вход'] || ''
+  };
+}
+
+
 function getUsers() {
   return rowsToObjects_(
     getSheet_(
       APP_CONFIG.SHEETS.USERS
     )
   )
-    .map(user => ({
-      'User ID':
-        user['User ID'] || '',
-      'Email':
-        user.Email || '',
-      'ФИО':
-        user['ФИО'] || '',
-      'Avatar URL':
-        user['Avatar URL'] || '',
-      'IsActive':
-        user.IsActive,
-      'Последний вход':
-        user['Последний вход'] || ''
-    }))
+    .map(toPublicUser_)
     .sort((left, right) =>
       String(
         left['ФИО'] ||
