@@ -76,6 +76,8 @@ function saveVacancy(input) {
     }
   );
 
+  invalidateReferenceCache_();
+
   return { ok: true, vacancy: entity };
 }
 
@@ -103,6 +105,8 @@ function deleteVacancy(id) {
         template['Template ID']
       )
     );
+
+  invalidateReferenceCache_();
 
   return result;
 }
@@ -165,16 +169,23 @@ function saveSource(input) {
     }
   );
 
+  invalidateReferenceCache_();
+
   return { ok: true, source: entity };
 }
 
 
 function deleteSource(id) {
-  return softDeleteById_(
-    APP_CONFIG.SHEETS.SOURCES,
-    'Source ID',
-    id
-  );
+  const result =
+    softDeleteById_(
+      APP_CONFIG.SHEETS.SOURCES,
+      'Source ID',
+      id
+    );
+
+  invalidateReferenceCache_();
+
+  return result;
 }
 
 
@@ -312,6 +323,8 @@ function saveResponsible(input) {
     }
   );
 
+  invalidateReferenceCache_();
+
   return {
     ok: true,
     responsible: {
@@ -323,11 +336,16 @@ function saveResponsible(input) {
 
 
 function deleteResponsible(id) {
-  return softDeleteById_(
-    APP_CONFIG.SHEETS.RESPONSIBLES,
-    'Responsible ID',
-    id
-  );
+  const result =
+    softDeleteById_(
+      APP_CONFIG.SHEETS.RESPONSIBLES,
+      'Responsible ID',
+      id
+    );
+
+  invalidateReferenceCache_();
+
+  return result;
 }
 
 
@@ -433,6 +451,8 @@ function saveInterviewTemplate(input) {
     }
   );
 
+  invalidateReferenceCache_();
+
   return {
     ok: true,
     template: {
@@ -445,11 +465,16 @@ function saveInterviewTemplate(input) {
 
 
 function deleteInterviewTemplate(id) {
-  return softDeleteById_(
-    APP_CONFIG.SHEETS.INTERVIEW_TEMPLATES,
-    'Template ID',
-    id
-  );
+  const result =
+    softDeleteById_(
+      APP_CONFIG.SHEETS.INTERVIEW_TEMPLATES,
+      'Template ID',
+      id
+    );
+
+  invalidateReferenceCache_();
+
+  return result;
 }
 
 
