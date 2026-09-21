@@ -1,0 +1,2 @@
+# Shell-скрипты всегда с LF, иначе bash не запустит их после checkout на Windows.
+*.sh text eol=lf

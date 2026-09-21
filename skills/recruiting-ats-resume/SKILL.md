@@ -8,7 +8,7 @@ When the user sends a resume/CV, extract candidate data and create a prefilled R
 
 Use the Recruiting ATS OpenAPI definition in `openapi.yaml`.
 
-Authentication uses query parameter `api_key`.
+Authentication uses query parameter `api_key` (the `X-API-Key` header is also accepted by the server).
 
 ## Workflow
 
@@ -32,7 +32,7 @@ Authentication uses query parameter `api_key`.
    - responsibleId
 6. Only assign a reference when the user explicitly supplied it or the match is unique and unambiguous. Otherwise leave the ID empty so the user can choose it in the form.
 7. Create a candidate draft with `createCandidateDraft`.
-8. When the API client supports sending the original attachment as base64 and the file is <= 10 MB, include it in `resume`. Otherwise create the draft without the binary file and tell the user the resume still needs to be uploaded in the form.
+8. When the API client supports sending the original attachment as base64 and the file is a PDF, DOC or DOCX <= 10 MB, include it in `resume`. Otherwise create the draft without the binary file and tell the user the resume still needs to be uploaded in the form.
 9. Return the `draftUrl` to the user.
 
 ## Data quality

@@ -1,0 +1,12 @@
+# Не отправляется в Docker build и Cloud Build (gcloud run deploy --source).
+node_modules
+.git
+.github
+.env
+.env.*
+!.env.example
+*.xlsx
+test
+docs
+skills
+npm-debug.log*

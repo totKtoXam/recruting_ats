@@ -1,12 +1,13 @@
 openapi: 3.1.0
 info:
   title: Recruiting ATS Resume Intake API
-  version: 1.0.0
+  version: 2.0.0
   description: Creates prefilled candidate drafts in Recruiting ATS.
 servers:
-  - url: https://script.google.com/macros/s/REPLACE_WITH_DEPLOYMENT_ID
+  # Замените на PUBLIC_URL вашей установки Recruiting ATS.
+  - url: https://ats.example.com
 paths:
-  /exec:
+  /intake:
     get:
       operationId: getReferences
       summary: Get ATS reference data
