@@ -319,6 +319,7 @@ function resetTemplateForm(){
   el('templateId').value='';
   el('templateName').value='';
   el('templateQuestionsList').innerHTML='';
+  el('templateRequired').checked=false;
   renderTemplateStageOptions('');
   addTemplateQuestion('');
   renderVacancyTemplatesForSelected();
@@ -334,6 +335,7 @@ function editTemplate(id){
 
   el('templateId').value=id;
   el('templateName').value=template['Название']||'';
+  el('templateRequired').checked=!!template.required;
   renderTemplateStageOptions(template['Этап']);
   el('templateQuestionsList').innerHTML='';
   (template.questions||[]).forEach(question=>addTemplateQuestion(question));
@@ -366,7 +368,10 @@ function renderVacancyTemplatesForSelected(){
         syncIcon(t._sync)+
         '<div class="template-row-main">'+
           '<strong>№'+escapeHtml(t['№']||'—')+' · '+escapeHtml(t['Название'])+'</strong>'+
-          statusChip(t['Этап'],true)+
+          '<div class="chip-wrap">'+
+            statusChip(t['Этап'],true)+
+            (t.required?'<span class="mini-chip">Обязательный</span>':'')+
+          '</div>'+
           '<small>'+escapeHtml(String((t.questions||[]).length))+' вопросов</small>'+
         '</div>'+
         '<button class="button button-ghost button-small danger-text" onclick="event.stopPropagation();deleteTemplateUi(\''+escJs(t['Template ID'])+'\',this)">Удалить</button>'+
@@ -379,6 +384,7 @@ async function saveTemplateForm(button){
   const vacancyId=value('vacancyId');
   const name=value('templateName').trim();
   const stage=value('templateStage');
+  const required=el('templateRequired').checked;
   const questions=collectTemplateQuestions();
 
   if(!vacancyId){
@@ -404,12 +410,14 @@ async function saveTemplateForm(button){
   await optimisticSave({
     collectionName:'interviewTemplates',
     idKey:'Template ID',
-    payload:{id,name,vacancyId,stage,questions},
+    payload:{id,name,vacancyId,stage,required,questions},
     localEntity:{
       'Название':name,
       'Vacancy ID':vacancyId,
       'Вакансия':vacancy?vacancy['Вакансия']:'',
       'Этап':stage,
+      'Обязательный':required,
+      required,
       questions
     },
     rpcName:'saveInterviewTemplate',

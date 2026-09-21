@@ -25,6 +25,29 @@ function saveVacancy(input) {
       )
     : null;
 
+  if (required) {
+    const duplicateRequired =
+      getInterviewTemplates()
+        .find(template =>
+          String(
+            template['Vacancy ID']
+          ) === vacancyId &&
+          template['Этап'] === stage &&
+          template.required &&
+          String(
+            template['Template ID']
+          ) !== String(
+            input.id || ''
+          )
+        );
+
+    if (duplicateRequired) {
+      throw new Error(
+        'Для этой вакансии и этапа уже есть обязательный шаблон.'
+      );
+    }
+  }
+
   const now = formatNow_();
 
   const entity = upsertObject_(
@@ -317,6 +340,10 @@ function getInterviewTemplates() {
     .filter(item => !isSoftDeleted_(item))
     .map(item => ({
       ...item,
+      required:
+        String(
+          item['Обязательный'] || ''
+        ).toLowerCase() === 'true',
       questions: parseJson_(item['Вопросы'], [])
     }));
 }
@@ -326,6 +353,14 @@ function saveInterviewTemplate(input) {
   const name = String(input && input.name || '').trim();
   const vacancyId = String(input && input.vacancyId || '').trim();
   const stage = String(input && input.stage || '').trim();
+  const required =
+    input &&
+    (
+      input.required === true ||
+      String(
+        input.required || ''
+      ).toLowerCase() === 'true'
+    );
 
   const questions = Array.isArray(input && input.questions)
     ? input.questions
@@ -343,6 +378,10 @@ function saveInterviewTemplate(input) {
 
   if (!APP_CONFIG.PIPELINE_STATUSES.includes(stage)) {
     throw new Error('Выберите корректный этап.');
+  }
+
+  if (!questions.length) {
+    throw new Error('Добавьте хотя бы один вопрос.');
   }
 
   const vacancy = findById_(
@@ -382,6 +421,7 @@ function saveInterviewTemplate(input) {
       'Vacancy ID': vacancyId,
       'Вакансия': vacancy['Вакансия'],
       'Этап': stage,
+      'Обязательный': required,
       'Вопросы': stringifyJson_(questions),
       'Дата создания':
         existing && existing['Дата создания']
@@ -397,6 +437,7 @@ function saveInterviewTemplate(input) {
     ok: true,
     template: {
       ...entity,
+      required,
       questions
     }
   };
