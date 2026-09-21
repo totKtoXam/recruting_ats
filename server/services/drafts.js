@@ -139,6 +139,29 @@ export async function markDraftUsed(tx, draftId, candidateId) {
   );
 }
 
+const CLEANUP_INTERVAL_MS = 12 * 60 * 60 * 1000;
+let lastCleanupAt = 0;
+let cleanupInProgress = false;
+
+// Запускает очистку в фоне, если с прошлого запуска прошло больше 12 часов.
+// Вызывается из обычных запросов, а не по таймеру: на Cloud Run и других
+// serverless-хостингах процесс между запросами почти не получает CPU.
+export function cleanupDraftsIfDue() {
+  if (cleanupInProgress || Date.now() - lastCleanupAt < CLEANUP_INTERVAL_MS) {
+    return;
+  }
+
+  lastCleanupAt = Date.now();
+  cleanupInProgress = true;
+
+  cleanupExpiredCandidateDrafts()
+    .then(({ removed }) => removed && console.log(`Draft cleanup: removed ${removed}`))
+    .catch(error => console.error('Draft cleanup failed:', error.message))
+    .finally(() => {
+      cleanupInProgress = false;
+    });
+}
+
 // Удаляет использованные и просроченные черновики, их файлы переносит в корзину Google Drive.
 export async function cleanupExpiredCandidateDrafts() {
   const drafts = await db.many(

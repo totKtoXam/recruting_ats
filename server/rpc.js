@@ -20,6 +20,7 @@ async function getCandidateData() {
 
 async function getBootstrapData(_args, { user }) {
   await users.touchLastLogin(user.id);
+  drafts.cleanupDraftsIfDue();
 
   const [referenceData, candidateData] = await Promise.all([
     references.getReferenceData(),

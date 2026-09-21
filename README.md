@@ -285,20 +285,40 @@ docker compose exec postgres psql -U ats -d ats
 
 ## Deploy
 
-### Render (бесплатно)
+### Google Cloud Run (бесплатный лимит)
 
-В репозитории есть Blueprint [`render.yaml`](render.yaml): Node-сервис на бесплатном тарифе Render, деплой при каждом push в `main`. Бесплатный сервис засыпает через ~15 минут без запросов, и первое открытие после сна занимает 30–60 секунд.
+Cloud Run запускает контейнер из `Dockerfile` и останавливает его, когда нет запросов. Бесплатно ежемесячно: около 2 млн запросов, 180 000 vCPU-секунд и 360 000 GiB-секунд — для небольшой команды рекрутеров этого с запасом хватает. Холодный старт после простоя занимает несколько секунд. Лимит запроса — 32 МБ, так что резюме до 10 МБ проходят. Актуальные условия: https://cloud.google.com/free.
 
-1. **PostgreSQL** — создай бесплатную базу на [Neon](https://neon.tech) (регион Frankfurt, ближе к Render) и скопируй connection string вида `postgres://…neon.tech/…?sslmode=require`. Бесплатная база самого Render удаляется через 30 дней, поэтому она не подходит.
-2. **Сервис** — Render → **New → Blueprint** → выбери этот репозиторий. Render создаст сервис `recruiting-ats`; `SESSION_SECRET` и `ATS_API_KEY` сгенерируются автоматически.
-3. **Переменные** (Render спросит их при создании, позже — Service → Environment):
-   - `PUBLIC_URL` — `https://recruiting-ats.onrender.com` (точный адрес виден в дашборде);
+База — бесплатный PostgreSQL на [Neon](https://neon.tech): у Cloud SQL бесплатного тарифа нет.
+
+**Один раз (в консоли Google Cloud и Neon):**
+
+1. Создай проект в [Google Cloud Console](https://console.cloud.google.com) (тот же, где OAuth-клиент для входа и Google Drive API) и подключи к нему billing-аккаунт. Карта нужна, даже если укладываться в бесплатный лимит. Сразу настрой бюджет с оповещением (**Billing → Budgets & alerts**, например $1).
+2. Создай базу на Neon (регион Frankfurt, ближе к `europe-west1`) и скопируй connection string `postgres://…neon.tech/…?sslmode=require`.
+3. Получи refresh token для Drive: `npm run drive:auth` (см. [Настройка Google Drive](#настройка-google-drive)).
+4. Установи [Google Cloud CLI](https://cloud.google.com/sdk/docs/install) и выполни `gcloud auth login`. Вместо установки можно работать в [Cloud Shell](https://shell.cloud.google.com) — там `gcloud` уже есть, достаточно склонировать репозиторий.
+
+**Деплой:**
+
+1. Скопируй `.env.example` в `.env.cloudrun` (файл не попадает в git) и заполни:
    - `DATABASE_URL` — строка подключения Neon;
-   - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` — см. [Настройка Google OAuth](#настройка-google-oauth);
+   - `SESSION_SECRET`, `ATS_API_KEY` — случайные строки (команды генерации есть в `.env.example`);
+   - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`;
    - `AUTH_ALLOWED_DOMAINS` и/или `AUTH_ALLOWED_EMAILS` — без них сервер в production не стартует;
-   - `GOOGLE_DRIVE_ROOT_FOLDER_ID`, `GOOGLE_DRIVE_REFRESH_TOKEN` — см. [Настройка Google Drive](#настройка-google-drive) (`npm run drive:auth` выполняется один раз локально).
-4. **Google Cloud** — в OAuth-клиенте добавь Authorized redirect URI `https://<адрес>.onrender.com/auth/google/callback`.
-5. Схема БД создаётся автоматически при первом старте. Если нужно перенести данные из старой таблицы, выполни импорт локально, указав `DATABASE_URL` базы Neon (см. [Миграция из Google Sheets](#миграция-из-google-sheets)).
+   - `GOOGLE_DRIVE_ROOT_FOLDER_ID`, `GOOGLE_DRIVE_REFRESH_TOKEN`;
+   - `PUBLIC_URL` можно не задавать — скрипт вычислит адрес сервиса `https://recruiting-ats-<номер проекта>.europe-west1.run.app`.
+2. Запусти:
+
+   ```bash
+   PROJECT_ID=<id-проекта> ./scripts/deploy-cloud-run.sh
+   ```
+
+   Скрипт включает нужные API, создаёт сервисный аккаунт сервиса, кладёт `SESSION_SECRET`, `DATABASE_URL`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_DRIVE_REFRESH_TOKEN` и `ATS_API_KEY` в Secret Manager (5 секретов укладываются в бесплатный лимит), собирает образ в Cloud Build и выкатывает сервис (`min-instances=0`, `max-instances=2` — защита от неожиданных расходов). Регион и имя меняются переменными `REGION` и `SERVICE`.
+3. В OAuth-клиенте добавь Authorized redirect URI `https://<адрес-сервиса>/auth/google/callback` — скрипт выводит его в конце.
+
+Схема БД создаётся автоматически при первом старте. Повторный запуск скрипта выкатывает новую версию из текущей рабочей копии и обновляет только изменившиеся секреты. Для автодеплоя при push в `main` можно в консоли открыть сервис Cloud Run → **Set up continuous deployment** и подключить GitHub-репозиторий: переменные и секреты сервиса сохранятся.
+
+Если нужно перенести данные из старой таблицы, выполни импорт локально, указав `DATABASE_URL` базы Neon (см. [Миграция из Google Sheets](#миграция-из-google-sheets)).
 
 ### Docker-образ
 
@@ -374,7 +394,7 @@ server {
 
 ### Очистка черновиков
 
-Сервер сам удаляет использованные и просроченные черновики Resume Intake API: через минуту после старта и далее раз в сутки (файлы переносятся в корзину Google Drive, а не удаляются безвозвратно). Отдельный cron не нужен — это важно для бесплатных хостингов, где его нет, а сервер засыпает.
+Сервер сам удаляет использованные и просроченные черновики Resume Intake API (их файлы переносятся в корзину Google Drive, а не удаляются безвозвратно). Очистка запускается в фоне при открытии приложения, не чаще раза в 12 часов. Таймеры и отдельный cron не используются: на Cloud Run и других serverless-хостингах процесс между запросами почти не получает CPU.
 
 Запустить очистку вручную:
 
@@ -496,6 +516,7 @@ scripts/
   import-from-xlsx.js перенос данных из Google Sheets
   cleanup-drafts.js   очистка черновиков
   drive-auth.js       получение refresh token для Google Drive (npm run drive:auth)
+  deploy-cloud-run.sh деплой в Google Cloud Run
 skills/
   recruiting-ats-resume/  Skill и OpenAPI для AI-ассистента
 test/                 unit-тесты (node:test)
