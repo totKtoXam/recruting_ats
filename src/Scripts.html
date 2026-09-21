@@ -32,6 +32,7 @@ let resumeUploading=false;
 let archivedCandidatesLoadPromise=null;
 let adminUsersLoadPromise=null;
 const interviewLoadPromises={};
+const candidateDetailsLoadPromises={};
 const loadedInterviewCandidateIds=new Set();
 const collapsedColumns=new Set();
 
@@ -281,7 +282,10 @@ async function maybeOpenCandidateFromRoute(){
       .classList
       .contains('open')
   ){
-    openCandidate(candidate,false);
+    openCandidateById(
+      candidate.ID,
+      false
+    );
   }
 }
 
@@ -1374,11 +1378,98 @@ function renderCandidateSourceIcon(){
   node.textContent=brand.text;
 }
 
-function openCandidateById(id,setHash=true){
-  const c=candidateById(id);
-  if(!c)return;
-  if(setHash)history.pushState(null,'','#/candidate/'+encodeURIComponent(id));
-  openCandidate(c,false);
+async function loadCandidateDetails(
+  id,
+  force=false
+){
+  const key=String(id);
+  const current=candidateById(key);
+
+  if(
+    current &&
+    current._detailsLoaded &&
+    !force
+  ){
+    return current;
+  }
+
+  if(
+    candidateDetailsLoadPromises[key] &&
+    !force
+  ){
+    return candidateDetailsLoadPromises[key];
+  }
+
+  candidateDetailsLoadPromises[key]=
+    rpc('getCandidateDetails',id)
+      .then(details=>{
+        const collection=
+          details.archived
+            ? state.archivedCandidates
+            : state.candidates;
+
+        const index=
+          collection.findIndex(item=>
+            String(item.ID)===key
+          );
+
+        const merged={
+          ...(index>=0
+            ? collection[index]
+            : {}),
+          ...details,
+          _detailsLoaded:true
+        };
+
+        if(index>=0){
+          collection[index]=merged;
+        }else{
+          collection.unshift(merged);
+        }
+
+        return merged;
+      })
+      .finally(()=>{
+        delete candidateDetailsLoadPromises[key];
+      });
+
+  return candidateDetailsLoadPromises[key];
+}
+
+
+async function openCandidateById(
+  id,
+  setHash=true
+){
+  const summary=candidateById(id);
+
+  if(!summary)return;
+
+  if(setHash){
+    history.pushState(
+      null,
+      '',
+      '#/candidate/'+
+      encodeURIComponent(id)
+    );
+  }
+
+  try{
+    const candidate=
+      await loadCandidateDetails(id);
+
+    openCandidate(
+      candidate,
+      false
+    );
+  }catch(error){
+    showToast(
+      error&&error.message
+        ? error.message
+        : String(error),
+      'error'
+    );
+  }
 }
 
 function ensureCurrentOption(select,entityId,label){
@@ -1797,7 +1888,8 @@ async function saveCandidateForm(button){
       const response=await rpc('saveCandidate',payload);
       const saved={
         ...response.candidate,
-        _sync:'success'
+        _sync:'success',
+        _detailsLoaded:true
       };
 
       const savedCollection=
@@ -1926,7 +2018,8 @@ async function archiveById(id,button){
 
       const archived={
         ...response.candidate,
-        archived:true
+        archived:true,
+        _detailsLoaded:true
       };
 
       const archiveIndex=
