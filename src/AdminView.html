@@ -16,6 +16,7 @@
   <button class="tab active" onclick="showAdminTab('vacancies', this)">Вакансии</button>
   <button class="tab" onclick="showAdminTab('sources', this)">Источники</button>
   <button class="tab" onclick="showAdminTab('responsibles', this)">Ответственные</button>
+  <button class="tab" onclick="showAdminTab('users', this)">Пользователи</button>
 </div>
 
 <section id="admin-vacancies" class="admin-page-section active">
@@ -154,6 +155,19 @@
   </div>
 </section>
 
+<section id="admin-users" class="admin-page-section">
+  <div class="admin-list-card directory-table-card">
+    <div class="section-title-row">
+      <div>
+        <h3>Пользователи</h3>
+        <p class="muted">Создаются автоматически при первом входе через Google.</p>
+      </div>
+      <span id="userCount" class="counter-badge"></span>
+    </div>
+    <div id="userList"></div>
+  </div>
+</section>
+
 <section id="admin-responsibles" class="admin-page-section">
   <div class="directory-layout">
     <div class="admin-list-card directory-table-card">
@@ -202,6 +216,12 @@
           oninput="normalizeEmailInput(this)"
           onblur="validateEmailField(this)"
         >
+      </div>
+
+      <div class="field">
+        <label for="responsibleUserId">Пользователь</label>
+        <select id="responsibleUserId"></select>
+        <div class="field-hint">Привязка необязательная. Один пользователь может быть привязан только к одному ответственному.</div>
       </div>
 
       <div class="field">
