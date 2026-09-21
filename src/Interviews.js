@@ -216,48 +216,6 @@ function transitionCandidate(input) {
 }
 
 
-function resolveResponsibleForStage_(
-  requestedId,
-  currentId,
-  stage
-) {
-  const id =
-    requestedId ||
-    currentId;
-
-  const responsible = findById_(
-    APP_CONFIG.SHEETS.RESPONSIBLES,
-    'Responsible ID',
-    id
-  );
-
-  if (!responsible) {
-    throw new Error(
-      'Выберите ответственного для этапа "' +
-      stage +
-      '".'
-    );
-  }
-
-  const stages = parseJson_(
-    responsible['Доступные этапы'],
-    []
-  );
-
-  if (!stages.includes(stage)) {
-    throw new Error(
-      'Ответственный "' +
-      responsible['ФИО'] +
-      '" недоступен для этапа "' +
-      stage +
-      '".'
-    );
-  }
-
-  return responsible;
-}
-
-
 function saveTransitionInterview_(
   candidate,
   fromStatus,
@@ -282,10 +240,19 @@ function saveTransitionInterview_(
           fromStatus
       );
 
-  const requiredTemplate =
-    templates.find(template =>
+  const requiredTemplates =
+    templates.filter(template =>
       template.required
-    ) || null;
+    );
+
+  if (requiredTemplates.length > 1) {
+    throw new Error(
+      'Для вакансии и этапа настроено несколько обязательных шаблонов.'
+    );
+  }
+
+  const requiredTemplate =
+    requiredTemplates[0] || null;
 
   if (
     requiredTemplate &&
