@@ -285,7 +285,24 @@ docker compose exec postgres psql -U ats -d ats
 
 ## Deploy
 
-### Google Cloud Run (бесплатный лимит)
+### Render (бесплатно, без карты)
+
+В репозитории есть Blueprint [`render.yaml`](render.yaml): Node-сервис на бесплатном тарифе Render, деплой при каждом push в `main`. Банковская карта не нужна. Бесплатный сервис засыпает через ~15 минут без запросов, и первое открытие после сна занимает 30–60 секунд.
+
+1. **PostgreSQL** — создай бесплатную базу на [Neon](https://neon.tech) (регион Frankfurt, ближе к Render) и скопируй connection string вида `postgres://…neon.tech/…?sslmode=require`. Бесплатная база самого Render удаляется через 30 дней, поэтому она не подходит.
+2. **Google Cloud Console** — проект с OAuth-клиентом для входа и включённым Google Drive API (см. [Настройка Google OAuth](#настройка-google-oauth) и [Настройка Google Drive](#настройка-google-drive)). Billing-аккаунт и карта для этого не нужны. Refresh token для Drive получи локально: `npm run drive:auth`.
+3. **Сервис** — Render → **New → Blueprint** → выбери этот репозиторий. Render создаст сервис `recruiting-ats`; `SESSION_SECRET` и `ATS_API_KEY` сгенерируются автоматически.
+4. **Переменные** (Render спросит их при создании, позже — Service → Environment):
+   - `PUBLIC_URL` — `https://recruiting-ats.onrender.com` (точный адрес виден в дашборде);
+   - `DATABASE_URL` — строка подключения Neon;
+   - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`;
+   - `AUTH_ALLOWED_DOMAINS` и/или `AUTH_ALLOWED_EMAILS` — без них сервер в production не стартует;
+   - `GOOGLE_DRIVE_ROOT_FOLDER_ID`, `GOOGLE_DRIVE_REFRESH_TOKEN`.
+5. В OAuth-клиенте добавь Authorized redirect URI `https://<адрес>.onrender.com/auth/google/callback`.
+
+Схема БД создаётся автоматически при первом старте. Если нужно перенести данные из старой таблицы, выполни импорт локально, указав `DATABASE_URL` базы Neon (см. [Миграция из Google Sheets](#миграция-из-google-sheets)).
+
+### Google Cloud Run (альтернатива, нужна карта)
 
 Cloud Run запускает контейнер из `Dockerfile` и останавливает его, когда нет запросов. Бесплатно ежемесячно: около 2 млн запросов, 180 000 vCPU-секунд и 360 000 GiB-секунд — для небольшой команды рекрутеров этого с запасом хватает. Холодный старт после простоя занимает несколько секунд. Лимит запроса — 32 МБ, так что резюме до 10 МБ проходят. Актуальные условия: https://cloud.google.com/free.
 
@@ -293,7 +310,7 @@ Cloud Run запускает контейнер из `Dockerfile` и остан�
 
 **Один раз (в консоли Google Cloud и Neon):**
 
-1. Создай проект в [Google Cloud Console](https://console.cloud.google.com) (тот же, где OAuth-клиент для входа и Google Drive API) и подключи к нему billing-аккаунт. Карта нужна, даже если укладываться в бесплатный лимит. Сразу настрой бюджет с оповещением (**Billing → Budgets & alerts**, например $1).
+1. Создай проект в [Google Cloud Console](https://console.cloud.google.com) (тот же, где OAuth-клиент для входа и Google Drive API) и подключи к нему billing-аккаунт. Карта нужна, даже если укладываться в бесплатный лимит; в некоторых странах при создании billing-аккаунта Google требует предоплату или временно блокирует сумму на карте. Сразу настрой бюджет с оповещением (**Billing → Budgets & alerts**, например $1).
 2. Создай базу на Neon (регион Frankfurt, ближе к `europe-west1`) и скопируй connection string `postgres://…neon.tech/…?sslmode=require`.
 3. Получи refresh token для Drive: `npm run drive:auth` (см. [Настройка Google Drive](#настройка-google-drive)).
 4. Установи [Google Cloud CLI](https://cloud.google.com/sdk/docs/install) и выполни `gcloud auth login`. Вместо установки можно работать в [Cloud Shell](https://shell.cloud.google.com) — там `gcloud` уже есть, достаточно склонировать репозиторий.
