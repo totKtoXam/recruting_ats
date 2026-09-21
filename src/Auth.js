@@ -86,13 +86,36 @@ function getCurrentUser() {
       APP_CONFIG.SHEETS.USERS
     );
 
-    const existing =
+    const matches =
       rowsToObjects_(sheet)
-        .find(user =>
+        .filter(user =>
           String(
             user['Google Subject'] || ''
           ) === identity.subject
-        ) || null;
+        );
+
+    if (matches.length > 1) {
+      throw new Error(
+        'В таблице пользователей найден дубликат Google Subject.'
+      );
+    }
+
+    const existing =
+      matches[0] || null;
+
+    const isActive =
+      !existing ||
+      existing.IsActive === '' ||
+      existing.IsActive === undefined ||
+      String(
+        existing.IsActive
+      ).toLowerCase() === 'true';
+
+    if (!isActive) {
+      throw new Error(
+        'Доступ для этого Google Account отключён.'
+      );
+    }
 
     const now = formatNow_();
 
@@ -114,6 +137,12 @@ function getCurrentUser() {
           identity.fullName,
         'Avatar URL':
           identity.avatarUrl,
+        'IsActive':
+          existing &&
+          existing.IsActive !== '' &&
+          existing.IsActive !== undefined
+            ? existing.IsActive
+            : true,
         'Дата создания':
           existing &&
           existing['Дата создания']
@@ -135,18 +164,33 @@ function getUsers() {
     getSheet_(
       APP_CONFIG.SHEETS.USERS
     )
-  ).sort((left, right) =>
-    String(
-      left['ФИО'] ||
-      left.Email ||
-      ''
-    ).localeCompare(
+  )
+    .map(user => ({
+      'User ID':
+        user['User ID'] || '',
+      'Email':
+        user.Email || '',
+      'ФИО':
+        user['ФИО'] || '',
+      'Avatar URL':
+        user['Avatar URL'] || '',
+      'IsActive':
+        user.IsActive,
+      'Последний вход':
+        user['Последний вход'] || ''
+    }))
+    .sort((left, right) =>
       String(
-        right['ФИО'] ||
-        right.Email ||
+        left['ФИО'] ||
+        left.Email ||
         ''
-      ),
-      'ru'
-    )
-  );
+      ).localeCompare(
+        String(
+          right['ФИО'] ||
+          right.Email ||
+          ''
+        ),
+        'ru'
+      )
+    );
 }
