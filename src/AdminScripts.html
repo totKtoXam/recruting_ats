@@ -10,6 +10,7 @@ function renderAdminAll(){
   renderVacancies();
   renderSources();
   renderResponsibles();
+  renderResponsibleUserOptions();
   renderResponsibleStageOptions();
   renderTemplateStageOptions();
   renderVacancyTemplatesForSelected();
@@ -546,11 +547,43 @@ function renderResponsibleStageOptions(selected){
   ).join('');
 }
 
+function userDisplayName(user){
+  if(!user)return '—';
+  const name=user['ФИО']||user.Email||'Пользователь';
+  return user.Email&&user.Email!==name
+    ? name+' · '+user.Email
+    : name;
+}
+
+function renderResponsibleUserOptions(selected){
+  const select=el('responsibleUserId');
+  if(!select)return;
+
+  const current=selected!==undefined
+    ? String(selected||'')
+    : String(select.value||'');
+
+  select.innerHTML=
+    option('','Не привязан',!current)+
+    (state.users||[]).map(user=>
+      option(
+        user['User ID'],
+        userDisplayName(user),
+        String(user['User ID'])===current
+      )
+    ).join('');
+}
+
 function renderResponsibles(){
   el('responsibleCount').textContent=state.responsibles.length+' шт.';
   const selected=value('responsibleId');
 
-  const rows=state.responsibles.map(responsible=>({
+  const rows=state.responsibles.map(responsible=>{
+    const linkedUser=(state.users||[]).find(user=>
+      String(user['User ID'])===String(responsible['User ID']||'')
+    );
+
+    return {
     _class:responsible._sync==='pending'?'row-pending':'',
     _selected:String(selected)===String(responsible['Responsible ID']),
     _clickable:true,
@@ -562,12 +595,14 @@ function renderResponsibles(){
       responsible['Имя']||'',
       responsible['Отчество']||'',
       responsible['Email']||'',
+      linkedUser?userDisplayName(linkedUser):'—',
       {html:'<div class="chip-wrap">'+(responsible.stages||[]).map(stage=>statusChip(stage,true)).join('')+'</div>'},
       {html:deleteCell('deleteResponsibleUi',responsible['Responsible ID'],responsible._sync==='pending')}
     ]
-  }));
+  };
+  });
 
-  el('responsibleList').innerHTML=adminTable(['','№','Фамилия','Имя','Отчество','Email','Этапы',''],rows);
+  el('responsibleList').innerHTML=adminTable(['','№','Фамилия','Имя','Отчество','Email','Пользователь','Этапы',''],rows);
 }
 
 function resetResponsibleForm(){
@@ -576,7 +611,9 @@ function resetResponsibleForm(){
   el('responsibleFirstName').value='';
   el('responsibleMiddleName').value='';
   el('responsibleEmail').value='';
+  el('responsibleUserId').value='';
   el('responsibleFormTitle').textContent='Новый ответственный';
+  renderResponsibleUserOptions('');
   renderResponsibleStageOptions([]);
   renderResponsibles();
 }
@@ -591,6 +628,7 @@ function editResponsible(id){
   el('responsibleMiddleName').value=responsible['Отчество']||'';
   el('responsibleEmail').value=responsible['Email']||'';
   el('responsibleFormTitle').textContent='№'+(responsible['№']||'—')+' · '+fullNameOf(responsible);
+  renderResponsibleUserOptions(responsible['User ID']||'');
   renderResponsibleStageOptions(responsible.stages||[]);
   renderResponsibles();
 }
@@ -600,6 +638,7 @@ async function saveResponsibleForm(button){
   const firstName=value('responsibleFirstName').trim();
   const middleName=value('responsibleMiddleName').trim();
   const email=value('responsibleEmail');
+  const userId=value('responsibleUserId');
   const stages=[...document.querySelectorAll('.responsible-stage:checked')].map(x=>x.value);
 
   if(!lastName||!firstName){
@@ -618,13 +657,14 @@ async function saveResponsibleForm(button){
   await optimisticSave({
     collectionName:'responsibles',
     idKey:'Responsible ID',
-    payload:{id,lastName,firstName,middleName,email,stages},
+    payload:{id,lastName,firstName,middleName,email,userId,stages},
     localEntity:{
       'Фамилия':lastName,
       'Имя':firstName,
       'Отчество':middleName,
       'ФИО':fullName,
       'Email':email,
+      'User ID':userId,
       stages
     },
     rpcName:'saveResponsible',
