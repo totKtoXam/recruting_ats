@@ -1,19 +1,27 @@
 {
   "name": "recruting-ats",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "Recruiting ATS built with Google Apps Script",
+  "description": "Recruiting ATS: Node.js + PostgreSQL + Google Drive",
+  "type": "module",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
-    "status": "clasp show-file-status",
-    "push": "clasp push --force",
-    "pull": "clasp pull",
-    "deployments": "clasp list-deployments",
-    "open": "clasp open-script"
+    "start": "node server/index.js",
+    "dev": "node --env-file-if-exists=.env --watch server/index.js",
+    "migrate": "node --env-file-if-exists=.env server/db/migrate.js",
+    "cleanup-drafts": "node --env-file-if-exists=.env scripts/cleanup-drafts.js",
+    "import:sheets": "node --env-file-if-exists=.env scripts/import-from-xlsx.js",
+    "test": "node --test test/*.test.js",
+    "drive:auth": "node --env-file-if-exists=.env scripts/drive-auth.js"
   },
-  "devDependencies": {
-    "@google/clasp": "3.4.1"
+  "dependencies": {
+    "@googleapis/drive": "^26.0.0",
+    "connect-pg-simple": "^10.0.0",
+    "exceljs": "^4.4.0",
+    "express": "^5.1.0",
+    "express-session": "^1.18.1",
+    "pg": "^8.13.1"
   }
 }

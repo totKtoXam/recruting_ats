@@ -1,8 +1,12 @@
 node_modules/
-.clasp.json
-.clasprc.json
 .env
+.env.*
+!.env.example
 .DS_Store
 .idea/
 .vscode/
 npm-debug.log*
+
+# Выгрузки Google Sheets (.xlsx) для импорта содержат персональные данные кандидатов —
+# их нельзя коммитить.
+*.xlsx

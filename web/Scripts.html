@@ -1,0 +1,2390 @@
+<script>
+let state={
+  candidates:[],
+  archivedCandidates:[],
+  vacancies:[],
+  sources:[],
+  responsibles:[],
+  users:[],
+  currentUser:null,
+  interviewTemplates:[],
+  dictionaries:{},
+  transitions:{},
+  pipelineStatuses:[],
+  stats:{},
+  interviews:[],
+  loaded:{
+    references:false,
+    candidates:false,
+    archivedCandidates:false,
+    users:false
+  }
+};
+
+let currentCandidate=null;
+let currentCandidateDraft=null;
+let draftLoadStarted=false;
+let pendingTransition=null;
+let currentInterviews=[];
+let editingInterview=null;
+let confirmResolver=null;
+let resumeUploading=false;
+let archivedCandidatesLoadPromise=null;
+let adminUsersLoadPromise=null;
+const interviewLoadPromises={};
+const candidateDetailsLoadPromises={};
+const loadedInterviewCandidateIds=new Set();
+const collapsedColumns=new Set();
+
+function el(id){return document.getElementById(id)}
+function value(id){return el(id).value}
+function escapeHtml(v){return String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&#039;")}
+function escJs(v){return String(v??'').replaceAll('\\','\\\\').replaceAll("'","\\'")}
+function option(v,label,selected){return '<option value="'+escapeHtml(v)+'"'+(selected?' selected':'')+'>'+escapeHtml(label)+'</option>'}
+
+async function rpc(name,args){
+  let response;
+  try{
+    response=await fetch('/api/rpc/'+encodeURIComponent(name),{
+      method:'POST',
+      credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({args})
+    });
+  }catch(error){
+    throw new Error('Нет соединения с сервером.');
+  }
+  if(response.status===401){
+    location.href='/auth/login?next='+encodeURIComponent(location.pathname+location.search+location.hash);
+    throw new Error('Сессия истекла. Выполните вход повторно.');
+  }
+  const data=await response.json().catch(()=>null);
+  if(!response.ok||!data){
+    throw new Error(data&&data.error&&data.error.message?data.error.message:'Ошибка сервера ('+response.status+').');
+  }
+  return data.result;
+}
+
+function showToast(message,type='success'){
+  const toast=el('toast');
+  toast.textContent=message;
+  toast.className='toast active '+(type==='error'?'toast-error':'toast-success');
+  clearTimeout(showToast.timer);
+  showToast.timer=setTimeout(()=>toast.className='toast',3200);
+}
+
+function showConfirm(message,title='Подтверждение'){
+  el('confirmTitle').textContent=title;
+  el('confirmMessage').textContent=message;
+  el('confirmModal').classList.add('open');
+  return new Promise(resolve=>confirmResolver=resolve);
+}
+
+function closeConfirm(result){
+  el('confirmModal').classList.remove('open');
+  if(confirmResolver){
+    confirmResolver(result);
+    confirmResolver=null;
+  }
+}
+
+function setButtonLoading(button,busy,label='Загрузка…'){
+  if(!button)return;
+  if(busy){
+    if(!button.dataset.originalHtml)button.dataset.originalHtml=button.innerHTML;
+    button.disabled=true;
+    button.classList.add('is-loading');
+    button.innerHTML='<span class="spinner"></span><span>'+escapeHtml(label)+'</span>';
+  }else{
+    button.disabled=false;
+    button.classList.remove('is-loading');
+    if(button.dataset.originalHtml){
+      button.innerHTML=button.dataset.originalHtml;
+      delete button.dataset.originalHtml;
+    }
+  }
+}
+
+function setFormLoading(formId,busy){
+  const form=typeof formId==='string'?el(formId):formId;
+  if(!form)return;
+  form.classList.toggle('is-busy',busy);
+  form.querySelectorAll('input,select,textarea,button').forEach(node=>{
+    if(busy){
+      node.dataset.wasDisabled=node.disabled?'1':'0';
+      node.disabled=true;
+    }else if(node.dataset.wasDisabled!==undefined){
+      node.disabled=node.dataset.wasDisabled==='1';
+      delete node.dataset.wasDisabled;
+    }
+  });
+}
+
+function setPageLoading(pageId,busy){
+  const page=el(pageId);
+  if(page)page.classList.toggle('is-refreshing',busy);
+}
+
+async function runUiTask({button=null,formId=null,pageId=null,label='Загрузка…'}={},task){
+  setButtonLoading(button,true,label);
+  setFormLoading(formId,true);
+  setPageLoading(pageId,true);
+  try{
+    return await task();
+  }catch(error){
+    showToast(error&&error.message?error.message:String(error),'error');
+    throw error;
+  }finally{
+    setFormLoading(formId,false);
+    setButtonLoading(button,false);
+    setPageLoading(pageId,false);
+  }
+}
+
+function statusKey(status){
+  const map={
+    'Новый':'new',
+    'HR screening':'hr',
+    'Техническое интервью':'tech',
+    'Финальное интервью':'final',
+    'Offer':'offer',
+    'Hired':'hired',
+    'Отказ':'rejected'
+  };
+  return map[status]||'neutral';
+}
+
+function vacancyStatusKey(status){
+  const map={'Открыта':'open','На паузе':'paused','Закрыта':'closed'};
+  return map[status]||'neutral';
+}
+
+function statusChip(status,small=false){
+  return '<span class="status-chip status-'+statusKey(status)+(small?' small':'')+'">'+escapeHtml(status||'—')+'</span>';
+}
+
+function vacancyStatusChip(status){
+  return '<span class="status-chip vacancy-'+vacancyStatusKey(status)+' small">'+escapeHtml(status||'—')+'</span>';
+}
+
+function syncIcon(sync){
+  if(sync==='pending')return '<span class="sync-cell pending" title="Синхронизация"><span class="spinner spinner-dark"></span></span>';
+  if(sync==='success')return '<span class="sync-cell success" title="Сохранено">✓</span>';
+  if(sync==='error')return '<span class="sync-cell error" title="Ошибка">!</span>';
+  return '<span class="sync-cell idle">•</span>';
+}
+
+function fullNameOf(item){
+  return [item['Фамилия'],item['Имя'],item['Отчество']].filter(Boolean).join(' ')||item['ФИО']||'';
+}
+
+function sourceBrand(name){
+  const value=String(name||'').toLowerCase();
+  if(value.includes('linkedin'))return {key:'linkedin',text:'in'};
+  if(value.includes('github'))return {key:'github',text:'GH'};
+  if(value.includes('telegram'))return {key:'telegram',text:'✈'};
+  if(value.includes('hh')||value.includes('headhunter'))return {key:'hh',text:'hh'};
+  if(value.includes('рекоменд')||value.includes('referr'))return {key:'referral',text:'★'};
+  if(value.includes('внутрен')||value.includes('internal'))return {key:'internal',text:'⌂'};
+  return {key:'generic',text:'•'};
+}
+
+function sourceIconHtml(name){
+  const brand=sourceBrand(name);
+  return '<span class="brand-icon brand-'+brand.key+'">'+escapeHtml(brand.text)+'</span>';
+}
+
+function sourceOptionLabel(source){
+  const brand=sourceBrand(source['Название']);
+  return brand.text+'  '+source['Название'];
+}
+
+function init(){
+  initRouter();
+  renderInitialShell();
+  preloadAllData();
+}
+
+function initRouter(){
+  window.addEventListener('hashchange',applyRoute);
+  if(!location.hash){
+    history.replaceState(null,'','#/'+(window.__INITIAL_ROUTE__==='admin'?'admin':'candidates'));
+  }
+  applyRoute();
+}
+
+function getRoute(){
+  const raw=location.hash.replace(/^#\//,'');
+  if(raw.startsWith('candidate/')){
+    return {page:'candidates',candidateId:decodeURIComponent(raw.slice('candidate/'.length))};
+  }
+  return {page:raw==='admin'?'admin':'candidates',candidateId:''};
+}
+
+function navigateTo(route){
+  location.hash='#/'+(route==='admin'?'admin':'candidates');
+}
+
+function applyRoute(){
+  const route=getRoute();
+  el('viewCandidates').hidden=route.page!=='candidates';
+  el('viewAdmin').hidden=route.page!=='admin';
+  el('navCandidates').classList.toggle('nav-active',route.page==='candidates');
+  el('navAdmin').classList.toggle('nav-active',route.page==='admin');
+
+  if(route.page==='admin'){
+    if(typeof renderAdminAll==='function')renderAdminAll();
+    if(state.loaded.references){
+      ensureAdminUsersLoaded().catch(()=>{});
+    }
+  }
+
+  maybeOpenCandidateFromRoute();
+}
+
+function candidateById(id){
+  return [
+    ...state.candidates,
+    ...state.archivedCandidates
+  ].find(candidate=>
+    String(candidate.ID)===
+    String(id)
+  );
+}
+
+async function maybeOpenCandidateFromRoute(){
+  const route=getRoute();
+
+  if(
+    !route.candidateId ||
+    !state.loaded.candidates ||
+    !state.loaded.references
+  ){
+    return;
+  }
+
+  let candidate=
+    candidateById(route.candidateId);
+
+  if(
+    !candidate &&
+    !state.loaded.archivedCandidates
+  ){
+    try{
+      await ensureArchivedCandidatesLoaded();
+    }catch(error){
+      return;
+    }
+
+    const latestRoute=getRoute();
+
+    if(
+      latestRoute.candidateId!==
+      route.candidateId
+    ){
+      return;
+    }
+
+    candidate=
+      candidateById(route.candidateId);
+  }
+
+  if(
+    candidate &&
+    !el('candidateModal')
+      .classList
+      .contains('open')
+  ){
+    openCandidateById(
+      candidate.ID,
+      false
+    );
+  }
+}
+
+function renderCurrentUser(){
+  const user=state.currentUser;
+  const badge=el('currentUserBadge');
+  if(!badge)return;
+
+  if(!user){
+    badge.hidden=true;
+    return;
+  }
+
+  const avatar=el('currentUserAvatar');
+  const name=el('currentUserName');
+  const email=el('currentUserEmail');
+
+  if(avatar){
+    if(user['Avatar URL']){
+      avatar.src=user['Avatar URL'];
+      avatar.hidden=false;
+    }else{
+      avatar.hidden=true;
+    }
+  }
+
+  if(name)name.textContent=user['ФИО']||user.Email||'Пользователь';
+  if(email)email.textContent=user.Email||'';
+  badge.hidden=false;
+}
+
+function renderInitialShell(){
+  el('stats').innerHTML='<div class="stat skeleton-card"><span>Загрузка</span><b>…</b></div>';
+  el('board').innerHTML='<div class="board-placeholder">Кандидаты загружаются в фоне…</div>';
+  updateSyncStatus();
+}
+
+function applyBootstrapData(data){
+  Object.assign(state,{
+    candidates:data.candidates||[],
+    stats:data.stats||{},
+    vacancies:data.vacancies||[],
+    sources:data.sources||[],
+    responsibles:data.responsibles||[],
+    currentUser:data.currentUser||null,
+    interviewTemplates:data.interviewTemplates||[],
+    dictionaries:data.dictionaries||{},
+    transitions:data.transitions||{},
+    pipelineStatuses:data.pipelineStatuses||[]
+  });
+
+  state.loaded.references=true;
+  state.loaded.candidates=true;
+
+  populateGlobalFilters();
+  renderCurrentUser();
+  render();
+
+  if(typeof renderAdminAll==='function'){
+    renderAdminAll();
+  }
+
+  updateSyncStatus();
+  maybeOpenCandidateFromRoute();
+  maybeLoadInitialDraft();
+
+  if(getRoute().page==='admin'){
+    ensureAdminUsersLoaded().catch(()=>{});
+  }
+}
+
+
+function preloadAllData(){
+  rpc('getBootstrapData')
+    .then(applyBootstrapData)
+    .catch(error=>
+      showToast(
+        error&&error.message
+          ? error.message
+          : String(error),
+        'error'
+      )
+    );
+}
+
+
+async function ensureAdminUsersLoaded(force=false){
+  if(
+    state.loaded.users &&
+    !force
+  ){
+    return state.users;
+  }
+
+  if(
+    adminUsersLoadPromise &&
+    !force
+  ){
+    return adminUsersLoadPromise;
+  }
+
+  adminUsersLoadPromise=
+    rpc('getAdminUserData')
+      .then(data=>{
+        state.users=
+          data.users||[];
+        state.loaded.users=true;
+
+        if(typeof renderAdminAll==='function'){
+          renderAdminAll();
+        }
+
+        return state.users;
+      })
+      .finally(()=>{
+        adminUsersLoadPromise=null;
+      });
+
+  return adminUsersLoadPromise;
+}
+
+
+async function ensureArchivedCandidatesLoaded(force=false){
+  if(
+    state.loaded.archivedCandidates &&
+    !force
+  ){
+    return state.archivedCandidates;
+  }
+
+  if(
+    archivedCandidatesLoadPromise &&
+    !force
+  ){
+    return archivedCandidatesLoadPromise;
+  }
+
+  archivedCandidatesLoadPromise=
+    rpc('getArchivedCandidateData')
+      .then(data=>{
+        state.archivedCandidates=
+          data.archivedCandidates||[];
+        state.loaded.archivedCandidates=true;
+        render();
+        return state.archivedCandidates;
+      })
+      .finally(()=>{
+        archivedCandidatesLoadPromise=null;
+      });
+
+  return archivedCandidatesLoadPromise;
+}
+
+
+async function toggleArchivedFilter(){
+  if(el('filterArchived').checked){
+    try{
+      await ensureArchivedCandidatesLoaded();
+    }catch(error){
+      el('filterArchived').checked=false;
+      showToast(
+        error&&error.message
+          ? error.message
+          : String(error),
+        'error'
+      );
+      return;
+    }
+  }
+
+  renderBoard();
+}
+
+
+function maybeLoadInitialDraft(){
+  const token=
+    String(
+      window.__INITIAL_DRAFT_TOKEN__ ||
+      new URLSearchParams(
+        location.search
+      ).get('draft') ||
+      ''
+    ).trim();
+
+  if(
+    !token ||
+    draftLoadStarted ||
+    !state.loaded.references
+  ){
+    return;
+  }
+
+  draftLoadStarted=true;
+
+  rpc(
+    'getCandidateDraft',
+    token
+  )
+    .then(draft=>{
+      currentCandidateDraft=draft;
+
+      openCandidate(null);
+
+      el('candidateDraftToken').value=
+        draft.token;
+
+      applyCandidateDraft(
+        draft
+      );
+
+      showToast(
+        'Резюме разобрано. Проверьте предзаполненные данные перед сохранением.'
+      );
+    })
+    .catch(error=>{
+      showToast(
+        error&&error.message
+          ? error.message
+          : String(error),
+        'error'
+      );
+    });
+}
+
+
+function applyCandidateDraft(draft){
+  const data=
+    draft&&draft.data
+      ? draft.data
+      : {};
+
+  el('candidateLastName').value=
+    data.lastName||'';
+
+  el('candidateFirstName').value=
+    data.firstName||'';
+
+  el('candidateMiddleName').value=
+    data.middleName||'';
+
+  el('candidatePhone').value=
+    data.phone||'+7 ';
+
+  if(data.phone){
+    maskKzPhone(
+      el('candidatePhone')
+    );
+  }
+
+  el('candidateEmail').value=
+    data.email||'';
+
+  el('candidateTelegram').value=
+    data.telegram||'';
+
+  el('candidateGithub').value=
+    data.github||'';
+
+  el('candidateLinkedin').value=
+    data.linkedin||'';
+
+  el('candidateSalary').value=
+    formatMoney(
+      data.salary||''
+    );
+
+  el('candidateComment').value=
+    data.comment||'';
+
+  if(
+    data.vacancyId &&
+    [
+      ...el('candidateVacancy').options
+    ].some(option=>
+      option.value===
+      String(data.vacancyId)
+    )
+  ){
+    el('candidateVacancy').value=
+      data.vacancyId;
+  }
+
+  if(
+    data.sourceId &&
+    [
+      ...el('candidateSource').options
+    ].some(option=>
+      option.value===
+      String(data.sourceId)
+    )
+  ){
+    el('candidateSource').value=
+      data.sourceId;
+  }
+
+  const draftRecruiterId=
+    data.recruiterId||
+    data.responsibleId||
+    '';
+
+  if(
+    draftRecruiterId &&
+    [
+      ...el('candidateRecruiter').options
+    ].some(option=>
+      option.value===
+      String(draftRecruiterId)
+    )
+  ){
+    el('candidateRecruiter').value=
+      draftRecruiterId;
+  }
+
+  if(
+    data.hrResponsibleId &&
+    [
+      ...el('candidateHrResponsible').options
+    ].some(option=>
+      option.value===
+      String(data.hrResponsibleId)
+    )
+  ){
+    el('candidateHrResponsible').value=
+      data.hrResponsibleId;
+  }
+
+  if(
+    data.techInterviewerId &&
+    [
+      ...el('candidateTechInterviewer').options
+    ].some(option=>
+      option.value===
+      String(data.techInterviewerId)
+    )
+  ){
+    el('candidateTechInterviewer').value=
+      data.techInterviewerId;
+  }
+
+  renderCandidateLinks(
+    data.links||[]
+  );
+
+  renderSocialPreviews();
+  renderCandidateSourceIcon();
+  renderSelectedResumeFile();
+}
+
+
+function updateSyncStatus(){
+  const ready=
+    state.loaded.references&&
+    state.loaded.candidates;
+
+  const node=el('dataSyncStatus');
+  node.textContent=
+    ready
+      ? 'Данные синхронизированы'
+      : 'Загрузка данных…';
+  node.classList.toggle(
+    'sync-ready',
+    ready
+  );
+}
+
+async function refreshReferences(){
+  const data=await rpc('getReferenceData');
+  state.vacancies=data.vacancies||[];
+  state.sources=data.sources||[];
+  state.responsibles=data.responsibles||[];
+  state.interviewTemplates=data.interviewTemplates||[];
+  state.dictionaries=data.dictionaries||{};
+  state.transitions=data.transitions||{};
+  state.pipelineStatuses=data.pipelineStatuses||[];
+  state.loaded.references=true;
+  populateGlobalFilters();
+  renderBoard();
+  if(typeof renderAdminAll==='function')renderAdminAll();
+}
+
+
+async function refreshCandidates(){
+  const data=await rpc('getCandidateData');
+  state.candidates=data.candidates||[];
+  state.stats=data.stats||{};
+  state.loaded.candidates=true;
+  populateGlobalFilters();
+  render();
+}
+
+
+async function refreshArchivedCandidates(){
+  return ensureArchivedCandidatesLoaded(true);
+}
+
+
+async function refreshInterviews(){
+  if(!currentCandidate){
+    return [];
+  }
+
+  return loadCandidateInterviews(
+    currentCandidate.ID,
+    true
+  );
+}
+
+
+async function refreshBootstrapData(){
+  const data=
+    await rpc('getBootstrapData');
+
+  applyBootstrapData(data);
+}
+
+
+async function refreshAll(){
+  await refreshBootstrapData();
+
+  const extra=[];
+
+  if(
+    state.loaded.archivedCandidates ||
+    el('filterArchived').checked
+  ){
+    extra.push(
+      refreshArchivedCandidates()
+    );
+  }
+
+  if(currentCandidate){
+    extra.push(
+      refreshInterviews()
+    );
+  }
+
+  if(getRoute().page==='admin'){
+    extra.push(
+      ensureAdminUsersLoaded(true)
+    );
+  }
+
+  await Promise.all(extra);
+  updateSyncStatus();
+}
+
+
+async function refreshCandidatesPage(button){
+  await runUiTask({button,pageId:'viewCandidates',label:'Обновление…'},async()=>{
+    await refreshAll();
+    showToast('Данные кандидатов обновлены.');
+  }).catch(()=>{});
+}
+
+
+function recalculateStatsLocal(archivedDelta=0){
+  const byStatus={};
+
+  state.candidates.forEach(candidate=>{
+    const status=
+      candidate['Статус']||
+      'Без статуса';
+
+    byStatus[status]=
+      (byStatus[status]||0)+1;
+  });
+
+  state.stats={
+    total:state.candidates.length,
+    archived:Math.max(
+      0,
+      Number(
+        state.stats.archived||0
+      )+Number(archivedDelta||0)
+    ),
+    byStatus
+  };
+}
+
+
+function getStatuses(){return state.pipelineStatuses||[]}
+function activeVacancies(){return state.vacancies.filter(v=>v['Статус']==='Открыта')}
+function responsiblesFor(stage){return state.responsibles.filter(r=>(r.stages||[]).includes(stage))}
+function recruiters(){return state.responsibles.filter(r=>(state.pipelineStatuses||[]).every(stage=>(r.stages||[]).includes(stage)))}
+function candidateAssignedResponsible(candidate,stage){
+  if(!candidate)return null;
+  let id='';
+  if(stage==='HR screening')id=candidate['HR Responsible ID']||'';
+  else if(stage==='Техническое интервью')id=candidate['Tech Interviewer ID']||'';
+  else id=candidate['Responsible ID']||'';
+  return state.responsibles.find(r=>String(r['Responsible ID'])===String(id))||null;
+}
+
+function populateGlobalFilters(){
+  if(!el('filterVacancy'))return;
+  const old={v:value('filterVacancy'),r:value('filterResponsible'),s:value('filterSource')};
+  el('filterVacancy').innerHTML=option('','Все вакансии')+state.vacancies.map(v=>option(v['Vacancy ID'],'№'+(v['№']||'—')+' · '+v['Вакансия'],v['Vacancy ID']===old.v)).join('');
+  el('filterResponsible').innerHTML=option('','Все рекрутеры')+recruiters().map(r=>option(r['Responsible ID'],fullNameOf(r),r['Responsible ID']===old.r)).join('');
+  el('filterSource').innerHTML=option('','Все источники')+state.sources.map(s=>option(s['Source ID'],sourceOptionLabel(s),s['Source ID']===old.s)).join('');
+}
+
+function render(){
+  renderStats();
+  renderVacancyStats();
+  renderBoard();
+}
+
+function renderVacancyStats(){
+  const root=el('vacancyStats');
+
+  if(
+    !root ||
+    !state.loaded.candidates ||
+    !state.loaded.references
+  ){
+    return;
+  }
+
+  const counts={};
+
+  state.candidates.forEach(candidate=>{
+    const id=
+      candidate['Vacancy ID'];
+
+    if(!id)return;
+
+    counts[id]=
+      (counts[id]||0)+1;
+  });
+
+  const vacancies=
+    state.vacancies.filter(vacancy=>
+      vacancy['Статус']==='Открыта' ||
+      counts[vacancy['Vacancy ID']]
+    );
+
+  root.innerHTML=
+    vacancies.length
+      ? '<div class="vacancy-stats-label">Кандидатов по вакансиям</div>'+
+        '<div class="vacancy-stat-list">'+
+        vacancies.map(vacancy=>{
+          const count=
+            counts[
+              vacancy['Vacancy ID']
+            ]||0;
+
+          return '<button class="vacancy-stat-chip" onclick="filterByVacancy(\''+
+            escJs(
+              vacancy['Vacancy ID']
+            )+
+            '\')">'+
+            '<span>№'+
+            escapeHtml(
+              vacancy['№']||'—'
+            )+
+            ' · '+
+            escapeHtml(
+              vacancy['Вакансия']
+            )+
+            '</span>'+
+            '<b>'+count+'</b>'+
+          '</button>';
+        }).join('')+
+        '</div>'
+      : '';
+}
+
+function filterByVacancy(vacancyId){
+  el('filterVacancy').value=
+    vacancyId||'';
+  renderBoard();
+}
+
+function renderStats(){
+  if(!state.loaded.candidates)return;
+  const s=state.stats||{};
+  el('stats').innerHTML=
+    '<div class="stat stat-main"><span>Активные</span><b>'+(s.total||0)+'</b></div>'+
+    '<div class="stat"><span>Архив</span><b>'+(s.archived||0)+'</b></div>'+
+    Object.entries(s.byStatus||{}).map(([status,count])=>
+      '<div class="stat stat-status status-bg-'+statusKey(status)+'"><span>'+escapeHtml(status)+'</span><b>'+count+'</b></div>'
+    ).join('');
+}
+
+function filteredCandidates(){
+  const q=
+    value('filterSearch')
+      .trim()
+      .toLowerCase();
+
+  const vacancy=
+    value('filterVacancy');
+
+  const responsible=
+    value('filterResponsible');
+
+  const source=
+    value('filterSource');
+
+  const archived=
+    el('filterArchived').checked;
+
+  const collection=
+    archived
+      ? state.archivedCandidates
+      : state.candidates;
+
+  return collection.filter(c=>{
+    if(
+      vacancy &&
+      c['Vacancy ID']!==vacancy
+    )return false;
+
+    if(
+      responsible &&
+      c['Responsible ID']!==responsible
+    )return false;
+
+    if(
+      source &&
+      c['Source ID']!==source
+    )return false;
+
+    if(q){
+      const h=[
+        fullNameOf(c),
+        c['Телефон'],
+        c['Email'],
+        c['Telegram'],
+        c['GitHub'],
+        c['LinkedIn'],
+        c['Вакансия'],
+        c['Ответственный'],
+        c['Ответственный HR'],
+        c['Ответственный тех. интервьювер']
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      if(!h.includes(q)){
+        return false;
+      }
+    }
+
+    return true;
+  });
+}
+
+function renderBoard(){
+  if(
+    !state.loaded.candidates ||
+    !state.loaded.references
+  )return;
+
+  const archived=
+    el('filterArchived').checked;
+
+  const candidates=
+    filteredCandidates();
+
+  let statuses;
+
+  if(archived){
+    const order=[
+      ...getStatuses(),
+      'Отказ'
+    ];
+
+    const existing=[
+      ...new Set(
+        candidates
+          .map(candidate=>
+            candidate['Статус']
+          )
+          .filter(Boolean)
+      )
+    ];
+
+    statuses=[
+      ...order.filter(status=>
+        existing.includes(status)
+      ),
+      ...existing.filter(status=>
+        !order.includes(status)
+      )
+    ];
+  }else{
+    statuses=getStatuses();
+  }
+
+  if(
+    archived &&
+    !statuses.length
+  ){
+    el('board').innerHTML=
+      '<div class="board-placeholder">Архив пуст.</div>';
+    return;
+  }
+
+  el('board').innerHTML=
+    statuses.map(status=>{
+      const list=
+        candidates.filter(c=>
+          c['Статус']===status
+        );
+
+      const collapsed=
+        collapsedColumns.has(status);
+
+      return '<section class="column column-'+
+        statusKey(status)+' '+
+        (collapsed?'collapsed':'')+
+        '" data-status="'+
+        escapeHtml(status)+
+        '" ondragover="dragOver(event)" '+
+        'ondragleave="dragLeave(event)" '+
+        'ondrop="dropCandidate(event)">'+
+        '<div class="column-title"><div>'+
+        statusChip(status,true)+
+        '<span class="column-count">'+
+        list.length+
+        '</span></div>'+
+        '<button class="column-toggle-button" '+
+        'onclick="event.stopPropagation();toggleColumn(\''+
+        escJs(status)+
+        '\')">'+
+        (collapsed
+          ? '<span>›</span><span>Показать</span>'
+          : '<span>‹</span><span>Скрыть</span>')+
+        '</button></div>'+
+        '<div class="cards">'+
+        list.map(renderCard).join('')+
+        '</div></section>';
+    }).join('');
+}
+
+function renderResumeHistoryPopover(candidate){
+  const versions=
+    candidate.resumeVersions||[];
+
+  if(versions.length<=1){
+    return '';
+  }
+
+  return '<details class="card-resume-history" onclick="event.stopPropagation()">'+
+    '<summary title="История резюме">◷</summary>'+
+    '<div class="card-resume-history-popover">'+
+      '<div class="card-resume-history-title">Версии резюме</div>'+
+      versions.map((version,index)=>
+        '<a href="'+
+        escapeHtml(version.url||'#')+
+        '" target="_blank" rel="noopener">'+
+          '<span class="resume-history-order">'+
+          (index+1)+
+          '</span>'+
+          '<span>'+
+            '<strong>'+
+            escapeHtml(
+              version.name||
+              'Резюме'
+            )+
+            '</strong>'+
+            '<small>'+
+            escapeHtml(
+              version.uploadedAt||
+              'Дата не указана'
+            )+
+            '</small>'+
+          '</span>'+
+        '</a>'
+      ).join('')+
+    '</div>'+
+  '</details>';
+}
+
+
+function renderCard(c){
+  const pending=
+    c._sync==='pending';
+
+  const versions=
+    c.resumeVersions||[];
+
+  const latest=
+    versions[0]||{
+      url:c['Резюме']||'',
+      name:'Резюме'
+    };
+
+  const resumeHtml=
+    latest.url && !pending
+      ? '<div class="card-resume-row">'+
+        '<a class="card-link" href="'+
+        escapeHtml(latest.url)+
+        '" target="_blank" rel="noopener" '+
+        'onclick="event.stopPropagation()">'+
+        'Последнее резюме ↗</a>'+
+        renderResumeHistoryPopover(c)+
+        '</div>'
+      : '<span class="muted">'+
+        escapeHtml(
+          pending&&c._pendingResume
+            ? 'Резюме загружается…'
+            : 'Нет резюме'
+        )+
+        '</span>';
+
+  return '<article class="candidate-card card-'+
+    statusKey(c['Статус'])+' '+
+    (pending?'candidate-pending':'')+
+    '" draggable="'+
+    (!c.archived&&!pending)+
+    '" data-id="'+
+    escapeHtml(c.ID)+
+    '" ondragstart="dragStart(event)" '+
+    'ondragend="dragEnd(event)" '+
+    'onclick="'+
+    (pending
+      ? ''
+      : 'openCandidateById(\''+
+        escJs(c.ID)+
+        '\')')+
+    '">'+
+
+    '<div class="candidate-card-top">'+
+      '<div>'+
+        '<div class="candidate-number">№'+
+        escapeHtml(c['№']||'—')+
+        ' '+syncIcon(c._sync)+
+        '</div>'+
+        '<div class="candidate-name">'+
+        escapeHtml(fullNameOf(c))+
+        '</div>'+
+      '</div>'+
+      statusChip(c['Статус'],true)+
+    '</div>'+
+
+    '<div class="candidate-meta-row"><span>☎</span><span>'+
+    escapeHtml(c['Телефон']||'—')+
+    '</span></div>'+
+
+    '<div class="candidate-meta-row"><span>◫</span><span>'+
+    escapeHtml(c['Вакансия']||'—')+
+    '</span></div>'+
+
+    '<div class="candidate-meta-row"><span>●</span><span><strong>Рекрутер:</strong> '+
+    escapeHtml(c['Ответственный']||'—')+
+    '</span></div>'+
+    '<div class="candidate-meta-row"><span>H</span><span><strong>HR:</strong> '+
+    escapeHtml(c['Ответственный HR']||'—')+
+    '</span></div>'+
+    '<div class="candidate-meta-row"><span>T</span><span><strong>Тех. интервью:</strong> '+
+    escapeHtml(c['Ответственный тех. интервьювер']||'—')+
+    '</span></div>'+
+
+    (
+      c['Источник']
+        ? '<div class="candidate-meta-row"><span>'+
+          sourceIconHtml(c['Источник'])+
+          '</span><span>'+
+          escapeHtml(c['Источник'])+
+          '</span></div>'
+        : ''
+    )+
+
+    '<div class="card-resume-section">'+
+      resumeHtml+
+    '</div>'+
+
+    '<div class="card-actions">'+
+      '<button class="button button-ghost button-small" '+
+      'onclick="event.stopPropagation();copyCandidatePreview(\''+
+      escJs(c.ID)+
+      '\',this)">⧉ Скопировать</button>'+
+      (
+        !c.archived&&!pending
+          ? '<button class="button button-ghost button-small danger-text" '+
+            'onclick="event.stopPropagation();archiveById(\''+
+            escJs(c.ID)+
+            '\',this)">Архив</button>'
+          : ''
+      )+
+    '</div>'+
+  '</article>';
+}
+
+
+function candidateCardUrl(candidateId){
+  return location.origin+
+    location.pathname+
+    '#/candidate/'+
+    encodeURIComponent(
+      candidateId
+    );
+}
+
+
+async function writeClipboardText(text){
+  if(
+    navigator.clipboard &&
+    navigator.clipboard.writeText
+  ){
+    await navigator.clipboard.writeText(
+      text
+    );
+    return;
+  }
+
+  const area=
+    document.createElement(
+      'textarea'
+    );
+
+  area.value=text;
+  area.style.position='fixed';
+  area.style.opacity='0';
+
+  document.body.appendChild(area);
+  area.select();
+  document.execCommand('copy');
+  area.remove();
+}
+
+
+async function copyCandidatePreview(id,button){
+  const candidate=
+    candidateById(id);
+
+  if(!candidate)return;
+
+  const latest=
+    (candidate.resumeVersions||[])[0];
+
+  const resumeUrl=
+    latest&&latest.url
+      ? latest.url
+      : candidate['Резюме']||'';
+
+  const lines=[
+    '№'+(candidate['№']||'—')+
+      ' · '+fullNameOf(candidate),
+    'Статус: '+
+      (candidate['Статус']||'—'),
+    'Телефон: '+
+      (candidate['Телефон']||'—'),
+    'Вакансия: '+
+      (candidate['Вакансия']||'—'),
+    'Рекрутер: '+
+      (candidate['Ответственный']||'—'),
+    'Ответственный HR: '+
+      (candidate['Ответственный HR']||'—'),
+    'Ответственный тех. интервьювер: '+
+      (candidate['Ответственный тех. интервьювер']||'—')
+  ];
+
+  if(candidate['Источник']){
+    lines.push(
+      'Источник: '+
+      candidate['Источник']
+    );
+  }
+
+  lines.push(
+    'Резюме: '+
+      (resumeUrl||'—')
+  );
+
+  lines.push(
+    'Карточка: '+
+      candidateCardUrl(
+        candidate.ID
+      )
+  );
+
+  setButtonLoading(
+    button,
+    true,
+    'Копирование…'
+  );
+
+  try{
+    await writeClipboardText(
+      lines.join('\n')
+    );
+
+    showToast(
+      'Данные кандидата скопированы.'
+    );
+  }catch(error){
+    showToast(
+      'Не удалось скопировать данные.',
+      'error'
+    );
+  }finally{
+    setButtonLoading(
+      button,
+      false
+    );
+  }
+}
+
+function toggleColumn(status){collapsedColumns.has(status)?collapsedColumns.delete(status):collapsedColumns.add(status);renderBoard()}
+function dragStart(e){e.dataTransfer.setData('text/plain',e.currentTarget.dataset.id);e.currentTarget.classList.add('dragging')}
+function dragEnd(e){e.currentTarget.classList.remove('dragging');document.querySelectorAll('.column').forEach(x=>x.classList.remove('drag-over'))}
+function dragOver(e){e.preventDefault();e.currentTarget.classList.add('drag-over')}
+function dragLeave(e){e.currentTarget.classList.remove('drag-over')}
+function dropCandidate(e){e.preventDefault();e.currentTarget.classList.remove('drag-over');startTransition(e.dataTransfer.getData('text/plain'),e.currentTarget.dataset.status)}
+
+function maskKzPhone(input){
+  let digits=input.value.replace(/\D/g,'');
+  if(digits.startsWith('8'))digits='7'+digits.slice(1);
+  if(!digits.startsWith('7'))digits='7'+digits;
+  digits=digits.slice(0,11);
+  const body=digits.slice(1);
+  let out='+7';
+  if(body.length)out+=' '+body.slice(0,3);
+  if(body.length>3)out+=' '+body.slice(3,6);
+  if(body.length>6)out+=' '+body.slice(6,8);
+  if(body.length>8)out+=' '+body.slice(8,10);
+  input.value=out;
+}
+
+function normalizeEmailInput(input){input.value=input.value.replace(/\s/g,'').toLowerCase();input.classList.remove('input-error')}
+
+function validateEmailField(input){
+  const valid=!input.value||/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.value);
+  input.classList.toggle('input-error',!valid);
+  const hint=input.id==='candidateEmail'?el('candidateEmailHint'):null;
+  if(hint)hint.textContent=valid?'':'Проверьте формат email';
+  return valid;
+}
+
+function formatMoney(v){
+  const d=String(v||'').replace(/\D/g,'');
+  return d?d.replace(/\B(?=(\d{3})+(?!\d))/g,' '):'';
+}
+
+function formatMoneyInput(input,max){
+  let number=Number(String(input.value||'').replace(/\D/g,''))||0;
+  if(max&&number>max)number=max;
+  input.value=number?formatMoney(number):'';
+}
+
+function normalizeGithubClient(raw){
+  const value=String(raw||'').trim();
+  if(!value)return '';
+  if(/^https?:\/\//i.test(value))return value;
+  const clean=value
+    .replace(/^@/,'')
+    .replace(/^(?:www\.)?github\.com\//i,'')
+    .replace(/^\/+/, '');
+  return 'https://github.com/'+clean;
+}
+
+function normalizeLinkedinClient(raw){
+  const value=String(raw||'').trim();
+  if(!value)return '';
+  if(/^https?:\/\//i.test(value))return value;
+  const clean=value
+    .replace(/^@/,'')
+    .replace(/^(?:www\.)?linkedin\.com\//i,'')
+    .replace(/^\/+/, '');
+  return 'https://www.linkedin.com/'+(clean.startsWith('in/')?clean:'in/'+clean);
+}
+
+function normalizeTelegramClient(raw){
+  const value=String(raw||'').trim();
+  if(!value)return '';
+  return /^https?:\/\//i.test(value)?value:'https://t.me/'+value.replace(/^@/,'').replace(/^t\.me\//i,'');
+}
+
+function renderSocialPreviews(){
+  setPreview('telegramPreview',normalizeTelegramClient(value('candidateTelegram')));
+  setPreview('githubPreview',normalizeGithubClient(value('candidateGithub')));
+  setPreview('linkedinPreview',normalizeLinkedinClient(value('candidateLinkedin')));
+}
+
+function setPreview(id,url){
+  const a=el(id);
+  a.href=url||'';
+  a.textContent=url?url.replace(/^https?:\/\//,''):'';
+}
+
+function renderCandidateSourceIcon(){
+  const source=state.sources.find(s=>s['Source ID']===value('candidateSource'));
+  const node=el('candidateSourceIcon');
+  const brand=sourceBrand(source?source['Название']:'');
+  node.className='brand-icon brand-'+brand.key;
+  node.textContent=brand.text;
+}
+
+async function loadCandidateDetails(
+  id,
+  force=false
+){
+  const key=String(id);
+  const current=candidateById(key);
+
+  if(
+    current &&
+    current._detailsLoaded &&
+    !force
+  ){
+    return current;
+  }
+
+  if(
+    candidateDetailsLoadPromises[key] &&
+    !force
+  ){
+    return candidateDetailsLoadPromises[key];
+  }
+
+  candidateDetailsLoadPromises[key]=
+    rpc('getCandidateDetails',id)
+      .then(details=>{
+        const collection=
+          details.archived
+            ? state.archivedCandidates
+            : state.candidates;
+
+        const index=
+          collection.findIndex(item=>
+            String(item.ID)===key
+          );
+
+        const merged={
+          ...(index>=0
+            ? collection[index]
+            : {}),
+          ...details,
+          _detailsLoaded:true
+        };
+
+        if(index>=0){
+          collection[index]=merged;
+        }else{
+          collection.unshift(merged);
+        }
+
+        return merged;
+      })
+      .finally(()=>{
+        delete candidateDetailsLoadPromises[key];
+      });
+
+  return candidateDetailsLoadPromises[key];
+}
+
+
+async function openCandidateById(
+  id,
+  setHash=true
+){
+  const summary=candidateById(id);
+
+  if(!summary)return;
+
+  if(setHash){
+    history.pushState(
+      null,
+      '',
+      '#/candidate/'+
+      encodeURIComponent(id)
+    );
+  }
+
+  try{
+    const candidate=
+      await loadCandidateDetails(id);
+
+    openCandidate(
+      candidate,
+      false
+    );
+  }catch(error){
+    showToast(
+      error&&error.message
+        ? error.message
+        : String(error),
+      'error'
+    );
+  }
+}
+
+function ensureCurrentOption(select,entityId,label){
+  if(!entityId)return;
+  if([...select.options].some(o=>o.value===String(entityId)))return;
+  select.insertAdjacentHTML('beforeend',option(entityId,label,true));
+}
+
+function openCandidate(candidate){
+  if(!state.loaded.references){showToast('Справочники ещё загружаются.','error');return}
+
+  currentCandidate=candidate||null;
+
+  if(
+    candidate ||
+    !currentCandidateDraft
+  ){
+    currentCandidateDraft=null;
+    el('candidateDraftToken').value='';
+  }
+  const isNew=!candidate;
+  const status=isNew?'Новый':candidate['Статус'];
+
+  el('candidateId').value=candidate?candidate.ID:'';
+  el('candidateLastName').value=candidate?candidate['Фамилия']||'':'';
+  el('candidateFirstName').value=candidate?candidate['Имя']||'':'';
+  el('candidateMiddleName').value=candidate?candidate['Отчество']||'':'';
+  el('candidatePhone').value=candidate?candidate['Телефон']||'':'+7 ';
+  el('candidateEmail').value=candidate?candidate['Email']||'':'';
+  el('candidateTelegram').value=candidate?candidate['Telegram']||'':'';
+  el('candidateGithub').value=candidate?candidate['GitHub']||'':'';
+  el('candidateLinkedin').value=candidate?candidate['LinkedIn']||'':'';
+  el('candidateSalary').value=candidate?formatMoney(candidate['Зарплатные ожидания']):'';
+  el('candidateComment').value=candidate?candidate['Комментарий']||'':'';
+  el('candidateTitle').textContent=isNew?'Новый кандидат':fullNameOf(candidate);
+  el('candidateNumberLabel').textContent=isNew?'':'№'+(candidate['№']||'—');
+
+  el('candidateStatusLabel').className='status-chip status-'+statusKey(status);
+  el('candidateStatusLabel').textContent=status;
+
+  const vacancies=isNew?activeVacancies():state.vacancies;
+  el('candidateVacancy').innerHTML=option('','Выберите вакансию')+vacancies.map(v=>option(v['Vacancy ID'],'№'+(v['№']||'—')+' · '+v['Вакансия'],candidate&&v['Vacancy ID']===candidate['Vacancy ID'])).join('');
+  if(candidate)ensureCurrentOption(el('candidateVacancy'),candidate['Vacancy ID'],'№'+(candidate['Vacancy №']||'—')+' · '+candidate['Вакансия']);
+
+  el('candidateSource').innerHTML=option('','Не указан')+state.sources.map(s=>option(s['Source ID'],sourceOptionLabel(s),candidate&&s['Source ID']===candidate['Source ID'])).join('');
+  if(candidate&&candidate['Source ID'])ensureCurrentOption(el('candidateSource'),candidate['Source ID'],candidate['Источник']);
+
+  el('candidateRecruiter').innerHTML=option('','Выберите рекрутера')+recruiters().map(r=>option(r['Responsible ID'],fullNameOf(r),candidate&&r['Responsible ID']===candidate['Responsible ID'])).join('');
+  if(candidate&&candidate['Responsible ID'])ensureCurrentOption(el('candidateRecruiter'),candidate['Responsible ID'],candidate['Ответственный']);
+
+  el('candidateHrResponsible').innerHTML=option('','Выберите HR')+responsiblesFor('HR screening').map(r=>option(r['Responsible ID'],fullNameOf(r),candidate&&r['Responsible ID']===candidate['HR Responsible ID'])).join('');
+  if(candidate&&candidate['HR Responsible ID'])ensureCurrentOption(el('candidateHrResponsible'),candidate['HR Responsible ID'],candidate['Ответственный HR']);
+
+  el('candidateTechInterviewer').innerHTML=option('','Выберите тех. интервьювера')+responsiblesFor('Техническое интервью').map(r=>option(r['Responsible ID'],fullNameOf(r),candidate&&r['Responsible ID']===candidate['Tech Interviewer ID'])).join('');
+  if(candidate&&candidate['Tech Interviewer ID'])ensureCurrentOption(el('candidateTechInterviewer'),candidate['Tech Interviewer ID'],candidate['Ответственный тех. интервьювер']);
+
+  el('candidateResumeFile').value='';
+  renderSelectedResumeFile();
+  renderResumeVersions(candidate?candidate.resumeVersions||[]:[]);
+  setLink('candidateFolderLink',candidate&&candidate['Папка кандидата'],'Открыть папку кандидата ↗');
+  renderCandidateLinks(candidate?candidate.links||[]:[]);
+  renderSocialPreviews();
+  renderCandidateSourceIcon();
+  renderTransitions();
+
+  el('shareCandidateButton').hidden=isNew;
+  el('archiveCandidateButton').hidden=isNew||candidate.archived;
+
+  if(candidate){
+    setCurrentInterviews(candidate.ID);
+    loadCandidateInterviews(candidate.ID)
+      .catch(error=>
+        showToast(
+          error&&error.message
+            ? error.message
+            : String(error),
+          'error'
+        )
+      );
+  }else{
+    currentInterviews=[];
+    renderInterviewHistory();
+  }
+
+  el('candidateModal').classList.add('open');
+}
+
+function closeCandidate(){
+  el('candidateModal')
+    .classList
+    .remove('open');
+
+  currentCandidate=null;
+  currentCandidateDraft=null;
+  el('candidateDraftToken').value='';
+
+  if(
+    getRoute().candidateId ||
+    new URLSearchParams(
+      location.search
+    ).get('draft')
+  ){
+    history.replaceState(
+      null,
+      '',
+      location.pathname+
+      '#/candidates'
+    );
+  }
+}
+
+function setLink(id,url,label){
+  const a=el(id);
+  a.href=url||'';
+  a.textContent=url?label:'';
+}
+
+function renderTransitions(){
+  const root=el('candidateTransitions');
+  if(!currentCandidate||currentCandidate.archived){
+    root.innerHTML='';
+    return;
+  }
+  const allowed=state.transitions[currentCandidate['Статус']]||[];
+  root.innerHTML=allowed.map(status=>
+    '<button class="transition-pill status-'+statusKey(status)+'" onclick="startTransition(\''+escJs(currentCandidate.ID)+'\',\''+escJs(status)+'\')">'+escapeHtml(status)+'</button>'
+  ).join('');
+}
+
+function renderCandidateLinks(links){el('candidateLinks').innerHTML=(links||[]).map(l=>linkRow(l.name,l.url)).join('')}
+function linkRow(name='',url=''){return '<div class="link-item"><input class="other-link-name" placeholder="Название" value="'+escapeHtml(name)+'"><input class="other-link-url" placeholder="https://..." value="'+escapeHtml(url)+'"><button class="button button-ghost button-small danger-text" type="button" onclick="this.parentElement.remove()">×</button></div>'}
+function addCandidateLink(){el('candidateLinks').insertAdjacentHTML('beforeend',linkRow())}
+function collectLinks(){return [...document.querySelectorAll('#candidateLinks .link-item')].map(row=>({name:row.querySelector('.other-link-name').value,url:row.querySelector('.other-link-url').value}))}
+
+function renderSelectedResumeFile(
+  uploading=resumeUploading
+){
+  const file=
+    el('candidateResumeFile')
+      .files[0];
+
+  const root=
+    el('candidateResumeSelected');
+
+  if(!file){
+    const draftResume=
+      currentCandidateDraft &&
+      currentCandidateDraft.resume;
+
+    if(draftResume){
+      root.innerHTML=
+        '<a class="resume-version selected-file" href="'+
+        escapeHtml(
+          draftResume.url||'#'
+        )+
+        '" target="_blank" rel="noopener">'+
+          '<span class="resume-ok">✓</span>'+
+          '<div>'+
+            '<strong>'+
+            escapeHtml(
+              draftResume.name||
+              'Резюме'
+            )+
+            '</strong>'+
+            '<small>Из API · будет добавлено при сохранении кандидата</small>'+
+          '</div>'+
+          '<span class="resume-open">↗</span>'+
+        '</a>';
+
+      return;
+    }
+
+    root.innerHTML='';
+    return;
+  }
+
+  root.innerHTML=
+    '<div class="resume-version selected-file">'+
+      (
+        uploading
+          ? '<span class="spinner spinner-dark"></span>'
+          : '<span class="resume-ok">✓</span>'
+      )+
+      '<div><strong>'+
+        escapeHtml(file.name)+
+      '</strong><small>'+
+        (
+          uploading
+            ? 'Загрузка в Google Drive…'
+            : 'Готово к загрузке · '+
+              formatBytes(file.size)
+        )+
+      '</small></div>'+
+    '</div>';
+}
+
+function formatBytes(bytes){
+  if(bytes<1024)return bytes+' Б';
+  if(bytes<1024*1024)return Math.round(bytes/1024)+' КБ';
+  return (bytes/(1024*1024)).toFixed(1)+' МБ';
+}
+
+function renderResumeVersions(versions){
+  const root=el('candidateResumeVersions');
+  if(!versions||!versions.length){
+    root.innerHTML='<div class="empty-state compact">Загруженных версий пока нет.</div>';
+    return;
+  }
+  root.innerHTML='<div class="resume-versions-title">История версий</div>'+
+    versions.map((v,index)=>
+      '<a class="resume-version" href="'+escapeHtml(v.url||'#')+'" target="_blank" rel="noopener">'+
+        '<span class="resume-version-index">'+(index===0?'NEW':String(versions.length-index))+'</span>'+
+        '<div><strong>'+escapeHtml(v.name||'Резюме')+'</strong><small>'+escapeHtml(v.uploadedAt||'Дата не указана')+'</small></div>'+
+        '<span class="resume-open">↗</span>'+
+      '</a>'
+    ).join('');
+}
+
+function readResumeFile(){
+  return new Promise((resolve,reject)=>{
+    const file=el('candidateResumeFile').files[0];
+    if(!file){resolve(null);return}
+    if(file.size>10*1024*1024){reject(new Error('Резюме не должно превышать 10 МБ.'));return}
+    const reader=new FileReader();
+    reader.onload=()=>resolve({name:file.name,mimeType:file.type,base64:String(reader.result).split(',')[1]});
+    reader.onerror=()=>reject(new Error('Не удалось прочитать файл.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function nextCandidateNumber(){
+  return [
+    ...state.candidates,
+    ...state.archivedCandidates
+  ].reduce(
+    (max,c)=>
+      Math.max(
+        max,
+        Number(c['№']||0)||0
+      ),
+    0
+  )+1;
+}
+
+function buildOptimisticCandidate(payload,resumeFile,existing,tempId){
+  const vacancy=state.vacancies.find(v=>v['Vacancy ID']===payload.vacancyId);
+  const recruiter=state.responsibles.find(r=>r['Responsible ID']===payload.recruiterId);
+  const hrResponsible=state.responsibles.find(r=>r['Responsible ID']===payload.hrResponsibleId);
+  const techInterviewer=state.responsibles.find(r=>r['Responsible ID']===payload.techInterviewerId);
+  const source=state.sources.find(s=>s['Source ID']===payload.sourceId);
+  const fullName=[payload.lastName,payload.firstName,payload.middleName].filter(Boolean).join(' ');
+  const versions=[...(existing?.resumeVersions||[])];
+
+  if(resumeFile){
+    versions.unshift({
+      id:'',
+      url:'',
+      name:resumeFile.name,
+      uploadedAt:'Загрузка…',
+      _pending:true
+    });
+  }
+
+  return {
+    ...(existing||{}),
+    ID:existing?.ID||tempId,
+    '№':existing?.['№']||nextCandidateNumber(),
+    'Фамилия':payload.lastName,
+    'Имя':payload.firstName,
+    'Отчество':payload.middleName,
+    'ФИО':fullName,
+    'Vacancy ID':payload.vacancyId,
+    'Вакансия':vacancy?vacancy['Вакансия']:'',
+    'Статус':existing?.['Статус']||'Новый',
+    'Телефон':payload.phone,
+    'Email':payload.email,
+    'Telegram':payload.telegram,
+    'GitHub':normalizeGithubClient(payload.github),
+    'LinkedIn':normalizeLinkedinClient(payload.linkedin),
+    'Source ID':payload.sourceId,
+    'Источник':source?source['Название']:'',
+    'Зарплатные ожидания':String(payload.salary||'').replace(/\D/g,''),
+    'Responsible ID':payload.recruiterId,
+    'Ответственный':recruiter?fullNameOf(recruiter):'',
+    'HR Responsible ID':payload.hrResponsibleId,
+    'Ответственный HR':hrResponsible?fullNameOf(hrResponsible):'',
+    'Tech Interviewer ID':payload.techInterviewerId,
+    'Ответственный тех. интервьювер':techInterviewer?fullNameOf(techInterviewer):'',
+    'Комментарий':payload.comment,
+    links:payload.links||[],
+    resumeVersions:versions,
+    archived:existing?.archived||false,
+    'Резюме':existing?.['Резюме']||'',
+    'Папка кандидата':existing?.['Папка кандидата']||'',
+    _sync:'pending',
+    _pendingResume:!!resumeFile
+  };
+}
+
+async function saveCandidateForm(button){
+  if(!validateEmailField(el('candidateEmail')))return;
+
+  const salary=Number(String(value('candidateSalary')).replace(/\D/g,''))||0;
+  if(salary>10000000){
+    showToast('ЗП ожидания не может превышать 10 000 000.','error');
+    return;
+  }
+
+  const existingId=
+    value('candidateId');
+
+  const existing=
+    existingId
+      ? candidateById(existingId)
+      : null;
+
+  const activeSnapshot=
+    state.candidates.map(c=>({
+      ...c,
+      resumeVersions:[
+        ...(c.resumeVersions||[])
+      ],
+      links:[
+        ...(c.links||[])
+      ]
+    }));
+
+  const archivedSnapshot=
+    state.archivedCandidates.map(c=>({
+      ...c,
+      resumeVersions:[
+        ...(c.resumeVersions||[])
+      ],
+      links:[
+        ...(c.links||[])
+      ]
+    }));
+
+  const targetCollection=
+    existing&&existing.archived
+      ? state.archivedCandidates
+      : state.candidates;
+
+  const tempId=
+    existingId||
+    ('tmp_candidate_'+Date.now());
+
+  try{
+    const resumeFile=await readResumeFile();
+
+    const payload={
+      ID:existingId,
+      draftToken:value('candidateDraftToken'),
+      lastName:value('candidateLastName').trim(),
+      firstName:value('candidateFirstName').trim(),
+      middleName:value('candidateMiddleName').trim(),
+      vacancyId:value('candidateVacancy'),
+      phone:value('candidatePhone'),
+      email:value('candidateEmail'),
+      telegram:value('candidateTelegram'),
+      github:value('candidateGithub'),
+      linkedin:value('candidateLinkedin'),
+      salary:value('candidateSalary'),
+      sourceId:value('candidateSource'),
+      recruiterId:value('candidateRecruiter'),
+      hrResponsibleId:value('candidateHrResponsible'),
+      techInterviewerId:value('candidateTechInterviewer'),
+      comment:value('candidateComment'),
+      links:collectLinks(),
+      resumeFile
+    };
+
+    if(
+      !payload.lastName||
+      !payload.firstName||
+      !payload.vacancyId||
+      !payload.phone||
+      !payload.recruiterId||
+      !payload.hrResponsibleId||
+      !payload.techInterviewerId
+    ){
+      showToast('Заполните обязательные поля, включая рекрутера, HR и тех. интервьювера.','error');
+      return;
+    }
+
+    const optimistic=
+      buildOptimisticCandidate(
+        payload,
+        resumeFile,
+        existing,
+        tempId
+      );
+
+    const index=
+      existing
+        ? targetCollection.indexOf(
+            existing
+          )
+        : -1;
+
+    if(index>=0){
+      targetCollection[index]=
+        optimistic;
+    }else{
+      targetCollection.unshift(
+        optimistic
+      );
+    }
+
+    render();
+
+    resumeUploading=!!resumeFile;
+    renderSelectedResumeFile();
+
+    await runUiTask({button,formId:'candidateWorkspace',label:resumeFile?'Загрузка…':'Сохранение…'},async()=>{
+      const response=await rpc('saveCandidate',payload);
+      const saved={
+        ...response.candidate,
+        _sync:'success',
+        _detailsLoaded:true
+      };
+
+      const savedCollection=
+        saved.archived
+          ? state.archivedCandidates
+          : state.candidates;
+
+      const currentIndex=
+        savedCollection.findIndex(c=>
+          String(c.ID)===
+          String(tempId)
+        );
+
+      if(currentIndex>=0){
+        savedCollection[currentIndex]=
+          saved;
+      }else{
+        const otherCollection=
+          saved.archived
+            ? state.candidates
+            : state.archivedCandidates;
+
+        const otherIndex=
+          otherCollection.findIndex(c=>
+            String(c.ID)===
+            String(tempId)
+          );
+
+        if(otherIndex>=0){
+          otherCollection.splice(
+            otherIndex,
+            1
+          );
+        }
+
+        savedCollection.unshift(saved);
+      }
+
+      recalculateStatsLocal();
+      render();
+      currentCandidate=saved;
+      currentCandidateDraft=null;
+      el('candidateDraftToken').value='';
+      el('candidateId').value=saved.ID;
+      el('candidateTitle').textContent=fullNameOf(saved);
+      el('candidateNumberLabel').textContent='№'+(saved['№']||'—');
+      el('candidateStatusLabel').className='status-chip status-'+statusKey(saved['Статус']);
+      el('candidateStatusLabel').textContent=saved['Статус'];
+      renderTransitions();
+      resumeUploading=false;
+      el('candidateResumeFile').value='';
+      renderSelectedResumeFile();
+      renderResumeVersions(saved.resumeVersions||[]);
+      setLink('candidateFolderLink',saved['Папка кандидата'],'Открыть папку кандидата ↗');
+      el('candidateNumberLabel').textContent='№'+(saved['№']||'—');
+      el('shareCandidateButton').hidden=false;
+      el('archiveCandidateButton').hidden=!!saved.archived;
+      history.replaceState(
+        null,
+        '',
+        location.pathname+
+        '#/candidate/'+
+        encodeURIComponent(saved.ID)
+      );
+      showToast(existing?'Карточка обновлена.':'Кандидат создан.');
+
+      setTimeout(()=>{
+        const item=
+          candidateById(saved.ID);
+        if(item&&item._sync==='success'){
+          delete item._sync;
+          renderBoard();
+        }
+      },1800);
+    });
+  }catch(error){
+    resumeUploading=false;
+    renderSelectedResumeFile();
+    state.candidates=
+      activeSnapshot;
+
+    state.archivedCandidates=
+      archivedSnapshot;
+
+    render();
+    showToast(error&&error.message?error.message:String(error),'error');
+  }
+}
+
+function archiveCurrentCandidate(button){if(currentCandidate)archiveById(currentCandidate.ID,button)}
+
+async function archiveById(id,button){
+  const ok=
+    await showConfirm(
+      'Архивировать кандидата? Текущий статус будет сохранён, а запись будет перенесена в лист «Архив кандидатов».',
+      'Архивация кандидата'
+    );
+
+  if(!ok)return;
+
+  await runUiTask(
+    {
+      button,
+      label:'Архивация…'
+    },
+    async()=>{
+      const response=
+        await rpc(
+          'archiveCandidate',
+          id
+        );
+
+      const index=
+        state.candidates
+          .findIndex(candidate=>
+            String(candidate.ID)===
+            String(id)
+          );
+
+      if(index>=0){
+        state.candidates.splice(
+          index,
+          1
+        );
+      }
+
+      const archived={
+        ...response.candidate,
+        archived:true,
+        _detailsLoaded:true
+      };
+
+      const archiveIndex=
+        state.archivedCandidates
+          .findIndex(candidate=>
+            String(candidate.ID)===
+            String(id)
+          );
+
+      if(archiveIndex>=0){
+        state.archivedCandidates[
+          archiveIndex
+        ]=archived;
+      }else{
+        state.archivedCandidates
+          .unshift(archived);
+      }
+
+      recalculateStatsLocal(1);
+
+      render();
+
+      if(
+        currentCandidate &&
+        String(
+          currentCandidate.ID
+        )===String(id)
+      ){
+        closeCandidate();
+      }
+
+      showToast(
+        'Кандидат перенесён в архив.'
+      );
+    }
+  ).catch(()=>{});
+}
+
+async function copyCandidateLink(button){
+  if(
+    !currentCandidate ||
+    !currentCandidate.ID
+  )return;
+
+  const url=
+    candidateCardUrl(
+      currentCandidate.ID
+    );
+
+  setButtonLoading(
+    button,
+    true,
+    'Копирование…'
+  );
+
+  try{
+    await writeClipboardText(url);
+
+    showToast(
+      'Ссылка на кандидата скопирована.'
+    );
+  }catch(error){
+    showToast(
+      'Не удалось скопировать ссылку.',
+      'error'
+    );
+  }finally{
+    setButtonLoading(
+      button,
+      false
+    );
+  }
+}
+
+function startTransition(id,toStatus){
+  const candidate=state.candidates.find(c=>String(c.ID)===String(id));
+  if(!candidate||candidate.archived||candidate['Статус']===toStatus)return;
+
+  const allowed=state.transitions[candidate['Статус']]||[];
+  if(!allowed.includes(toStatus)){
+    showToast('Такой переход не разрешён.','error');
+    return;
+  }
+
+  const templates=state.interviewTemplates.filter(t=>
+    String(t['Vacancy ID'])===String(candidate['Vacancy ID']) &&
+    t['Этап']===candidate['Статус']
+  );
+
+  const requiredTemplate=templates.find(t=>t.required)||null;
+  const nextResponsible=candidateAssignedResponsible(candidate,toStatus);
+
+  if(!nextResponsible){
+    showToast('Для следующего этапа не назначен ответственный. Заполните карточку кандидата.','error');
+    return;
+  }
+
+  pendingTransition={
+    candidate,
+    fromStatus:candidate['Статус'],
+    toStatus,
+    templates,
+    requiredTemplate,
+    nextResponsible
+  };
+
+  el('transitionTitle').innerHTML=statusChip(candidate['Статус'],true)+' <span class="transition-arrow">→</span> '+statusChip(toStatus,true);
+
+  const templateSelect=el('transitionTemplate');
+  templateSelect.disabled=!!requiredTemplate;
+  templateSelect.innerHTML=requiredTemplate
+    ? option(
+        requiredTemplate['Template ID'],
+        'Обязательный · №'+(requiredTemplate['№']||'—')+' · '+requiredTemplate['Название'],
+        true
+      )
+    : option('','Без шаблона')+templates.map((t,i)=>option(t['Template ID'],'№'+(t['№']||'—')+' · '+t['Название'],i===0)).join('');
+
+  el('transitionResponsibleDisplay').value=fullNameOf(nextResponsible);
+  el('transitionComment').value='';
+  el('transitionResult').value='';
+  renderTransitionQuestions();
+  el('transitionModal').classList.add('open');
+}
+
+function closeTransition(){
+  el('transitionModal').classList.remove('open');
+  el('transitionTemplate').disabled=false;
+  pendingTransition=null;
+}
+function selectedTransitionTemplate(){const id=value('transitionTemplate');return pendingTransition?(pendingTransition.templates||[]).find(t=>t['Template ID']===id):null}
+
+function renderTransitionQuestions(){
+  const template=selectedTransitionTemplate();
+  const questions=template?(template.questions||[]):[];
+
+  el('transitionQuestions').innerHTML=questions.length
+    ?'<label>'+(template&&template.required?'Вопросы и ответы *':'Вопросы и ответы')+'</label>'+questions.map((q,index)=>
+      '<div class="qa interview-question"><div class="question-number">'+(index+1)+'</div><div><strong>'+escapeHtml(q)+'</strong><textarea class="transition-answer" data-question="'+escapeHtml(q)+'" placeholder="Ответ кандидата"></textarea></div></div>'
+    ).join('')
+    :'<div class="empty-state compact">Для этого этапа шаблон вопросов не выбран.</div>';
+}
+
+async function submitTransition(button){
+  if(!pendingTransition)return;
+
+  await runUiTask({button,formId:'transitionForm',label:'Сохранение…'},async()=>{
+    const answers=[...document.querySelectorAll('.transition-answer')].map(x=>({
+      question:x.dataset.question,
+      answer:x.value.trim()
+    }));
+
+    const result=value('transitionResult').trim();
+    const selectedTemplate=selectedTransitionTemplate();
+
+    if(!result){
+      showToast('Укажите результат интервью/этапа.','error');
+      return;
+    }
+
+    if(pendingTransition.requiredTemplate){
+      if(
+        !selectedTemplate||
+        String(selectedTemplate['Template ID'])!==
+          String(pendingTransition.requiredTemplate['Template ID'])
+      ){
+        showToast('Для перехода необходимо заполнить обязательный шаблон.','error');
+        return;
+      }
+
+      const missing=answers.filter(item=>!item.answer);
+      if(missing.length){
+        showToast('Заполните все вопросы обязательного шаблона.','error');
+        return;
+      }
+    }
+
+    const payload={
+      candidateId:pendingTransition.candidate.ID,
+      toStatus:pendingTransition.toStatus,
+      interview:{
+        templateId:value('transitionTemplate'),
+        answers,
+        comment:value('transitionComment'),
+        result
+      }
+    };
+
+    const response=await rpc('transitionCandidate',payload);
+    const idx=state.candidates.findIndex(x=>x.ID===payload.candidateId);
+    if(idx>=0)state.candidates[idx]={...state.candidates[idx],...response.candidate};
+    const interviewKey=
+      String(payload.candidateId);
+
+    if(
+      loadedInterviewCandidateIds.has(
+        interviewKey
+      )
+    ){
+      state.interviews.push(
+        response.interview
+      );
+    }
+
+    recalculateStatsLocal();
+    closeTransition();
+    render();
+    openCandidateById(payload.candidateId,false);
+    showToast('Этап кандидата обновлён.');
+  }).catch(()=>{});
+}
+
+function setCurrentInterviews(candidateId){
+  const key=String(candidateId);
+
+  if(
+    !loadedInterviewCandidateIds.has(
+      key
+    )
+  ){
+    currentInterviews=[];
+    el('interviewHistory').innerHTML='<div class="empty-state compact">История интервью загружается…</div>';
+    return;
+  }
+
+  currentInterviews=
+    state.interviews.filter(i=>
+      String(i['Candidate ID'])===key
+    );
+
+  renderInterviewHistory();
+}
+
+
+async function loadCandidateInterviews(
+  candidateId,
+  force=false
+){
+  const key=String(candidateId);
+
+  if(
+    loadedInterviewCandidateIds.has(key) &&
+    !force
+  ){
+    setCurrentInterviews(candidateId);
+    return currentInterviews;
+  }
+
+  if(
+    interviewLoadPromises[key] &&
+    !force
+  ){
+    return interviewLoadPromises[key];
+  }
+
+  if(
+    currentCandidate &&
+    String(currentCandidate.ID)===key
+  ){
+    setCurrentInterviews(candidateId);
+  }
+
+  interviewLoadPromises[key]=
+    rpc('getInterviews',candidateId)
+      .then(data=>{
+        state.interviews=
+          state.interviews.filter(item=>
+            String(
+              item['Candidate ID']
+            )!==key
+          );
+
+        state.interviews.push(
+          ...(data||[])
+        );
+
+        loadedInterviewCandidateIds.add(
+          key
+        );
+
+        if(
+          currentCandidate &&
+          String(currentCandidate.ID)===key
+        ){
+          setCurrentInterviews(candidateId);
+        }
+
+        return data||[];
+      })
+      .finally(()=>{
+        delete interviewLoadPromises[key];
+      });
+
+  return interviewLoadPromises[key];
+}
+
+function renderInterviewHistory(){
+  el('interviewHistory').innerHTML=currentInterviews.length?currentInterviews.map(i=>
+    '<article class="history-card">'+
+      '<div class="history-title"><div>'+statusChip(i['Этап']||'—',true)+' <span class="transition-arrow">→</span> '+statusChip(i['To Status']||'—',true)+'</div>'+
+      '<button class="button button-ghost button-small" onclick="editInterview(\''+escJs(i['Interview ID'])+'\')">Редактировать</button></div>'+
+      '<div class="muted history-meta">'+escapeHtml(i['Дата']||'')+' · '+escapeHtml(i['Шаблон']||'Без шаблона')+'</div>'+
+      (i.answers||[]).map((a,index)=>'<div class="qa"><strong>'+(index+1)+'. '+escapeHtml(a.question)+'</strong><div>'+escapeHtml(a.answer||'—')+'</div></div>').join('')+
+      '<div class="qa"><strong>Комментарий</strong><div>'+escapeHtml(i['Комментарий']||'—')+'</div></div>'+
+      '<div class="qa"><strong>Результат</strong><div>'+escapeHtml(i['Результат']||'—')+'</div></div>'+
+    '</article>'
+  ).join(''):'<div class="empty-state compact">Результатов интервью пока нет.</div>';
+}
+
+function editInterview(id){
+  editingInterview=currentInterviews.find(i=>i['Interview ID']===id);
+  if(!editingInterview)return;
+  el('editInterviewQuestions').innerHTML=(editingInterview.answers||[]).map((a,index)=>'<div class="qa"><strong>'+(index+1)+'. '+escapeHtml(a.question)+'</strong><textarea class="edit-answer" data-question="'+escapeHtml(a.question)+'">'+escapeHtml(a.answer)+'</textarea></div>').join('');
+  el('editInterviewComment').value=editingInterview['Комментарий']||'';
+  el('editInterviewResult').value=editingInterview['Результат']||'';
+  el('interviewEditModal').classList.add('open');
+}
+
+function closeInterviewEdit(){el('interviewEditModal').classList.remove('open');editingInterview=null}
+
+async function saveInterviewEdit(button){
+  if(!editingInterview)return;
+  await runUiTask({button,formId:'interviewEditForm',label:'Сохранение…'},async()=>{
+    const payload={
+      id:editingInterview['Interview ID'],
+      answers:[...document.querySelectorAll('.edit-answer')].map(x=>({question:x.dataset.question,answer:x.value})),
+      comment:value('editInterviewComment'),
+      result:value('editInterviewResult')
+    };
+    const res=await rpc('updateInterview',payload);
+    const idx=state.interviews.findIndex(i=>i['Interview ID']===payload.id);
+    if(idx>=0)state.interviews[idx]=res.interview;
+    closeInterviewEdit();
+    setCurrentInterviews(currentCandidate.ID);
+    showToast('Результат интервью обновлён.');
+  }).catch(()=>{});
+}
+
+async function softDeleteInterview(button){
+  if(!editingInterview)return;
+  const id=editingInterview['Interview ID'];
+  const ok=await showConfirm('Удалить результат интервью? Запись останется в базе как soft deleted.','Удаление интервью');
+  if(!ok)return;
+
+  await runUiTask({button,formId:'interviewEditForm',label:'Удаление…'},async()=>{
+    await rpc('deleteInterview',id);
+    state.interviews=state.interviews.filter(i=>i['Interview ID']!==id);
+    closeInterviewEdit();
+    setCurrentInterviews(currentCandidate.ID);
+    showToast('Интервью удалено.');
+  }).catch(()=>{});
+}
+
+init();
+</script>
