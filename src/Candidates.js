@@ -31,6 +31,25 @@ function mapCandidate_(candidate, archivedOverride) {
 }
 
 
+function mapCandidateSummary_(
+  candidate,
+  archivedOverride
+) {
+  const mapped =
+    mapCandidate_(
+      candidate,
+      archivedOverride
+    );
+
+  delete mapped.links;
+  delete mapped.resumeVersions;
+  delete mapped['Иные ссылки'];
+  delete mapped['Версии резюме'];
+
+  return mapped;
+}
+
+
 function getCandidates() {
   return rowsToObjects_(
     getSheet_(
@@ -38,6 +57,20 @@ function getCandidates() {
     )
   ).map(candidate =>
     mapCandidate_(
+      candidate,
+      false
+    )
+  );
+}
+
+
+function getCandidateSummaries() {
+  return rowsToObjects_(
+    getSheet_(
+      APP_CONFIG.SHEETS.CANDIDATES
+    )
+  ).map(candidate =>
+    mapCandidateSummary_(
       candidate,
       false
     )
@@ -55,6 +88,42 @@ function getArchivedCandidates() {
       candidate,
       true
     )
+  );
+}
+
+
+function getArchivedCandidateSummaries() {
+  return rowsToObjects_(
+    getSheet_(
+      APP_CONFIG.SHEETS.ARCHIVED_CANDIDATES
+    )
+  ).map(candidate =>
+    mapCandidateSummary_(
+      candidate,
+      true
+    )
+  );
+}
+
+
+function getCandidateDetails(candidateId) {
+  const storage =
+    findCandidateStorage_(
+      candidateId
+    );
+
+  if (!storage) {
+    throw new Error(
+      'Кандидат не найден.'
+    );
+  }
+
+  return mapCandidate_(
+    objectFromRow_(
+      storage.found.headers,
+      storage.found.values
+    ),
+    storage.archived
   );
 }
 
