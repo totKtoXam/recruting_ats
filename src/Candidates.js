@@ -35,14 +35,28 @@ function mapCandidateSummary_(
   candidate,
   archivedOverride
 ) {
-  const mapped =
-    mapCandidate_(
-      candidate,
-      archivedOverride
-    );
+  const fallback =
+    splitFullName_(candidate['ФИО']);
 
-  delete mapped.links;
-  delete mapped.resumeVersions;
+  const mapped = {
+    ...candidate,
+    'Фамилия':
+      candidate['Фамилия'] ||
+      fallback.lastName,
+    'Имя':
+      candidate['Имя'] ||
+      fallback.firstName,
+    'Отчество':
+      candidate['Отчество'] ||
+      fallback.middleName,
+    archived:
+      archivedOverride !== undefined
+        ? archivedOverride
+        : String(
+            candidate['Архивирован'] || ''
+          ).toLowerCase() === 'true'
+  };
+
   delete mapped['Иные ссылки'];
   delete mapped['Версии резюме'];
 
