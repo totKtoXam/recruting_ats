@@ -153,11 +153,24 @@ function transitionCandidate(input) {
     );
   }
 
+  const currentStageResponsible =
+    getCandidateStageResponsible_(
+      candidate,
+      fromStatus
+    );
+
+  const nextStageResponsible =
+    getCandidateStageResponsible_(
+      candidate,
+      input.toStatus
+    );
+
   const interview = saveTransitionInterview_(
     candidate,
     fromStatus,
     input.toStatus,
-    input.interview || {}
+    input.interview || {},
+    currentStageResponsible
   );
 
   candidate['Статус'] =
@@ -165,18 +178,6 @@ function transitionCandidate(input) {
 
   candidate['Дата изменения'] =
     formatNow_();
-
-  const responsible = resolveResponsibleForStage_(
-    input.responsibleId,
-    candidate['Responsible ID'],
-    input.toStatus
-  );
-
-  candidate['Responsible ID'] =
-    responsible['Responsible ID'];
-
-  candidate['Ответственный'] =
-    responsible['ФИО'];
 
   const row = found.headers.map(
     header =>
@@ -198,7 +199,7 @@ function transitionCandidate(input) {
     candidate,
     fromStatus,
     toStatus: input.toStatus,
-    responsible,
+    responsible: nextStageResponsible,
     changedBy,
     comment:
       input.interview &&
@@ -261,39 +262,59 @@ function saveTransitionInterview_(
   candidate,
   fromStatus,
   toStatus,
-  input
+  input,
+  responsible
 ) {
   const templateId = String(
     input.templateId || ''
   );
 
+  const templates =
+    getInterviewTemplates()
+      .filter(template =>
+        String(
+          template['Vacancy ID']
+        ) ===
+          String(
+            candidate['Vacancy ID']
+          ) &&
+        template['Этап'] ===
+          fromStatus
+      );
+
+  const requiredTemplate =
+    templates.find(template =>
+      template.required
+    ) || null;
+
+  if (
+    requiredTemplate &&
+    String(templateId) !==
+      String(
+        requiredTemplate[
+          'Template ID'
+        ]
+      )
+  ) {
+    throw new Error(
+      'Для перехода необходимо заполнить обязательный шаблон "' +
+      requiredTemplate['Название'] +
+      '".'
+    );
+  }
+
   let template = null;
 
   if (templateId) {
-    template = findById_(
-      APP_CONFIG.SHEETS.INTERVIEW_TEMPLATES,
-      'Template ID',
-      templateId
-    );
+    template = templates.find(item =>
+      String(
+        item['Template ID']
+      ) === String(templateId)
+    ) || null;
 
     if (!template) {
       throw new Error(
-        'Шаблон интервью не найден.'
-      );
-    }
-
-    if (
-      String(
-        template['Vacancy ID']
-      ) !==
-        String(
-          candidate['Vacancy ID']
-        ) ||
-      template['Этап'] !==
-        fromStatus
-    ) {
-      throw new Error(
-        'Шаблон интервью не соответствует вакансии и этапу.'
+        'Шаблон интервью не найден или не соответствует вакансии и этапу.'
       );
     }
   }
@@ -318,6 +339,34 @@ function saveTransitionInterview_(
         )
     : [];
 
+  if (
+    template &&
+    template.required
+  ) {
+    const templateQuestions =
+      template.questions || [];
+
+    if (!templateQuestions.length) {
+      throw new Error(
+        'Обязательный шаблон не содержит вопросов.'
+      );
+    }
+
+    const missingQuestions =
+      templateQuestions.filter(question =>
+        !answers.some(item =>
+          item.question === question &&
+          Boolean(item.answer)
+        )
+      );
+
+    if (missingQuestions.length) {
+      throw new Error(
+        'Заполните все вопросы обязательного шаблона.'
+      );
+    }
+  }
+
   const comment = String(
     input.comment || ''
   ).trim();
@@ -333,12 +382,6 @@ function saveTransitionInterview_(
       'Укажите результат интервью/этапа.'
     );
   }
-
-  const responsible = findById_(
-    APP_CONFIG.SHEETS.RESPONSIBLES,
-    'Responsible ID',
-    candidate['Responsible ID']
-  );
 
   const now = formatNow_();
 
@@ -387,11 +430,9 @@ function saveTransitionInterview_(
         ? responsible['Отчество'] || ''
         : '',
     'Интервьюер':
-      responsible
-        ? responsible['ФИО']
-        : candidate['Ответственный'],
+      responsible['ФИО'],
     'Responsible ID':
-      candidate['Responsible ID'],
+      responsible['Responsible ID'],
     'Вопросы и ответы':
       stringifyJson_(answers),
     'Комментарий':
