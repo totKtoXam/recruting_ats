@@ -25,29 +25,6 @@ function saveVacancy(input) {
       )
     : null;
 
-  if (required) {
-    const duplicateRequired =
-      getInterviewTemplates()
-        .find(template =>
-          String(
-            template['Vacancy ID']
-          ) === vacancyId &&
-          template['Этап'] === stage &&
-          template.required &&
-          String(
-            template['Template ID']
-          ) !== String(
-            input.id || ''
-          )
-        );
-
-    if (duplicateRequired) {
-      throw new Error(
-        'Для этой вакансии и этапа уже есть обязательный шаблон.'
-      );
-    }
-  }
-
   const now = formatNow_();
 
   const entity = upsertObject_(
@@ -419,6 +396,29 @@ function saveInterviewTemplate(input) {
         input.id
       )
     : null;
+
+  if (required) {
+    const duplicateRequired =
+      getInterviewTemplates()
+        .find(template =>
+          String(
+            template['Vacancy ID']
+          ) === vacancyId &&
+          template['Этап'] === stage &&
+          template.required &&
+          String(
+            template['Template ID']
+          ) !== String(
+            input.id || ''
+          )
+        );
+
+    if (duplicateRequired) {
+      throw new Error(
+        'Для этой вакансии и этапа уже есть обязательный шаблон.'
+      );
+    }
+  }
 
   const now = formatNow_();
 
