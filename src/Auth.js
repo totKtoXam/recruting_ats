@@ -24,44 +24,83 @@ function decodeIdentityTokenPayload_(token) {
 
 
 function getCurrentGoogleIdentity_() {
-  const token = ScriptApp.getIdentityToken();
+  let token = '';
 
-  if (!token) {
-    throw new Error(
-      'Google-авторизация недоступна. Войдите в приложение через Google Account.'
+  try {
+    token =
+      ScriptApp.getIdentityToken() ||
+      '';
+  } catch (error) {
+    console.warn(
+      'Google identity token недоступен: ' +
+      (
+        error &&
+        error.message
+          ? error.message
+          : String(error)
+      )
     );
   }
 
-  const claims =
-    decodeIdentityTokenPayload_(token);
+  let claims = {};
 
-  const subject = String(
-    claims.sub || ''
-  ).trim();
-
-  if (!subject) {
-    throw new Error(
-      'Google Account не содержит идентификатор sub.'
-    );
+  if (token) {
+    try {
+      claims =
+        decodeIdentityTokenPayload_(
+          token
+        );
+    } catch (error) {
+      console.warn(
+        'Не удалось декодировать Google identity token: ' +
+        (
+          error &&
+          error.message
+            ? error.message
+            : String(error)
+        )
+      );
+    }
   }
+
+  const effectiveEmail =
+    Session
+      .getEffectiveUser()
+      .getEmail();
+
+  const activeEmail =
+    Session
+      .getActiveUser()
+      .getEmail();
 
   const email = String(
     claims.email ||
-    Session
-      .getActiveUser()
-      .getEmail() ||
+    effectiveEmail ||
+    activeEmail ||
     ''
   )
     .trim()
     .toLowerCase();
 
+  if (!email) {
+    throw new Error(
+      'Не удалось определить Google Account текущего пользователя. Проверьте, что Web App запущен от имени пользователя и приложению выданы OAuth-разрешения.'
+    );
+  }
+
+  const googleSubject = String(
+    claims.sub || ''
+  ).trim();
+
   return {
-    subject,
+    subject:
+      googleSubject ||
+      'email:' + email,
+    googleSubject,
     email,
     fullName: String(
       claims.name ||
-      email ||
-      'Google User'
+      email
     ).trim(),
     avatarUrl: String(
       claims.picture || ''
@@ -86,22 +125,46 @@ function getCurrentUser() {
       APP_CONFIG.SHEETS.USERS
     );
 
-    const matches =
-      rowsToObjects_(sheet)
-        .filter(user =>
-          String(
-            user['Google Subject'] || ''
-          ) === identity.subject
-        );
+    const users =
+      rowsToObjects_(sheet);
 
-    if (matches.length > 1) {
+    const bySubject =
+      identity.googleSubject
+        ? users.filter(user =>
+            String(
+              user['Google Subject'] ||
+              ''
+            ) ===
+              identity.googleSubject
+          )
+        : [];
+
+    if (bySubject.length > 1) {
       throw new Error(
         'В таблице пользователей найден дубликат Google Subject.'
       );
     }
 
+    const byEmail =
+      users.filter(user =>
+        String(
+          user.Email || ''
+        )
+          .trim()
+          .toLowerCase() ===
+        identity.email
+      );
+
+    if (byEmail.length > 1) {
+      throw new Error(
+        'В таблице пользователей найден дубликат Email.'
+      );
+    }
+
     const existing =
-      matches[0] || null;
+      bySubject[0] ||
+      byEmail[0] ||
+      null;
 
     const isActive =
       !existing ||
@@ -130,7 +193,13 @@ function getCurrentUser() {
             ? existing['User ID']
             : Utilities.getUuid(),
         'Google Subject':
-          identity.subject,
+          identity.googleSubject ||
+          (
+            existing &&
+            existing['Google Subject']
+              ? existing['Google Subject']
+              : identity.subject
+          ),
         'Email':
           identity.email,
         'ФИО':
