@@ -106,7 +106,8 @@ function invalidateReferenceCache_() {
 
 
 function getCandidateData() {
-  const candidates = getCandidates();
+  const candidates =
+    getCandidateSummaries();
 
   return {
     candidates,
@@ -121,7 +122,7 @@ function getCandidateData() {
 function getArchivedCandidateData() {
   return {
     archivedCandidates:
-      getArchivedCandidates()
+      getArchivedCandidateSummaries()
   };
 }
 
@@ -143,7 +144,7 @@ function getBootstrapData() {
     getReferenceData();
 
   const candidates =
-    getCandidates();
+    getCandidateSummaries();
 
   const stats =
     calculateStats_(
