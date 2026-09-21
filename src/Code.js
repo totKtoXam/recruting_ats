@@ -1,6 +1,5 @@
 function doGet(event) {
   ensureSchema_();
-  ensureSpreadsheetMenuTrigger_();
 
   const template =
     HtmlService.createTemplateFromFile('Index');
@@ -45,7 +44,11 @@ function include(filename) {
 function getReferenceData() {
   ensureSchema_();
 
+  const currentUser = getCurrentUser();
+
   return {
+    currentUser,
+    users: getUsers(),
     vacancies: getVacancies(),
     sources: getSources(),
     responsibles: getResponsibles(),
