@@ -139,7 +139,9 @@ function getBootstrapData() {
   ensureSchemaVersion_();
 
   const currentUser =
-    getCurrentUser();
+    toPublicUser_(
+      getCurrentUser()
+    );
 
   const references =
     getReferenceData();
