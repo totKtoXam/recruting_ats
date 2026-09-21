@@ -41,8 +41,30 @@ function include(filename) {
 }
 
 
+const REFERENCE_CACHE_KEY =
+  'ats:reference-data:v1';
+
+
 function getReferenceData() {
-  return {
+  const cache =
+    CacheService.getScriptCache();
+
+  const cached =
+    cache.get(
+      REFERENCE_CACHE_KEY
+    );
+
+  if (cached) {
+    try {
+      return JSON.parse(cached);
+    } catch (error) {
+      cache.remove(
+        REFERENCE_CACHE_KEY
+      );
+    }
+  }
+
+  const data = {
     vacancies: getVacancies(),
     sources: getSources(),
     responsibles: getResponsibles(),
@@ -51,6 +73,35 @@ function getReferenceData() {
     transitions: APP_CONFIG.TRANSITIONS,
     pipelineStatuses: APP_CONFIG.PIPELINE_STATUSES
   };
+
+  try {
+    cache.put(
+      REFERENCE_CACHE_KEY,
+      JSON.stringify(data),
+      300
+    );
+  } catch (error) {
+    console.warn(
+      'Не удалось закэшировать справочники: ' +
+      (
+        error &&
+        error.message
+          ? error.message
+          : String(error)
+      )
+    );
+  }
+
+  return data;
+}
+
+
+function invalidateReferenceCache_() {
+  CacheService
+    .getScriptCache()
+    .remove(
+      REFERENCE_CACHE_KEY
+    );
 }
 
 
