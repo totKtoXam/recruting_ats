@@ -110,8 +110,6 @@ function getCurrentGoogleIdentity_() {
 
 
 function getCurrentUser() {
-  ensureSchema_();
-
   const identity =
     getCurrentGoogleIdentity_();
 
@@ -182,44 +180,88 @@ function getCurrentUser() {
 
     const now = formatNow_();
 
-    return upsertObject_(
+    const nextUser = {
+      ...existing,
+      'User ID':
+        existing &&
+        existing['User ID']
+          ? existing['User ID']
+          : Utilities.getUuid(),
+      'Google Subject':
+        identity.googleSubject ||
+        (
+          existing &&
+          existing['Google Subject']
+            ? existing['Google Subject']
+            : identity.subject
+        ),
+      'Email':
+        identity.email,
+      'ФИО':
+        identity.fullName,
+      'Avatar URL':
+        identity.avatarUrl,
+      'IsActive':
+        existing &&
+        existing.IsActive !== '' &&
+        existing.IsActive !== undefined
+          ? existing.IsActive
+          : true,
+      'Дата создания':
+        existing &&
+        existing['Дата создания']
+          ? existing['Дата создания']
+          : now,
+      'Последний вход': now
+    };
+
+    const loginCache =
+      CacheService.getScriptCache();
+
+    const cacheKey =
+      'ats:last-login:' +
+      nextUser['User ID'];
+
+    const profileChanged =
+      !existing ||
+      String(
+        existing['Google Subject'] || ''
+      ) !==
+        String(
+          nextUser['Google Subject'] || ''
+        ) ||
+      String(existing.Email || '') !==
+        String(nextUser.Email || '') ||
+      String(existing['ФИО'] || '') !==
+        String(nextUser['ФИО'] || '') ||
+      String(
+        existing['Avatar URL'] || ''
+      ) !==
+        String(
+          nextUser['Avatar URL'] || ''
+        );
+
+    if (
+      existing &&
+      !profileChanged &&
+      loginCache.get(cacheKey)
+    ) {
+      return existing;
+    }
+
+    const saved = upsertObject_(
       APP_CONFIG.SHEETS.USERS,
       'User ID',
-      {
-        ...existing,
-        'User ID':
-          existing &&
-          existing['User ID']
-            ? existing['User ID']
-            : Utilities.getUuid(),
-        'Google Subject':
-          identity.googleSubject ||
-          (
-            existing &&
-            existing['Google Subject']
-              ? existing['Google Subject']
-              : identity.subject
-          ),
-        'Email':
-          identity.email,
-        'ФИО':
-          identity.fullName,
-        'Avatar URL':
-          identity.avatarUrl,
-        'IsActive':
-          existing &&
-          existing.IsActive !== '' &&
-          existing.IsActive !== undefined
-            ? existing.IsActive
-            : true,
-        'Дата создания':
-          existing &&
-          existing['Дата создания']
-            ? existing['Дата создания']
-            : now,
-        'Последний вход': now
-      }
+      nextUser
     );
+
+    loginCache.put(
+      cacheKey,
+      '1',
+      1800
+    );
+
+    return saved;
   } finally {
     lock.releaseLock();
   }
@@ -227,8 +269,6 @@ function getCurrentUser() {
 
 
 function getUsers() {
-  ensureSchema_();
-
   return rowsToObjects_(
     getSheet_(
       APP_CONFIG.SHEETS.USERS
