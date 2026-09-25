@@ -299,7 +299,7 @@ Cookie: ats.sid=...
 |---|---|---|
 | `getInterviews` | id кандидата | История результатов интервью |
 | `getInterviewContext` | объект | Шаблон и контекст для перехода |
-| `transitionCandidate` | объект | Переход статуса с результатом этапа |
+| `transitionCandidate` | объект | Переход статуса: `{ candidateId, toStatus, interview }` — результат этапа, на который переводят; `{ candidateId, toStatus: 'Отказано', rejection: { byType: 'candidate' \| 'responsible', responsibleId, reason, comment } }` — отказ; `{ candidateId, toStatus, comment }` — возврат из «Отказано» на этап отказа |
 | `updateInterview` | объект | Редактирование результата интервью |
 | `deleteInterview` | id интервью | Удаление результата интервью |
 
@@ -307,10 +307,11 @@ Cookie: ats.sid=...
 
 | Метод | Аргумент | Назначение |
 |---|---|---|
-| `saveVacancy` / `deleteVacancy` | объект / id | Вакансии |
+| `listVacancies` / `listSources` / `listResponsibles` | `{ page, pageSize, sort: { key, dir }, filters }` | Страница таблицы: фильтры, сортировка и пагинация выполняются в БД. Ответ `{ items, total, page, pageSize, sort }`; `pageSize` до 100, неизвестные ключи сортировки и фильтров игнорируются |
+| `saveVacancy` / `deleteVacancy` | объект / id | Вакансии (название уникально без учёта регистра, иначе `409`) |
 | `saveSource` / `deleteSource` | объект / id | Источники |
 | `saveResponsible` / `deleteResponsible` | объект / id | Ответственные |
-| `saveInterviewTemplate` / `deleteInterviewTemplate` | объект / id | Шаблоны интервью |
+| `saveInterviewTemplate` / `deleteInterviewTemplate` | объект / id | Шаблоны интервью; `questions` — массив `{ text, answers }` (answers — вероятные ответы) |
 
 Пример вызова из браузера (сессия уже есть):
 

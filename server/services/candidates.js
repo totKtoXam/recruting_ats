@@ -37,6 +37,7 @@ export const CANDIDATE_SELECT = `
          ${personName('rec')} AS recruiter_name,
          ${personName('hr')}  AS hr_responsible_name,
          ${personName('ti')}  AS tech_interviewer_name,
+         ${personName('rb')}  AS rejected_by_responsible_name,
          lr.file_id      AS latest_resume_file_id,
          lr.external_url AS latest_resume_external_url
   FROM candidates c
@@ -45,6 +46,7 @@ export const CANDIDATE_SELECT = `
   LEFT JOIN responsibles rec ON rec.id = c.recruiter_id
   LEFT JOIN responsibles hr  ON hr.id  = c.hr_responsible_id
   LEFT JOIN responsibles ti  ON ti.id  = c.tech_interviewer_id
+  LEFT JOIN responsibles rb  ON rb.id  = c.rejected_by_responsible_id
   LEFT JOIN LATERAL (
     SELECT cr.file_id, f.external_url
     FROM candidate_resumes cr
@@ -164,12 +166,12 @@ export function getStageResponsible(executor, candidateRow, stage) {
     );
   }
 
-  if (stage === 'Техническое интервью') {
+  if (stage === APP_CONFIG.PROF_INTERVIEW_STATUS) {
     return resolveResponsible(
       executor,
       candidateRow.tech_interviewer_id,
-      'Ответственный тех. интервьювер',
-      ['Техническое интервью']
+      'Ответственный проф. интервьювер',
+      [APP_CONFIG.PROF_INTERVIEW_STATUS]
     );
   }
 
@@ -183,13 +185,16 @@ export function getStageResponsible(executor, candidateRow, stage) {
 
 // ---------- Журнал переходов ----------
 
-export async function appendTransitionLog(executor, { candidate, fromStatus, toStatus, responsible, changedBy, comment }) {
+export async function appendTransitionLog(
+  executor,
+  { candidate, fromStatus, toStatus, responsible, changedBy, comment, details }
+) {
   await executor.query(
     `INSERT INTO candidate_status_log
        (candidate_id, candidate_number, candidate_full_name, from_status, to_status,
         responsible_id, responsible_name, changed_by_user_id, changed_by_name,
-        changed_by_email, comment)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        changed_by_email, comment, details)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
     [
       candidate.id,
       candidate.number ?? null,
@@ -203,7 +208,8 @@ export async function appendTransitionLog(executor, { candidate, fromStatus, toS
       changedBy ? changedBy.id : null,
       changedBy ? changedBy.full_name : '',
       changedBy ? changedBy.email : '',
-      clean(comment)
+      clean(comment),
+      details ? JSON.stringify(details) : null
     ]
   );
 }
@@ -230,7 +236,7 @@ function validateCandidatePayload(payload) {
   if (!payload.phone) fail('Телефон обязателен.');
   if (!payload.recruiterId && !payload.responsibleId) fail('Рекрутер обязателен.');
   if (!payload.hrResponsibleId) fail('Ответственный HR обязателен.');
-  if (!payload.techInterviewerId) fail('Ответственный тех. интервьювер обязателен.');
+  if (!payload.techInterviewerId) fail('Ответственный проф. интервьювер обязателен.');
 }
 
 // Значение из payload, если поле передано, иначе текущее значение кандидата.
@@ -348,8 +354,8 @@ export async function saveCandidate(payload, changedBy) {
       const techInterviewer = await resolveResponsible(
         tx,
         payload.techInterviewerId || existing.tech_interviewer_id,
-        'Ответственный тех. интервьювер',
-        ['Техническое интервью']
+        'Ответственный проф. интервьювер',
+        [APP_CONFIG.PROF_INTERVIEW_STATUS]
       );
 
       const sourceId = clean(pick(payload, 'sourceId', existing.source_id));
@@ -493,10 +499,21 @@ export async function archiveCandidate(candidateId) {
 export async function getAllowedTransitions(candidateId) {
   const id = optionalUuid(candidateId, 'Кандидат не найден.');
   const row = id
-    ? await db.one('SELECT status FROM candidates WHERE id = $1 AND archived_at IS NULL', [id])
+    ? await db.one(
+        'SELECT status, rejected_from_status FROM candidates WHERE id = $1 AND archived_at IS NULL',
+        [id]
+      )
     : null;
 
-  return row ? APP_CONFIG.TRANSITIONS[row.status] || [] : [];
+  if (!row) {
+    return [];
+  }
+
+  if (row.status === APP_CONFIG.REJECTED_STATUS) {
+    return row.rejected_from_status ? [row.rejected_from_status] : [];
+  }
+
+  return APP_CONFIG.TRANSITIONS[row.status] || [];
 }
 
 export { loadCandidateDto };

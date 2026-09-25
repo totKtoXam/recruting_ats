@@ -13,6 +13,7 @@ import ExcelJS from 'exceljs';
 import { APP_CONFIG, config } from '../server/config.js';
 import { pool, transaction } from '../server/db/pool.js';
 import { isUuid, splitFullName } from '../server/lib/validation.js';
+import { normalizeTemplateQuestions } from '../server/services/mappers.js';
 
 const SHEETS = {
   users: 'Пользователи',
@@ -102,6 +103,10 @@ const MIME_BY_EXTENSION = {
 };
 
 const mimeFor = name => MIME_BY_EXTENSION[str(name).split('.').pop().toLowerCase()] || 'application/octet-stream';
+
+// Этапы, переименованные после Apps Script-версии.
+const RENAMED_STAGES = { 'Техническое интервью': APP_CONFIG.PROF_INTERVIEW_STATUS };
+const stage = value => RENAMED_STAGES[str(value)] || str(value);
 
 const httpUrl = value => (/^https?:\/\//i.test(str(value)) ? str(value) : '');
 
@@ -283,7 +288,7 @@ async function main() {
         [
           ids.responsibles.take(row['Responsible ID']), responsibleNumber(row), name.last || '—', name.first || '—',
           name.middle, str(row.Email).toLowerCase(), ids.users.get(row['User ID']),
-          json(row['Доступные этапы'], []).filter(stage => APP_CONFIG.PIPELINE_STATUSES.includes(stage)),
+          json(row['Доступные этапы'], []).map(stage).filter(item => APP_CONFIG.PIPELINE_STATUSES.includes(item)),
           date(row['Дата создания']), date(row['Дата изменения']),
           bool(row['Удален']) ? date(row['Дата удаления']) || new Date() : null
         ]
@@ -300,7 +305,7 @@ async function main() {
          VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, now()), COALESCE($9, now()), $10)`,
         [
           ids.templates.take(row['Template ID']), templateNumber(row), str(row['Название']), vacancyId,
-          str(row['Этап']), bool(row['Обязательный']), JSON.stringify(json(row['Вопросы'], [])),
+          stage(row['Этап']), bool(row['Обязательный']), JSON.stringify(normalizeTemplateQuestions(json(row['Вопросы'], []))),
           date(row['Дата создания']), date(row['Дата изменения']),
           bool(row['Удален']) ? date(row['Дата удаления']) || new Date() : null
         ]
@@ -357,7 +362,7 @@ async function main() {
         [
           id, candidateNumber(row), name.last || '—', name.first || '—', name.middle,
           ids.vacancies.get(row['Vacancy ID']) || (await fallbackVacancy()),
-          str(row['Статус']) || 'Новый', str(row['Телефон']), str(row.Email).toLowerCase(),
+          stage(row['Статус']) || 'Новый', str(row['Телефон']), str(row.Email).toLowerCase(),
           str(row.Telegram), str(row['Telegram URL']), str(row.LinkedIn), str(row.GitHub),
           ids.sources.get(row['Source ID']),
           salary !== null && salary >= 0 && salary <= 10_000_000 ? salary : null,
@@ -418,8 +423,8 @@ async function main() {
         [
           isUuid(str(row['Interview ID'])) ? str(row['Interview ID']) : randomUUID(),
           candidateId, ids.vacancies.get(row['Vacancy ID']) || candidate.vacancy_id,
-          str(row['Этап']) || str(row['From Status']), str(row['From Status']) || str(row['Этап']),
-          str(row['To Status']), ids.templates.get(row['Template ID']), str(row['Шаблон']),
+          stage(row['Этап']) || stage(row['From Status']), stage(row['From Status']) || stage(row['Этап']),
+          stage(row['To Status']), ids.templates.get(row['Template ID']), str(row['Шаблон']),
           ids.responsibles.get(row['Responsible ID']), interviewer.last, interviewer.first, interviewer.middle,
           JSON.stringify(json(row['Вопросы и ответы'], [])), str(row['Комментарий']), str(row['Результат']),
           date(row['Дата']), date(row['Дата изменения']),
@@ -440,7 +445,7 @@ async function main() {
             responsible_name, changed_by_user_id, changed_by_name, changed_by_email, comment, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE($12, now()))`,
         [
-          candidateId, num(row['№ кандидата']), str(row['ФИО']), str(row['From Status']), str(row['To Status']),
+          candidateId, num(row['№ кандидата']), str(row['ФИО']), stage(row['From Status']), stage(row['To Status']),
           ids.responsibles.get(row['Responsible ID']), str(row['Ответственный']),
           ids.users.get(row['Changed By User ID']), str(row['Changed By']), str(row['Changed By Email']),
           str(row['Комментарий']), date(row['Дата'])

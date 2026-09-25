@@ -5,10 +5,7 @@
   </div>
 
   <div class="page-actions">
-    <button class="button button-secondary" onclick="refreshAdminPage(this)">
-      <span class="button-icon">↻</span>
-      <span>Обновить</span>
-    </button>
+    <button class="icon-btn" data-tip="Обновить" aria-label="Обновить" onclick="refreshAdminPage(this)"><svg class="icon"><use href="#i-refresh"/></svg></button>
   </div>
 </div>
 
@@ -22,124 +19,81 @@
   <div class="directory-layout vacancy-directory-layout">
     <div class="admin-list-card directory-table-card">
       <div class="section-title-row">
-        <div>
-          <h3>Вакансии</h3>
-          <p class="muted">Нажмите на строку для редактирования.</p>
-        </div>
-        <span id="vacancyCount" class="counter-badge"></span>
+        <h3>Вакансии</h3>
+        <button class="icon-btn icon-btn-primary" data-tip="Новая вакансия" aria-label="Новая вакансия" onclick="resetVacancyForm()"><svg class="icon"><use href="#i-plus"/></svg></button>
       </div>
-      <div id="vacancyList"></div>
+      <div id="vacancyTable"></div>
     </div>
 
-    <aside id="vacancyForm" class="admin-form-card directory-form-card vacancy-form-card">
+    <aside id="vacancyForm" class="admin-form-card directory-form-card">
       <div class="section-title-row">
         <div>
           <div class="eyebrow">Вакансия</div>
           <h3 id="vacancyFormTitle">Новая вакансия</h3>
         </div>
-        <button class="button button-ghost button-small" onclick="resetVacancyForm()">Сброс</button>
+        <button class="icon-btn" data-tip="Очистить форму" aria-label="Очистить форму" onclick="resetVacancyForm()"><svg class="icon"><use href="#i-reset"/></svg></button>
       </div>
 
       <input id="vacancyId" type="hidden">
 
-      <div class="vacancy-editor-grid">
-        <section class="vacancy-editor-main">
-          <div class="field">
-            <label for="vacancyName">Название *</label>
-            <input id="vacancyName" placeholder="Middle .NET Developer">
-          </div>
-
-          <div class="field">
-            <label for="vacancyStatus">Статус *</label>
-            <select id="vacancyStatus">
-              <option value="Открыта">Открыта</option>
-              <option value="На паузе">На паузе</option>
-              <option value="Закрыта">Закрыта</option>
-            </select>
-          </div>
-
-          <div class="field">
-            <label for="vacancyComment">Комментарий</label>
-            <textarea id="vacancyComment" placeholder="Описание или примечание"></textarea>
-          </div>
-
-          <div class="actions">
-            <button class="button button-primary" onclick="saveVacancyForm(this)">Сохранить вакансию</button>
-          </div>
-        </section>
-
-        <section class="vacancy-editor-templates">
-          <div class="nested-panel-header">
-            <div>
-              <div class="eyebrow">Шаблоны интервью</div>
-              <h4>Вопросы по этапам</h4>
-            </div>
-            <span id="vacancyTemplateCount" class="counter-badge">0</span>
-          </div>
-
-          <div id="vacancyTemplateEmpty" class="empty-state compact">
-            Сначала сохраните или выберите вакансию.
-          </div>
-
-          <div id="templateEditor" hidden>
-            <input id="templateId" type="hidden">
-
-            <div class="field">
-              <label for="templateName">Название шаблона *</label>
-              <input id="templateName" placeholder="Техническое интервью">
-            </div>
-
-            <div class="field">
-              <label for="templateStage">Этап *</label>
-              <select id="templateStage"></select>
-            </div>
-
-            <label class="checkbox-line">
-              <input id="templateRequired" type="checkbox">
-              <span>Обязательный шаблон для перехода с этого этапа</span>
-            </label>
-
-            <div class="field">
-              <div class="field-header">
-                <label>Вопросы</label>
-                <button class="button button-ghost button-small" type="button" onclick="addTemplateQuestion()">＋ Вопрос</button>
-              </div>
-              <div id="templateQuestionsList" class="question-list"></div>
-            </div>
-
-            <div class="actions compact-actions">
-              <button class="button button-ghost" onclick="resetTemplateForm()">Сброс</button>
-              <button class="button button-primary" onclick="saveTemplateForm(this)">Сохранить шаблон</button>
-            </div>
-
-            <div id="vacancyTemplateList" class="template-list"></div>
-          </div>
-        </section>
+      <div class="field">
+        <label for="vacancyName">Название *</label>
+        <input id="vacancyName" placeholder="Middle .NET Developer" oninput="this.classList.remove('input-error')">
+        <small id="vacancyNameError" class="field-error" hidden></small>
       </div>
+
+      <div class="field">
+        <label for="vacancyStatus">Статус *</label>
+        <select id="vacancyStatus">
+          <option value="Открыта">Открыта</option>
+          <option value="На паузе">На паузе</option>
+          <option value="Закрыта">Закрыта</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="vacancyComment">Комментарий</label>
+        <textarea id="vacancyComment" placeholder="Описание или примечание"></textarea>
+      </div>
+
+      <div class="actions">
+        <button id="vacancyDeleteButton" class="icon-btn icon-btn-danger left" data-tip="Удалить вакансию" aria-label="Удалить вакансию" onclick="deleteVacancyUi(value('vacancyId'), this)" hidden><svg class="icon"><use href="#i-trash"/></svg></button>
+        <button class="icon-btn icon-btn-primary" data-tip="Сохранить вакансию" aria-label="Сохранить вакансию" onclick="saveVacancyForm(this)"><svg class="icon"><use href="#i-save"/></svg></button>
+      </div>
+    </aside>
+
+    <aside class="directory-side-card">
+      <div class="section-title-row">
+        <div>
+          <div class="eyebrow">Шаблоны интервью</div>
+          <h3>Вопросы по этапам <span id="vacancyTemplateCount" class="counter-badge">0</span></h3>
+        </div>
+        <button id="templateAddButton" class="icon-btn icon-btn-primary" data-tip="Новый шаблон" aria-label="Новый шаблон" onclick="openTemplateModal()" disabled><svg class="icon"><use href="#i-plus"/></svg></button>
+      </div>
+
+      <div id="vacancyTemplateEmpty" class="empty-state compact">Сначала сохраните или выберите вакансию.</div>
+      <div id="vacancyTemplateList" class="template-list"></div>
     </aside>
   </div>
 </section>
 
 <section id="admin-sources" class="admin-page-section">
   <div class="directory-layout">
-    <div class="admin-list-card directory-table-card directory-table-narrow">
+    <div class="admin-list-card directory-table-card">
       <div class="section-title-row">
-        <div>
-          <h3>Источники</h3>
-          <p class="muted">Нажмите на строку для редактирования.</p>
-        </div>
-        <span id="sourceCount" class="counter-badge"></span>
+        <h3>Источники</h3>
+        <button class="icon-btn icon-btn-primary" data-tip="Новый источник" aria-label="Новый источник" onclick="resetSourceForm()"><svg class="icon"><use href="#i-plus"/></svg></button>
       </div>
-      <div id="sourceList"></div>
+      <div id="sourceTable"></div>
     </div>
 
-    <aside id="sourceForm" class="admin-form-card directory-form-card directory-form-narrow">
+    <aside id="sourceForm" class="admin-form-card directory-form-card">
       <div class="section-title-row">
         <div>
           <div class="eyebrow">Источник</div>
           <h3 id="sourceFormTitle">Новый источник</h3>
         </div>
-        <button class="button button-ghost button-small" onclick="resetSourceForm()">Сброс</button>
+        <button class="icon-btn" data-tip="Очистить форму" aria-label="Очистить форму" onclick="resetSourceForm()"><svg class="icon"><use href="#i-reset"/></svg></button>
       </div>
 
       <input id="sourceId" type="hidden">
@@ -153,7 +107,8 @@
       </div>
 
       <div class="actions">
-        <button class="button button-primary" onclick="saveSourceForm(this)">Сохранить</button>
+        <button id="sourceDeleteButton" class="icon-btn icon-btn-danger left" data-tip="Удалить источник" aria-label="Удалить источник" onclick="deleteSourceUi(value('sourceId'), this)" hidden><svg class="icon"><use href="#i-trash"/></svg></button>
+        <button class="icon-btn icon-btn-primary" data-tip="Сохранить источник" aria-label="Сохранить источник" onclick="saveSourceForm(this)"><svg class="icon"><use href="#i-save"/></svg></button>
       </div>
     </aside>
   </div>
@@ -163,13 +118,10 @@
   <div class="directory-layout">
     <div class="admin-list-card directory-table-card">
       <div class="section-title-row">
-        <div>
-          <h3>Ответственные</h3>
-          <p class="muted">Нажмите на строку для редактирования.</p>
-        </div>
-        <span id="responsibleCount" class="counter-badge"></span>
+        <h3>Ответственные</h3>
+        <button class="icon-btn icon-btn-primary" data-tip="Новый ответственный" aria-label="Новый ответственный" onclick="resetResponsibleForm()"><svg class="icon"><use href="#i-plus"/></svg></button>
       </div>
-      <div id="responsibleList"></div>
+      <div id="responsibleTable"></div>
     </div>
 
     <aside id="responsibleForm" class="admin-form-card directory-form-card">
@@ -178,7 +130,7 @@
           <div class="eyebrow">Ответственный</div>
           <h3 id="responsibleFormTitle">Новый ответственный</h3>
         </div>
-        <button class="button button-ghost button-small" onclick="resetResponsibleForm()">Сброс</button>
+        <button class="icon-btn" data-tip="Очистить форму" aria-label="Очистить форму" onclick="resetResponsibleForm()"><svg class="icon"><use href="#i-reset"/></svg></button>
       </div>
 
       <input id="responsibleId" type="hidden">
@@ -221,8 +173,58 @@
       </div>
 
       <div class="actions">
-        <button class="button button-primary" onclick="saveResponsibleForm(this)">Сохранить</button>
+        <button id="responsibleDeleteButton" class="icon-btn icon-btn-danger left" data-tip="Удалить ответственного" aria-label="Удалить ответственного" onclick="deleteResponsibleUi(value('responsibleId'), this)" hidden><svg class="icon"><use href="#i-trash"/></svg></button>
+        <button class="icon-btn icon-btn-primary" data-tip="Сохранить ответственного" aria-label="Сохранить ответственного" onclick="saveResponsibleForm(this)"><svg class="icon"><use href="#i-save"/></svg></button>
       </div>
     </aside>
   </div>
 </section>
+
+<!-- Переносится в <body> при инициализации: внутри скрытого раздела модальное окно не отобразится. -->
+<div id="templateModal" class="modal modal-top">
+  <div class="panel">
+    <div class="panel-header">
+      <div>
+        <div class="eyebrow">Шаблон интервью</div>
+        <h2 id="templateModalTitle">Новый шаблон</h2>
+        <div id="templateModalVacancy" class="muted"></div>
+      </div>
+      <button class="icon-btn" data-tip="Закрыть" aria-label="Закрыть" onclick="closeTemplateModal()"><svg class="icon"><use href="#i-close"/></svg></button>
+    </div>
+
+    <section id="templateForm" class="form-card form-card-flat">
+      <input id="templateId" type="hidden">
+
+      <div class="form-grid">
+        <div class="field">
+          <label for="templateName">Название шаблона *</label>
+          <input id="templateName" placeholder="Проф. интервью .NET">
+        </div>
+
+        <div class="field">
+          <label for="templateStage">Этап *</label>
+          <select id="templateStage"></select>
+          <small class="field-hint">Вопросы задаются при переводе кандидата на этот этап.</small>
+        </div>
+      </div>
+
+      <label class="checkbox-line">
+        <input id="templateRequired" type="checkbox">
+        <span>Обязательный при переходе на этот этап</span>
+      </label>
+
+      <div class="field">
+        <div class="field-header">
+          <label>Вопросы *</label>
+          <button class="icon-btn icon-btn-sm" type="button" data-tip="Добавить вопрос" aria-label="Добавить вопрос" onclick="addTemplateQuestion()"><svg class="icon icon-sm"><use href="#i-plus"/></svg></button>
+        </div>
+        <div id="templateQuestionsList" class="question-list"></div>
+      </div>
+
+      <div class="actions">
+        <button id="templateDeleteButton" class="icon-btn icon-btn-danger left" data-tip="Удалить шаблон" aria-label="Удалить шаблон" onclick="deleteTemplateUi(value('templateId'), this)" hidden><svg class="icon"><use href="#i-trash"/></svg></button>
+        <button class="icon-btn icon-btn-primary" data-tip="Сохранить шаблон" aria-label="Сохранить шаблон" onclick="saveTemplateForm(this)"><svg class="icon"><use href="#i-save"/></svg></button>
+      </div>
+    </section>
+  </div>
+</div>

@@ -1,0 +1,147 @@
+<script>
+/* UiKit: global tooltip for any element with data-tip="Текст".
+   One position:fixed element on <body>, delegated listeners -> never clipped by overflow/modals. */
+(function(){
+  if(window.__uiKitTooltip){return;}
+  window.__uiKitTooltip=true;
+
+  var GAP=6;
+  var MARGIN=6;
+  var HOVER_DELAY=250;
+  var tip=null;
+  var current=null;
+  var timer=null;
+
+  function ensureTip(){
+    if(!tip){
+      tip=document.createElement('div');
+      tip.className='tooltip';
+      tip.id='uiTooltip';
+      tip.setAttribute('role','tooltip');
+      document.body.appendChild(tip);
+    }
+    return tip;
+  }
+
+  function findTarget(node){
+    while(node&&node.nodeType===1){
+      if(node.hasAttribute('data-tip')){return node;}
+      node=node.parentElement;
+    }
+    return null;
+  }
+
+  function labelIfIconOnly(el){
+    var text=el.getAttribute('data-tip');
+    if(text&&!el.hasAttribute('aria-label')&&!(el.textContent||'').trim()){
+      el.setAttribute('aria-label',text);
+    }
+  }
+
+  function position(el){
+    var t=ensureTip();
+    var r=el.getBoundingClientRect();
+    var tr=t.getBoundingClientRect();
+    var vw=document.documentElement.clientWidth||window.innerWidth;
+    var vh=document.documentElement.clientHeight||window.innerHeight;
+    var below=false;
+    var top=r.top-tr.height-GAP;
+    if(top<MARGIN){
+      top=r.bottom+GAP;
+      below=true;
+      if(top+tr.height>vh-MARGIN){top=Math.max(MARGIN,vh-tr.height-MARGIN);}
+    }
+    var left=r.left+r.width/2-tr.width/2;
+    left=Math.max(MARGIN,Math.min(left,vw-tr.width-MARGIN));
+    t.style.left=Math.round(left)+'px';
+    t.style.top=Math.round(top)+'px';
+    t.classList.toggle('tooltip-below',below);
+  }
+
+  function show(el){
+    clearTimeout(timer);
+    var text=el.getAttribute('data-tip');
+    if(!text||!el.isConnected){hide();return;}
+    labelIfIconOnly(el);
+    var t=ensureTip();
+    t.textContent=text;
+    t.style.left='0px';
+    t.style.top='0px';
+    t.classList.add('tooltip-visible');
+    position(el);
+    current=el;
+  }
+
+  function hide(){
+    clearTimeout(timer);
+    if(tip){tip.classList.remove('tooltip-visible');}
+    current=null;
+  }
+
+  function schedule(el){
+    clearTimeout(timer);
+    if(current){show(el);return;}
+    timer=setTimeout(function(){show(el);},HOVER_DELAY);
+  }
+
+  document.addEventListener('mouseover',function(e){
+    var el=findTarget(e.target);
+    if(el===current&&el){return;}
+    if(el){schedule(el);}
+    else if(current||timer){hide();}
+  });
+
+  document.addEventListener('mouseout',function(e){
+    var el=findTarget(e.target);
+    if(!el){return;}
+    if(e.relatedTarget&&el.contains(e.relatedTarget)){return;}
+    hide();
+  });
+
+  document.addEventListener('focusin',function(e){
+    var el=findTarget(e.target);
+    if(!el){return;}
+    var keyboard=true;
+    try{keyboard=e.target.matches(':focus-visible');}catch(err){}
+    if(keyboard){show(el);}
+  });
+
+  document.addEventListener('focusout',function(){hide();});
+  document.addEventListener('click',hide,true);
+  document.addEventListener('scroll',hide,true);
+  window.addEventListener('resize',hide);
+  window.addEventListener('blur',hide);
+  document.addEventListener('keydown',function(e){if(e.key==='Escape'&&current){hide();}});
+
+  /* Give icon-only [data-tip] controls an accessible name. */
+  function labelAll(){
+    var nodes=document.querySelectorAll('[data-tip]:not([aria-label])');
+    for(var i=0;i<nodes.length;i++){labelIfIconOnly(nodes[i]);}
+  }
+  var pending=false;
+  function queueLabel(){
+    if(pending){return;}
+    pending=true;
+    (window.requestAnimationFrame||setTimeout)(function(){pending=false;labelAll();});
+  }
+  if(window.MutationObserver){
+    new MutationObserver(function(){
+      queueLabel();
+      if(current&&!current.isConnected){hide();}
+    }).observe(document.body,{childList:true,subtree:true});
+  }
+  queueLabel();
+
+  /* Icon markup helper: icon('save') / icon('trash','icon-sm').
+     Defined only if the app scripts don't provide their own. */
+  function iconHtml(name,cls){
+    return '<svg class="icon'+(cls?' '+cls:'')+'" aria-hidden="true" focusable="false"><use href="#i-'+
+      String(name).replace(/[^a-z0-9-]/gi,'')+'"/></svg>';
+  }
+  if(typeof window.icon!=='function'){window.icon=iconHtml;}
+
+  window.UiKit=window.UiKit||{};
+  window.UiKit.hideTooltip=hide;
+  window.UiKit.icon=iconHtml;
+})();
+</script>

@@ -3,6 +3,7 @@
 import * as candidates from './services/candidates.js';
 import * as drafts from './services/drafts.js';
 import * as interviews from './services/interviews.js';
+import * as lists from './services/lists.js';
 import * as references from './services/references.js';
 import * as users from './services/users.js';
 
@@ -56,6 +57,11 @@ export const rpcHandlers = {
   transitionCandidate: (input, { user }) => interviews.transitionCandidate(input, user),
   updateInterview: input => interviews.updateInterview(input),
   deleteInterview: id => interviews.deleteInterview(id),
+
+  // Серверные таблицы админ-панели: фильтры, сортировка и пагинация в БД.
+  listVacancies: input => lists.listVacancies(input),
+  listSources: input => lists.listSources(input),
+  listResponsibles: input => lists.listResponsibles(input),
 
   saveVacancy: input => references.saveVacancy(input),
   deleteVacancy: id => references.deleteVacancy(id),
