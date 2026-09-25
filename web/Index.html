@@ -26,14 +26,26 @@
           <small id="currentUserEmail"></small>
         </span>
       </div>
-      <button id="navCandidates" class="nav-button icon-btn" data-tip="Кандидаты" aria-label="Кандидаты" onclick="navigateTo('candidates')"><svg class="icon"><use href="#i-kanban"/></svg></button>
-      <button id="navAdmin" class="nav-button icon-btn" data-tip="Админ-панель" aria-label="Админ-панель" onclick="navigateTo('admin')"><svg class="icon"><use href="#i-settings"/></svg></button>
       <form method="post" action="/auth/logout" class="logout-form">
         <button type="submit" class="icon-btn" data-tip="Выйти" aria-label="Выйти"><svg class="icon"><use href="#i-logout"/></svg></button>
       </form>
     </nav>
   </header>
 
+  <div class="app-shell">
+    <aside id="sidebar" class="sidebar" aria-label="Основное меню">
+      <nav class="sidebar-nav">
+        <div class="sidebar-section-title"><span>Рекрутинг</span></div>
+        <a class="sidebar-link" href="#/candidates" data-route="candidates"><svg class="icon"><use href="#i-kanban"/></svg><span>Кандидаты</span></a>
+        <a class="sidebar-link" href="#/vacancies" data-route="vacancies"><svg class="icon"><use href="#i-briefcase"/></svg><span>Вакансии</span></a>
+        <div class="sidebar-group-title"><svg class="icon"><use href="#i-settings"/></svg><span>Настройки</span></div>
+        <a class="sidebar-link sidebar-sublink" href="#/settings/sources" data-route="settings/sources"><svg class="icon"><use href="#i-list"/></svg><span>Источники вакансий</span></a>
+        <a class="sidebar-link sidebar-sublink" href="#/settings/responsibles" data-route="settings/responsibles"><svg class="icon"><use href="#i-users"/></svg><span>Ответственные</span></a>
+      </nav>
+      <button id="sidebarToggle" class="icon-btn sidebar-toggle" data-tip="Свернуть меню" aria-label="Свернуть меню" onclick="toggleSidebar()"><svg class="icon"><use href="#i-chevrons-left"/></svg></button>
+    </aside>
+
+    <div class="app-content">
   <main id="viewCandidates" class="page app-view">
     <div class="page-header">
       <div>
@@ -82,6 +94,8 @@
   <main id="viewAdmin" class="page app-view" hidden>
     <?!= include('AdminView'); ?>
   </main>
+    </div>
+  </div>
 
   <div id="candidateModal" class="modal">
     <div class="panel candidate-panel">

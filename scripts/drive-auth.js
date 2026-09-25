@@ -1,7 +1,10 @@
 // Получение GOOGLE_DRIVE_REFRESH_TOKEN для режима GOOGLE_DRIVE_AUTH=oauth.
 //
-//   1. В OAuth-клиенте Google Cloud добавьте Authorized redirect URI:
-//        http://localhost:53682/oauth2callback
+//   1. В OAuth-клиенте Google Cloud должен быть Authorized redirect URI:
+//        http://localhost:53682/oauth2callback (по умолчанию)
+//      Можно использовать уже зарегистрированный адрес входа в приложение —
+//      тогда остановите сервер ATS и укажите его явно:
+//        DRIVE_AUTH_REDIRECT_URI=http://localhost:3000/auth/google/callback
 //   2. npm run drive:auth
 //   3. Откройте ссылку, войдите аккаунтом-владельцем папки «Кандидаты» и разрешите доступ.
 //   4. Скопируйте выведенный refresh token в .env.
@@ -13,8 +16,13 @@ import { randomBytes } from 'node:crypto';
 import { auth } from '@googleapis/drive';
 import { config } from '../server/config.js';
 
-const PORT = 53682;
-const REDIRECT_URI = `http://localhost:${PORT}/oauth2callback`;
+const REDIRECT_URI = process.env.DRIVE_AUTH_REDIRECT_URI || 'http://localhost:53682/oauth2callback';
+const redirect = new URL(REDIRECT_URI);
+
+if (!['localhost', '127.0.0.1'].includes(redirect.hostname)) {
+  console.error('DRIVE_AUTH_REDIRECT_URI должен указывать на localhost.');
+  process.exit(1);
+}
 
 const { clientId, clientSecret } = config.drive;
 
@@ -37,7 +45,7 @@ const url = client.generateAuthUrl({
 const server = http.createServer(async (req, res) => {
   const requestUrl = new URL(req.url, REDIRECT_URI);
 
-  if (requestUrl.pathname !== '/oauth2callback') {
+  if (requestUrl.pathname !== redirect.pathname) {
     res.writeHead(404).end();
     return;
   }
@@ -74,7 +82,7 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, '127.0.0.1', () => {
+server.listen(Number(redirect.port) || 80, 'localhost', () => {
   console.log('Откройте в браузере и войдите аккаунтом-владельцем папки с резюме:\n');
   console.log(url + '\n');
 });
