@@ -174,6 +174,57 @@
   </div>
 </section>
 
+<section id="admin-users" class="admin-page-section">
+  <div class="directory-layout">
+    <div class="admin-list-card directory-table-card">
+      <div class="section-title-row">
+        <h3>Пользователи</h3>
+        <button class="icon-btn icon-btn-primary" data-tip="Добавить пользователя" aria-label="Добавить пользователя" onclick="resetUserForm()"><svg class="icon"><use href="#i-plus"/></svg></button>
+      </div>
+      <div id="userTable"></div>
+    </div>
+
+    <aside id="userForm" class="admin-form-card directory-form-card">
+      <div class="section-title-row">
+        <div>
+          <div class="eyebrow">Пользователь</div>
+          <h3 id="userFormTitle">Новый пользователь</h3>
+        </div>
+        <button class="icon-btn" data-tip="Очистить форму" aria-label="Очистить форму" onclick="resetUserForm()"><svg class="icon"><use href="#i-reset"/></svg></button>
+      </div>
+
+      <input id="userId" type="hidden">
+
+      <div class="field">
+        <label for="userEmail">Email Google Account *</label>
+        <input id="userEmail" type="email" placeholder="name@company.com" oninput="normalizeEmailInput(this)">
+        <small class="field-hint">Любой домен. Пользователь войдёт через Google с этим адресом.</small>
+      </div>
+
+      <div class="field">
+        <label for="userFullName">ФИО</label>
+        <input id="userFullName" placeholder="Подставится из Google при первом входе">
+      </div>
+
+      <label class="checkbox-line">
+        <input id="userActive" type="checkbox" checked onchange="syncUserAdminCheckbox()">
+        <span>Доступ открыт</span>
+      </label>
+
+      <label class="checkbox-line">
+        <input id="userAdmin" type="checkbox" onchange="syncUserAdminCheckbox()">
+        <span>Администратор — управляет доступом пользователей</span>
+      </label>
+
+      <div id="userMeta" class="user-meta" hidden></div>
+
+      <div class="actions">
+        <button class="icon-btn icon-btn-primary" data-tip="Сохранить" aria-label="Сохранить" onclick="saveUserForm(this)"><svg class="icon"><use href="#i-save"/></svg></button>
+      </div>
+    </aside>
+  </div>
+</section>
+
 <!-- Переносится в <body> при инициализации: внутри скрытого раздела модальное окно не отобразится. -->
 <div id="templateModal" class="modal modal-top">
   <div class="panel">

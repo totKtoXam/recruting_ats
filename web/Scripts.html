@@ -254,8 +254,11 @@ function applySidebarState(collapsed){
 const ADMIN_ROUTES={
   'vacancies':{section:'vacancies',title:'Вакансии',description:'Вакансии и шаблоны интервью по этапам.'},
   'settings/sources':{section:'sources',title:'Источники вакансий',description:'Откуда приходят кандидаты.'},
-  'settings/responsibles':{section:'responsibles',title:'Ответственные',description:'Рекрутеры, HR и проф. интервьюверы с доступом к этапам.'}
+  'settings/responsibles':{section:'responsibles',title:'Ответственные',description:'Рекрутеры, HR и проф. интервьюверы с доступом к этапам.'},
+  'settings/users':{section:'users',title:'Пользователи',description:'Войти может любой Google Account, работать в ATS — только тот, кому открыт доступ.',adminOnly:true}
 };
+
+function isAdminUser(){return !!(state.currentUser&&state.currentUser.isAdmin)}
 
 function initRouter(){
   window.addEventListener('hashchange',applyRoute);
@@ -274,6 +277,10 @@ function getRoute(){
     return {page:'candidates',path:'candidates',candidateId:decodeURIComponent(raw.slice('candidate/'.length))};
   }
   const path=raw==='admin'?'vacancies':raw;
+  // Раздел только для администраторов; до загрузки профиля решение откладывается.
+  if(ADMIN_ROUTES[path]&&ADMIN_ROUTES[path].adminOnly&&state.currentUser&&!isAdminUser()){
+    return {page:'candidates',path:'candidates',candidateId:''};
+  }
   if(ADMIN_ROUTES[path]){
     return {page:'admin',path,section:ADMIN_ROUTES[path].section,candidateId:''};
   }
@@ -367,6 +374,12 @@ async function maybeOpenCandidateFromRoute(){
 }
 
 function renderCurrentUser(){
+  const usersLink=el('sidebarUsersLink');
+  if(usersLink)usersLink.hidden=!isAdminUser();
+  if(state.currentUser&&!isAdminUser()&&location.hash==='#/settings/users'){
+    history.replaceState(null,'','#/candidates');
+    applyRoute();
+  }
   const user=state.currentUser;
   const badge=el('currentUserBadge');
   if(!badge)return;

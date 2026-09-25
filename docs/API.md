@@ -312,6 +312,8 @@ Cookie: ats.sid=...
 | `saveSource` / `deleteSource` | объект / id | Источники |
 | `saveResponsible` / `deleteResponsible` | объект / id | Ответственные |
 | `saveInterviewTemplate` / `deleteInterviewTemplate` | объект / id | Шаблоны интервью; `questions` — массив `{ text, answers }` (answers — вероятные ответы) |
+| `listUsers` | как у `list*` | Пользователи и статусы доступа (`active` / `pending` / `disabled`). **Только администраторы**, иначе `403` |
+| `saveUser` | `{ id?, email, fullName, isActive, isAdmin }` | Добавить пользователя по email или открыть/закрыть доступ. **Только администраторы**; нельзя отключить себя и последнего администратора |
 
 Пример вызова из браузера (сессия уже есть):
 

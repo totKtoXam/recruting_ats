@@ -5,7 +5,7 @@
 import { APP_CONFIG } from '../config.js';
 import { db } from '../db/pool.js';
 import { clean } from '../lib/validation.js';
-import { toResponsible, toSource, toVacancy } from './mappers.js';
+import { toPublicUser, toResponsible, toSource, toVacancy } from './mappers.js';
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
@@ -174,6 +174,35 @@ const RESPONSIBLES = {
   })
 };
 
+const USER_STATUS_SQL = `CASE WHEN u.is_active THEN 'active'
+  WHEN u.access_granted_at IS NOT NULL THEN 'disabled' ELSE 'pending' END`;
+
+const USERS = {
+  select: 'u.*',
+  from: 'users u',
+  where: [],
+  filters: {
+    email: { type: 'text', sql: 'u.email' },
+    name: { type: 'text', sql: 'u.full_name' },
+    status: { type: 'eq', sql: USER_STATUS_SQL, allowed: ['active', 'pending', 'disabled'] },
+    admin: { type: 'eq', sql: `CASE WHEN u.is_admin THEN 'yes' ELSE 'no' END`, allowed: ['yes', 'no'] }
+  },
+  sorts: {
+    email: 'lower(u.email)',
+    name: `lower(nullif(u.full_name, ''))`,
+    // Сначала ожидающие доступа — им нужно решение администратора.
+    status: `array_position(ARRAY['pending', 'active', 'disabled'], ${USER_STATUS_SQL})`,
+    admin: 'u.is_admin',
+    lastLogin: 'u.last_login_at',
+    requested: 'u.access_requested_at',
+    createdAt: 'u.created_at'
+  },
+  defaultSort: { key: 'status', dir: 'ASC' },
+  tieBreaker: 'u.email',
+  map: toPublicUser
+};
+
 export const listVacancies = input => queryList(VACANCIES, input);
+export const listUsers = input => queryList(USERS, input);
 export const listSources = input => queryList(SOURCES, input);
 export const listResponsibles = input => queryList(RESPONSIBLES, input);

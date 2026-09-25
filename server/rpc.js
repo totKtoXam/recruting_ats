@@ -63,6 +63,13 @@ export const rpcHandlers = {
   listSources: input => lists.listSources(input),
   listResponsibles: input => lists.listResponsibles(input),
 
+  // Управление доступом — только администраторы.
+  listUsers: (input, { user }) => {
+    users.requireAdmin(user);
+    return lists.listUsers(input);
+  },
+  saveUser: (input, { user }) => users.saveUser(input, user),
+
   saveVacancy: input => references.saveVacancy(input),
   deleteVacancy: id => references.deleteVacancy(id),
   saveSource: input => references.saveSource(input),

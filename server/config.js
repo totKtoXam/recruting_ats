@@ -73,6 +73,8 @@ export const config = Object.freeze({
     mode: env('AUTH_MODE', 'google'),
     googleClientId: env('GOOGLE_CLIENT_ID'),
     googleClientSecret: env('GOOGLE_CLIENT_SECRET'),
+    // Администраторы ATS: всегда имеют доступ и управляют доступом других пользователей.
+    adminEmails: list('AUTH_ADMIN_EMAILS'),
     allowedDomains: list('AUTH_ALLOWED_DOMAINS'),
     allowedEmails: list('AUTH_ALLOWED_EMAILS')
   }),
@@ -118,8 +120,12 @@ export function assertProductionConfig() {
     problems.push('Не заданы GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET.');
   }
 
-  if (!config.auth.allowedDomains.length && !config.auth.allowedEmails.length) {
-    problems.push('Задайте AUTH_ALLOWED_DOMAINS и/или AUTH_ALLOWED_EMAILS: без allowlist войти смог бы любой Google Account.');
+  if (
+    !config.auth.adminEmails.length &&
+    !config.auth.allowedDomains.length &&
+    !config.auth.allowedEmails.length
+  ) {
+    problems.push('Задайте AUTH_ADMIN_EMAILS: без администратора некому выдавать доступ пользователям.');
   }
 
   if (config.drive.apiUrl) {
