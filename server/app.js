@@ -34,12 +34,15 @@ function renderIndex(query) {
   const initialDraftToken = typeof query.draft === 'string' ? query.draft : '';
 
   return template
+    .replaceAll('<?= basePath ?>', escapeJsString(config.basePath))
     .replace('<?= initialRoute ?>', escapeJsString(initialRoute))
     .replace('<?= initialDraftToken ?>', escapeJsString(initialDraftToken));
 }
 
 export function createApp() {
   const app = express();
+  // Все маршруты монтируются под config.basePath (например, /recruiting за nginx).
+  const router = express.Router();
   const PgStore = connectPgSimple(session);
 
   app.disable('x-powered-by');
@@ -48,7 +51,9 @@ export function createApp() {
     app.set('trust proxy', 1);
   }
 
-  app.use((_req, res, next) => {
+  app.use(config.basePath || '/', router);
+
+  router.use((_req, res, next) => {
     res.set({
       'X-Content-Type-Options': 'nosniff',
       'Referrer-Policy': 'same-origin'
@@ -56,7 +61,7 @@ export function createApp() {
     next();
   });
 
-  app.get('/healthz', async (_req, res) => {
+  router.get('/healthz', async (_req, res) => {
     try {
       await pool.query('SELECT 1');
       res.json({ ok: true });
@@ -66,9 +71,9 @@ export function createApp() {
   });
 
   // Intake API авторизуется ключом и не использует cookie-сессию.
-  app.use('/intake', intakeRouter());
+  router.use('/intake', intakeRouter());
 
-  app.use(
+  router.use(
     session({
       name: 'ats.sid',
       store: new PgStore({ pool, tableName: 'session', createTableIfMissing: false }),
@@ -79,17 +84,18 @@ export function createApp() {
       cookie: {
         httpOnly: true,
         sameSite: 'lax',
+        path: config.basePath || '/',
         secure: config.env === 'production',
         maxAge: config.sessionMaxAgeDays * 24 * 60 * 60 * 1000
       }
     })
   );
 
-  app.use(loadUser);
-  app.use(authRouter());
-  app.use(filesRouter());
+  router.use(loadUser);
+  router.use(authRouter());
+  router.use(filesRouter());
 
-  app.post(
+  router.post(
     '/api/rpc/:name',
     requireUserApi,
     express.json({ limit: '20mb' }),
@@ -124,12 +130,12 @@ export function createApp() {
     }
   );
 
-  app.get('/', requireUserPage, (req, res) => {
+  router.get('/', requireUserPage, (req, res) => {
     res.set('Cache-Control', 'no-store');
     res.type('html').send(renderIndex(req.query));
   });
 
-  app.use((error, req, res, _next) => {
+  router.use((error, req, res, _next) => {
     // Ошибки express.json: невалидный JSON и превышение лимита тела запроса.
     const bodyErrors = {
       'entity.parse.failed': [400, 'Body должен быть корректным JSON.'],

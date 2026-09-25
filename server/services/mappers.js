@@ -1,10 +1,11 @@
 // Преобразование строк PostgreSQL в DTO с ключами, которые UI исторически
 // получал из Google Sheets. Контракт фронтенда при этом не меняется.
+import { config } from '../config.js';
 import { formatDateTime } from '../lib/dates.js';
 import { composeFullName } from '../lib/validation.js';
 
-export const fileUrl = fileId => (fileId ? `/files/${fileId}` : '');
-export const candidateFolderUrl = candidateId => `/candidates/${candidateId}/files`;
+export const fileUrl = fileId => (fileId ? `${config.basePath}/files/${fileId}` : '');
+export const candidateFolderUrl = candidateId => `${config.basePath}/candidates/${candidateId}/files`;
 
 function softDeleteFields(row) {
   return {

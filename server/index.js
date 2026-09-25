@@ -13,7 +13,8 @@ async function main() {
   const folder = await verifyDriveAccess();
   console.log(`Google Drive: папка «${folder.name}» доступна`);
 
-  const server = createApp().listen(config.port, () => {
+  const listenArgs = config.host ? [config.port, config.host] : [config.port];
+  const server = createApp().listen(...listenArgs, () => {
     console.log(`Recruiting ATS listening on ${config.publicUrl} (port ${config.port}, auth: ${config.auth.mode})`);
   });
 

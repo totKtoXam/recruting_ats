@@ -58,7 +58,7 @@ export async function createCandidateDraft(input = {}) {
       webAppUrl: config.publicUrl,
       expiresAt: expiresAt.toISOString(),
       resume: resumeFile
-        ? { id: resumeFile.id, name: resumeFile.original_name, url: config.publicUrl + fileUrl(resumeFile.id) }
+        ? { id: resumeFile.id, name: resumeFile.original_name, url: config.publicOrigin + fileUrl(resumeFile.id) }
         : null
     };
   } catch (error) {

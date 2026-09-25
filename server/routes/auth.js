@@ -10,24 +10,27 @@ const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GOOGLE_USERINFO_URL = 'https://openidconnect.googleapis.com/v1/userinfo';
 
 const redirectUri = () => `${config.publicUrl}/auth/google/callback`;
+const appPath = path => `${config.basePath}${path}`;
 
 // Разрешаем возвращаться только на относительные пути этого приложения.
 function safeReturnTo(value) {
   const path = String(value || '');
-  return path.startsWith('/') && !path.startsWith('//') && !path.startsWith('/\\') ? path : '/';
+  const isLocal = path.startsWith('/') && !path.startsWith('//') && !path.startsWith('/\\');
+  const insideApp = !config.basePath || path === config.basePath || path.startsWith(config.basePath + '/');
+  return isLocal && insideApp ? path : appPath('/');
 }
 
-function loginPage({ error = '', next = '/' } = {}) {
+function loginPage({ error = '', next = appPath('/') } = {}) {
   const nextField = `<input type="hidden" name="next" value="${escapeHtml(next)}">`;
   const body =
     config.auth.mode === 'dev'
-      ? `<form method="post" action="/auth/dev-login">
+      ? `<form method="post" action="${appPath('/auth/dev-login')}">
            ${nextField}
            <input name="email" type="email" placeholder="email" required autofocus>
            <input name="name" placeholder="ФИО (необязательно)">
            <button type="submit">Войти (dev)</button>
          </form>`
-      : `<a class="button" href="/auth/google?next=${encodeURIComponent(next)}">Войти через Google</a>`;
+      : `<a class="button" href="${appPath('/auth/google')}?next=${encodeURIComponent(next)}">Войти через Google</a>`;
 
   return `<!doctype html>
 <html lang="ru"><head><meta charset="utf-8">
@@ -75,8 +78,8 @@ export function authRouter() {
 
   router.post('/auth/logout', (req, res) => {
     req.session.destroy(() => {
-      res.clearCookie('ats.sid');
-      res.redirect('/auth/login');
+      res.clearCookie('ats.sid', { path: config.basePath || '/' });
+      res.redirect(appPath('/auth/login'));
     });
   });
 
@@ -221,7 +224,7 @@ export function requireUserApi(req, res, next) {
 
 export function requireUserPage(req, res, next) {
   if (!req.user) {
-    return res.redirect(`/auth/login?next=${encodeURIComponent(req.originalUrl)}`);
+    return res.redirect(`${appPath('/auth/login')}?next=${encodeURIComponent(req.originalUrl)}`);
   }
   next();
 }

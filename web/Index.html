@@ -27,7 +27,7 @@
       </div>
       <button id="navCandidates" class="nav-button" onclick="navigateTo('candidates')">Кандидаты</button>
       <button id="navAdmin" class="nav-button" onclick="navigateTo('admin')">Админ-панель</button>
-      <form method="post" action="/auth/logout" class="logout-form">
+      <form method="post" action="<?= basePath ?>/auth/logout" class="logout-form">
         <button type="submit" class="nav-button">Выйти</button>
       </form>
     </nav>
@@ -380,6 +380,7 @@
   </div>
 
   <script>
+    window.__BASE_PATH__ = '<?= basePath ?>';
     window.__INITIAL_ROUTE__ = '<?= initialRoute ?>';
     window.__INITIAL_DRAFT_TOKEN__ = '<?= initialDraftToken ?>';
   </script>

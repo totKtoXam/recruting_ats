@@ -47,10 +47,17 @@ export const APP_CONFIG = Object.freeze({
   LAST_LOGIN_THROTTLE_MINUTES: 30
 });
 
+const publicUrl = new URL(env('PUBLIC_URL', 'http://localhost:3000'));
+
 export const config = Object.freeze({
   env: env('NODE_ENV', 'development'),
   port: Number(env('PORT', '3000')),
-  publicUrl: env('PUBLIC_URL', 'http://localhost:3000').replace(/\/$/, ''),
+  // Пустой HOST — слушать все интерфейсы; за nginx лучше 127.0.0.1.
+  host: env('HOST'),
+  publicUrl: publicUrl.href.replace(/\/$/, ''),
+  publicOrigin: publicUrl.origin,
+  // Префикс пути из PUBLIC_URL (https://example.com/recruiting → /recruiting); '' — приложение в корне.
+  basePath: publicUrl.pathname.replace(/\/+$/, ''),
   timeZone: env('APP_TIMEZONE', 'Asia/Almaty'),
   trustProxy: env('TRUST_PROXY', 'false') === 'true',
 
