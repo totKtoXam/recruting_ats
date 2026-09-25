@@ -162,7 +162,8 @@ Unit-тесты на `node:test` лежат в `test/`.
 |---|---|---|
 | `NODE_ENV` | `development` | `production` включает secure cookie, кэш шаблона и проверку конфигурации при старте. |
 | `PORT` | `3000` | Порт HTTP-сервера. |
-| `PUBLIC_URL` | `http://localhost:3000` | Публичный URL приложения без завершающего `/`. Используется в OAuth redirect URI и ссылках черновиков. |
+| `HOST` | — | Адрес, на котором слушает сервер (за nginx на той же машине — `127.0.0.1`). По умолчанию — все интерфейсы. |
+| `PUBLIC_URL` | `http://localhost:3000` | Публичный URL приложения без завершающего `/`. Используется в OAuth redirect URI и ссылках черновиков. Может содержать путь (`https://portal.devexpert.kz/recruiting`) — тогда все маршруты, cookie сессии и ссылки работают под этим префиксом. |
 | `APP_TIMEZONE` | `Asia/Almaty` | Часовой пояс для отображения дат. |
 | `TRUST_PROXY` | `false` | `true`, если приложение стоит за reverse proxy / load balancer с HTTPS. |
 | `DATABASE_URL` | `postgres://ats:ats@localhost:5432/ats` | Строка подключения к PostgreSQL. |
@@ -285,6 +286,10 @@ docker compose exec postgres psql -U ats -d ats
 
 ## Deploy
 
+### Свой сервер (systemd + nginx + GitHub Actions)
+
+Production на `https://portal.devexpert.kz/recruiting`: systemd-сервис за nginx, выкладка через self-hosted runner с проверкой healthcheck и автооткатом. Инструкция — [`deploy/README.md`](deploy/README.md).
+
 ### Render (бесплатно, без карты)
 
 В репозитории есть Blueprint [`render.yaml`](render.yaml): Node-сервис на бесплатном тарифе Render, деплой при каждом push в `main`. Банковская карта не нужна. Бесплатный сервис засыпает через ~15 минут без запросов, и первое открытие после сна занимает 30–60 секунд.
@@ -377,7 +382,7 @@ ATS_API_KEY=...
 npm run migrate
 ```
 
-`GET /healthz` возвращает `{"ok":true}`, если приложение доступно и отвечает БД, иначе `503`.
+`GET /healthz` (с префиксом из `PUBLIC_URL`, например `/recruiting/healthz`) возвращает `{"ok":true}`, если приложение доступно и отвечает БД, иначе `503`.
 
 ### Reverse proxy и HTTPS
 
@@ -534,6 +539,7 @@ scripts/
   cleanup-drafts.js   очистка черновиков
   drive-auth.js       получение refresh token для Google Drive (npm run drive:auth)
   deploy-cloud-run.sh деплой в Google Cloud Run
+deploy/               свой сервер: setup.sh, deploy.sh, systemd-юнит, nginx, шаблон env
 skills/
   recruiting-ats-resume/  Skill и OpenAPI для AI-ассистента
 test/                 unit-тесты (node:test)
@@ -541,6 +547,7 @@ docs/API.md           документация Resume Intake API и RPC
 Dockerfile
 docker-compose.yml    postgres и app (профиль app)
 .github/workflows/ci.yml
+.github/workflows/deploy.yml
 ```
 
 ## npm-скрипты
@@ -563,7 +570,7 @@ Workflow `.github/workflows/ci.yml` запускается на push и pull req
 2. применение миграций к чистому PostgreSQL 17 (service container);
 3. сборка Docker-образа (без публикации).
 
-Автоматический deploy не настроен: выкладка образа зависит от выбранной инфраструктуры.
+Workflow `.github/workflows/deploy.yml` после зелёного CI на push в `main` выкладывает приложение на `portal.devexpert.kz` через self-hosted runner (см. [`deploy/README.md`](deploy/README.md)). Ручной запуск — Actions → Deploy → Run workflow.
 
 ## Безопасность
 

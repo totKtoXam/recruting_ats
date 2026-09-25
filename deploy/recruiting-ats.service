@@ -1,0 +1,29 @@
+[Unit]
+Description=Recruiting ATS
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=recruiting
+Group=recruiting
+# current — симлинк на активный релиз; deploy.sh переключает его и перезапускает сервис.
+WorkingDirectory=/opt/recruiting-ats/current
+EnvironmentFile=/etc/recruiting-ats/env
+ExecStart=/usr/bin/node server/index.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

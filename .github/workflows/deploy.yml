@@ -1,0 +1,43 @@
+name: Deploy
+
+# Выкладка на portal.devexpert.kz после зелёного CI на main.
+# Job выполняется на self-hosted runner на самом сервере (метка recruiting-ats):
+# сервер в закрытой сети, GitHub-hosted runner до него не достаёт.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to portal.devexpert.kz
+    # Только push в main этого репозитория (не PR и не форки) или ручной запуск на main.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: [self-hosted, recruiting-ats]
+    environment:
+      name: production
+      url: https://portal.devexpert.kz/recruiting
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Deploy
+        run: bash deploy/deploy.sh
+        env:
+          HEALTH_URL: ${{ vars.HEALTH_URL || 'http://127.0.0.1:3000/recruiting/healthz' }}
