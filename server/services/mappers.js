@@ -53,7 +53,28 @@ export function toResponsible(row) {
   };
 }
 
+// Вопрос шаблона: { text, answers } — текст и список вероятных ответов.
+// Старый формат (строка) приводится к объекту.
+export function normalizeTemplateQuestions(questions) {
+  return (Array.isArray(questions) ? questions : [])
+    .map(question => {
+      const item = typeof question === 'string' ? { text: question } : question || {};
+      const text = String(item.text ?? '').trim();
+      const answers = [
+        ...new Set(
+          (Array.isArray(item.answers) ? item.answers : [])
+            .map(answer => String(answer ?? '').trim())
+            .filter(Boolean)
+        )
+      ];
+      return { text, answers };
+    })
+    .filter(question => question.text);
+}
+
 export function toTemplate(row) {
+  const questions = normalizeTemplateQuestions(row.questions);
+
   return {
     'Template ID': row.id,
     '№': row.number,
@@ -62,9 +83,9 @@ export function toTemplate(row) {
     'Вакансия': row.vacancy_name || '',
     'Этап': row.stage,
     'Обязательный': row.required,
-    'Вопросы': JSON.stringify(row.questions || []),
+    'Вопросы': JSON.stringify(questions),
     required: row.required,
-    questions: row.questions || [],
+    questions,
     ...softDeleteFields(row)
   };
 }
@@ -87,6 +108,12 @@ export function toResumeVersion(row) {
     name: row.original_name,
     uploadedAt: formatDateTime(row.uploaded_at)
   };
+}
+
+function rejectedByLabel(row) {
+  if (!row.rejected_at) return '';
+  if (row.rejected_by_type === 'candidate') return 'Кандидат';
+  return row.rejected_by_responsible_name || '';
 }
 
 // row — результат CANDIDATE_SELECT; resumeVersions передаются только для полной карточки.
@@ -120,7 +147,7 @@ export function toCandidate(row, resumeVersions) {
     'HR Responsible ID': row.hr_responsible_id,
     'Ответственный HR': row.hr_responsible_name || '',
     'Tech Interviewer ID': row.tech_interviewer_id,
-    'Ответственный тех. интервьювер': row.tech_interviewer_name || '',
+    'Ответственный проф. интервьювер': row.tech_interviewer_name || '',
     'Резюме': latestResumeUrl,
     'Resume File ID': row.latest_resume_file_id || '',
     'Папка кандидата': candidateFolderUrl(row.id),
@@ -130,6 +157,18 @@ export function toCandidate(row, resumeVersions) {
     'Архивирован': archived,
     'Дата архивации': formatDateTime(row.archived_at),
     'Причина отказа': row.rejection_reason,
+    'Комментарий к отказу': row.rejection_comment || '',
+    'Кем отказано': rejectedByLabel(row),
+    'Дата отказа': formatDateTime(row.rejected_at),
+    rejection: row.rejected_at
+      ? {
+          fromStatus: row.rejected_from_status || '',
+          byType: row.rejected_by_type || '',
+          byResponsibleId: row.rejected_by_responsible_id || '',
+          reason: row.rejection_reason || '',
+          comment: row.rejection_comment || ''
+        }
+      : null,
     archived
   };
 
@@ -196,6 +235,7 @@ export function toTransitionLogEntry(row) {
     'Changed By': row.changed_by_name,
     'Changed By Email': row.changed_by_email,
     'Комментарий': row.comment,
+    details: row.details || null,
     'Дата': formatDateTime(row.created_at)
   };
 }

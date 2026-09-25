@@ -9,7 +9,13 @@ import {
   toBoolean,
   validateEmail
 } from '../lib/validation.js';
-import { toResponsible, toSource, toTemplate, toVacancy } from './mappers.js';
+import {
+  normalizeTemplateQuestions,
+  toResponsible,
+  toSource,
+  toTemplate,
+  toVacancy
+} from './mappers.js';
 
 const TEMPLATE_SELECT = `
   SELECT t.*, v.name AS vacancy_name
@@ -38,6 +44,17 @@ export async function saveVacancy(input = {}) {
 
   if (!APP_CONFIG.VACANCY_STATUSES.includes(status)) {
     fail('Некорректный статус вакансии.');
+  }
+
+  // Дополнительно гарантируется уникальным индексом vacancies_name_active_uq.
+  const duplicate = await db.one(
+    `SELECT number FROM vacancies
+     WHERE lower(btrim(name)) = lower($1) AND deleted_at IS NULL AND id IS DISTINCT FROM $2`,
+    [name, id]
+  );
+
+  if (duplicate) {
+    fail(`Вакансия с названием «${name}» уже существует (№${duplicate.number}).`, 409);
   }
 
   const row = id
@@ -246,9 +263,7 @@ export async function saveInterviewTemplate(input = {}) {
   const vacancyId = optionalUuid(input.vacancyId, 'Вакансия не найдена.');
   const stage = clean(input.stage);
   const required = toBoolean(input.required);
-  const questions = Array.isArray(input.questions)
-    ? input.questions.map(clean).filter(Boolean)
-    : [];
+  const questions = normalizeTemplateQuestions(input.questions);
 
   if (!name) {
     fail('Название шаблона обязательно.');
@@ -346,6 +361,13 @@ export async function getReferenceData() {
     interviewTemplates,
     dictionaries,
     transitions: APP_CONFIG.TRANSITIONS,
-    pipelineStatuses: APP_CONFIG.PIPELINE_STATUSES
+    pipelineStatuses: APP_CONFIG.PIPELINE_STATUSES,
+    rejectedStatus: APP_CONFIG.REJECTED_STATUS,
+    profInterviewStatus: APP_CONFIG.PROF_INTERVIEW_STATUS,
+    rejectionReasons: {
+      candidate: dictionaries[APP_CONFIG.REJECTION_REASON_CATEGORIES.candidate] || [],
+      responsible: dictionaries[APP_CONFIG.REJECTION_REASON_CATEGORIES.responsible] || []
+    },
+    otherReason: APP_CONFIG.OTHER_REASON
   };
 }

@@ -10,36 +10,44 @@ function list(name) {
     .filter(Boolean);
 }
 
-export const APP_CONFIG = Object.freeze({
-  DEFAULT_STATUSES: Object.freeze([
-    'Новый',
-    'HR screening',
-    'Техническое интервью',
-    'Финальное интервью',
-    'Offer',
-    'Hired',
-    'Отказ'
-  ]),
+const PROF_INTERVIEW = 'Проф. интервью';
+const REJECTED = 'Отказано';
 
+export const APP_CONFIG = Object.freeze({
+  PROF_INTERVIEW_STATUS: PROF_INTERVIEW,
+
+  // Этапы воронки: доступы ответственных и шаблоны интервью привязываются к ним.
   PIPELINE_STATUSES: Object.freeze([
     'Новый',
     'HR screening',
-    'Техническое интервью',
+    PROF_INTERVIEW,
     'Финальное интервью',
     'Offer',
     'Hired'
   ]),
 
+  // В «Отказано» можно перевести с любого этапа воронки; вернуть — только
+  // на этап, с которого отказали (candidates.rejected_from_status).
+  REJECTED_STATUS: REJECTED,
+
   VACANCY_STATUSES: Object.freeze(['Открыта', 'На паузе', 'Закрыта']),
 
   TRANSITIONS: Object.freeze({
-    'Новый': ['HR screening'],
-    'HR screening': ['Новый', 'Техническое интервью'],
-    'Техническое интервью': ['HR screening', 'Финальное интервью'],
-    'Финальное интервью': ['Техническое интервью', 'Offer'],
-    'Offer': ['Финальное интервью', 'Hired'],
-    'Hired': ['Offer']
+    'Новый': ['HR screening', REJECTED],
+    'HR screening': ['Новый', PROF_INTERVIEW, REJECTED],
+    [PROF_INTERVIEW]: ['HR screening', 'Финальное интервью', REJECTED],
+    'Финальное интервью': [PROF_INTERVIEW, 'Offer', REJECTED],
+    'Offer': ['Финальное интервью', 'Hired', REJECTED],
+    'Hired': ['Offer', REJECTED]
   }),
+
+  REJECTED_BY_CANDIDATE: 'candidate',
+  REJECTED_BY_RESPONSIBLE: 'responsible',
+  REJECTION_REASON_CATEGORIES: Object.freeze({
+    candidate: 'Причины отказа: кандидат',
+    responsible: 'Причины отказа: компания'
+  }),
+  OTHER_REASON: 'Другое',
 
   MAX_RESUME_BYTES: 10 * 1024 * 1024,
   ALLOWED_RESUME_EXTENSIONS: Object.freeze(['pdf', 'doc', 'docx']),

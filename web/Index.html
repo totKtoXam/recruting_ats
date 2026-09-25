@@ -7,6 +7,7 @@
   <?!= include('Styles'); ?>
 </head>
 <body>
+  <?!= include('Icons'); ?>
   <header class="topbar">
     <div class="brand">
       <div class="brand-mark">R</div>
@@ -25,10 +26,10 @@
           <small id="currentUserEmail"></small>
         </span>
       </div>
-      <button id="navCandidates" class="nav-button" onclick="navigateTo('candidates')">Кандидаты</button>
-      <button id="navAdmin" class="nav-button" onclick="navigateTo('admin')">Админ-панель</button>
+      <button id="navCandidates" class="nav-button icon-btn" data-tip="Кандидаты" aria-label="Кандидаты" onclick="navigateTo('candidates')"><svg class="icon"><use href="#i-kanban"/></svg></button>
+      <button id="navAdmin" class="nav-button icon-btn" data-tip="Админ-панель" aria-label="Админ-панель" onclick="navigateTo('admin')"><svg class="icon"><use href="#i-settings"/></svg></button>
       <form method="post" action="/auth/logout" class="logout-form">
-        <button type="submit" class="nav-button">Выйти</button>
+        <button type="submit" class="icon-btn" data-tip="Выйти" aria-label="Выйти"><svg class="icon"><use href="#i-logout"/></svg></button>
       </form>
     </nav>
   </header>
@@ -41,14 +42,8 @@
       </div>
 
       <div class="page-actions">
-        <button class="button button-secondary" onclick="refreshCandidatesPage(this)">
-          <span class="button-icon">↻</span>
-          <span>Обновить</span>
-        </button>
-        <button class="button button-primary" onclick="openCandidate()">
-          <span class="button-icon">＋</span>
-          <span>Новый кандидат</span>
-        </button>
+        <button class="icon-btn" data-tip="Обновить" aria-label="Обновить" onclick="refreshCandidatesPage(this)"><svg class="icon"><use href="#i-refresh"/></svg></button>
+        <button class="icon-btn icon-btn-primary" data-tip="Новый кандидат" aria-label="Новый кандидат" onclick="openCandidate()"><svg class="icon"><use href="#i-plus"/></svg></button>
       </div>
     </div>
 
@@ -102,17 +97,10 @@
         </div>
 
         <div class="candidate-header-actions">
-          <button id="shareCandidateButton" class="button button-secondary" onclick="copyCandidateLink(this)" hidden>
-            <span>🔗</span>
-            <span>Поделиться</span>
-          </button>
-          <button id="archiveCandidateButton" class="button button-danger" onclick="archiveCurrentCandidate(this)" hidden>
-            Архивировать
-          </button>
-          <button class="button button-primary" onclick="saveCandidateForm(this)">
-            Сохранить
-          </button>
-          <button class="icon-close" onclick="closeCandidate()" aria-label="Закрыть">×</button>
+          <button id="shareCandidateButton" class="icon-btn" data-tip="Скопировать ссылку" aria-label="Скопировать ссылку" onclick="copyCandidateLink(this)" hidden><svg class="icon"><use href="#i-share"/></svg></button>
+          <button id="archiveCandidateButton" class="icon-btn icon-btn-danger" data-tip="Архивировать" aria-label="Архивировать" onclick="archiveCurrentCandidate(this)" hidden><svg class="icon"><use href="#i-archive"/></svg></button>
+          <button class="icon-btn icon-btn-primary" data-tip="Сохранить" aria-label="Сохранить" onclick="saveCandidateForm(this)"><svg class="icon"><use href="#i-save"/></svg></button>
+          <button class="icon-btn" data-tip="Закрыть" aria-label="Закрыть" onclick="closeCandidate()"><svg class="icon"><use href="#i-close"/></svg></button>
         </div>
       </div>
 
@@ -127,6 +115,8 @@
               <p>ФИО, контакты и назначение.</p>
             </div>
           </div>
+
+          <div id="candidateRejectedInfo" class="rejected-info" hidden></div>
 
           <div class="candidate-fields">
             <div class="name-grid">
@@ -161,7 +151,7 @@
             </div>
 
             <div class="field">
-              <label>Ответственный тех. интервьювер *</label>
+              <label>Проф. интервьювер *</label>
               <select id="candidateTechInterviewer"></select>
             </div>
 
@@ -248,7 +238,7 @@
                 accept=".pdf,.doc,.docx"
                 onchange="renderSelectedResumeFile()"
               >
-              <span class="file-drop-icon">⇧</span>
+              <span class="file-drop-icon"><svg class="icon"><use href="#i-upload"/></svg></span>
               <span>
                 <strong>Выберите файл</strong>
                 <small>PDF / DOC / DOCX до 10 МБ</small>
@@ -272,7 +262,7 @@
           <div class="field">
             <div class="field-header">
               <label>Иные ссылки</label>
-              <button class="button button-ghost button-small" type="button" onclick="addCandidateLink()">＋ Добавить</button>
+              <button class="icon-btn icon-btn-sm" type="button" data-tip="Добавить ссылку" aria-label="Добавить ссылку" onclick="addCandidateLink()"><svg class="icon"><use href="#i-plus"/></svg></button>
             </div>
             <div id="candidateLinks"></div>
           </div>
@@ -296,10 +286,10 @@
       <div class="panel-header">
         <div>
           <div class="eyebrow">Переход этапа</div>
-          <h2>Результат интервью</h2>
+          <h2>Результат этапа</h2>
           <div id="transitionTitle" class="muted"></div>
         </div>
-        <button class="icon-close" onclick="closeTransition()">×</button>
+        <button class="icon-btn" data-tip="Закрыть" aria-label="Закрыть" onclick="closeTransition()"><svg class="icon"><use href="#i-close"/></svg></button>
       </div>
 
       <section id="transitionForm" class="form-card form-card-flat">
@@ -310,7 +300,7 @@
           </div>
 
           <div class="field">
-            <label>Ответственный на следующем этапе</label>
+            <label>Ответственный за этап</label>
             <input id="transitionResponsibleDisplay" readonly>
           </div>
 
@@ -328,9 +318,7 @@
         </div>
 
         <div class="actions">
-          <button class="button button-primary" onclick="submitTransition(this)">
-            Сохранить и перейти
-          </button>
+          <button class="icon-btn icon-btn-primary" data-tip="Сохранить и перейти" aria-label="Сохранить и перейти" onclick="submitTransition(this)"><svg class="icon"><use href="#i-check"/></svg></button>
         </div>
       </section>
     </div>
@@ -340,7 +328,7 @@
     <div class="panel">
       <div class="panel-header">
         <h2>Редактирование результата</h2>
-        <button class="icon-close" onclick="closeInterviewEdit()">×</button>
+        <button class="icon-btn" data-tip="Закрыть" aria-label="Закрыть" onclick="closeInterviewEdit()"><svg class="icon"><use href="#i-close"/></svg></button>
       </div>
 
       <section id="interviewEditForm" class="form-card form-card-flat">
@@ -357,8 +345,81 @@
         </div>
 
         <div class="actions">
-          <button class="button button-danger left" onclick="softDeleteInterview(this)">Удалить</button>
-          <button class="button button-primary" onclick="saveInterviewEdit(this)">Сохранить</button>
+          <button class="icon-btn icon-btn-danger left" data-tip="Удалить" aria-label="Удалить" onclick="softDeleteInterview(this)"><svg class="icon"><use href="#i-trash"/></svg></button>
+          <button class="icon-btn icon-btn-primary" data-tip="Сохранить" aria-label="Сохранить" onclick="saveInterviewEdit(this)"><svg class="icon"><use href="#i-save"/></svg></button>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div id="rejectionModal" class="modal modal-top">
+    <div class="panel">
+      <div class="panel-header">
+        <div>
+          <div class="eyebrow">Перевод в «Отказано»</div>
+          <h2 id="rejectionTitle">Отказ кандидату</h2>
+          <div id="rejectionSubtitle" class="muted"></div>
+        </div>
+        <button class="icon-btn" data-tip="Закрыть" aria-label="Закрыть" onclick="closeRejection()"><svg class="icon"><use href="#i-close"/></svg></button>
+      </div>
+
+      <section id="rejectionForm" class="form-card form-card-flat rejection-panel">
+        <div class="field">
+          <label>Кем отказано *</label>
+          <div class="segmented">
+            <label class="segmented-option">
+              <input type="radio" name="rejectionByType" value="responsible" checked onchange="renderRejectionForm()">
+              <span>Ответственный</span>
+            </label>
+            <label class="segmented-option">
+              <input type="radio" name="rejectionByType" value="candidate" onchange="renderRejectionForm()">
+              <span>Кандидат</span>
+            </label>
+          </div>
+        </div>
+
+        <div id="rejectionResponsibleField" class="field">
+          <label for="rejectionResponsible">Ответственный *</label>
+          <select id="rejectionResponsible"></select>
+        </div>
+
+        <div class="field">
+          <label for="rejectionReason">Причина *</label>
+          <select id="rejectionReason" onchange="renderRejectionCommentHint()"></select>
+        </div>
+
+        <div class="field">
+          <label id="rejectionCommentLabel" for="rejectionComment">Комментарий</label>
+          <textarea id="rejectionComment" oninput="this.classList.remove('input-error')"></textarea>
+          <small id="rejectionCommentHint" class="field-error" hidden>Для причины «Другое» опишите причину отказа.</small>
+        </div>
+
+        <div class="actions">
+          <button class="icon-btn icon-btn-danger" data-tip="Отказать" aria-label="Отказать" onclick="submitRejection(this)"><svg class="icon"><use href="#i-reject"/></svg></button>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div id="restoreModal" class="modal modal-top">
+    <div class="panel">
+      <div class="panel-header">
+        <div>
+          <div class="eyebrow">Возврат из «Отказано»</div>
+          <h2 id="restoreTitle">Вернуть кандидата</h2>
+          <div id="restoreSubtitle" class="muted"></div>
+        </div>
+        <button class="icon-btn" data-tip="Закрыть" aria-label="Закрыть" onclick="closeRestore()"><svg class="icon"><use href="#i-close"/></svg></button>
+      </div>
+
+      <section id="restoreForm" class="form-card form-card-flat">
+        <div class="field">
+          <label for="restoreComment">Комментарий</label>
+          <textarea id="restoreComment" placeholder="Почему кандидат возвращается в воронку"></textarea>
+        </div>
+
+        <div class="actions">
+          <button class="icon-btn icon-btn-primary" data-tip="Вернуть на этап" aria-label="Вернуть на этап" onclick="submitRestore(this)"><svg class="icon"><use href="#i-restore"/></svg></button>
         </div>
       </section>
     </div>
@@ -373,8 +434,8 @@
       <p id="confirmMessage"></p>
 
       <div class="actions">
-        <button class="button button-secondary" onclick="closeConfirm(false)">Отмена</button>
-        <button id="confirmActionButton" class="button button-danger" onclick="closeConfirm(true)">Подтвердить</button>
+        <button class="icon-btn" data-tip="Отмена" aria-label="Отмена" onclick="closeConfirm(false)"><svg class="icon"><use href="#i-close"/></svg></button>
+        <button id="confirmActionButton" class="icon-btn icon-btn-danger" data-tip="Подтвердить" aria-label="Подтвердить" onclick="closeConfirm(true)"><svg class="icon"><use href="#i-check"/></svg></button>
       </div>
     </div>
   </div>
@@ -384,6 +445,7 @@
     window.__INITIAL_DRAFT_TOKEN__ = '<?= initialDraftToken ?>';
   </script>
 
+  <?!= include('UiKit'); ?>
   <?!= include('Scripts'); ?>
   <?!= include('AdminScripts'); ?>
 </body>

@@ -11,6 +11,7 @@ import {
   validateEmail
 } from '../server/lib/validation.js';
 import { candidateFolderName, decodeResumeUpload } from '../server/services/files.js';
+import { normalizeTemplateQuestions } from '../server/services/mappers.js';
 
 test('normalizeKzPhone accepts common Kazakhstan mobile formats', () => {
   for (const input of ['+7 701 123 45 67', '87011234567', '7011234567', '8 (701) 123-45-67']) {
@@ -71,6 +72,22 @@ test('candidateFolderName keeps the original Drive folder format', () => {
     'Иванов_Иван - A1B2C3D4'
   );
   assert.equal(candidateFolderName('a1b2c3d4-0000-4000-8000-000000000000', ''), 'Кандидат - A1B2C3D4');
+});
+
+test('normalizeTemplateQuestions converts legacy strings and cleans answers', () => {
+  assert.deepEqual(
+    normalizeTemplateQuestions([
+      'Почему мы?',
+      { text: ' Опыт? ', answers: ['1 год', ' 1 год ', '', null, '3+ лет'] },
+      { text: '  ', answers: ['x'] },
+      null
+    ]),
+    [
+      { text: 'Почему мы?', answers: [] },
+      { text: 'Опыт?', answers: ['1 год', '3+ лет'] }
+    ]
+  );
+  assert.deepEqual(normalizeTemplateQuestions(undefined), []);
 });
 
 test('formatDateTime renders app timezone wall-clock time', () => {
