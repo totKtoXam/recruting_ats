@@ -1,18 +1,12 @@
 <div class="page-header">
   <div>
-    <h2>Админ-панель</h2>
-    <p class="page-description">Справочники, вакансии и шаблоны интервью.</p>
+    <h2 id="adminPageTitle">Вакансии</h2>
+    <p id="adminPageDescription" class="page-description">Вакансии и шаблоны интервью по этапам.</p>
   </div>
 
   <div class="page-actions">
     <button class="icon-btn" data-tip="Обновить" aria-label="Обновить" onclick="refreshAdminPage(this)"><svg class="icon"><use href="#i-refresh"/></svg></button>
   </div>
-</div>
-
-<div class="tabs admin-tabs">
-  <button class="tab active" onclick="showAdminTab('vacancies', this)">Вакансии</button>
-  <button class="tab" onclick="showAdminTab('sources', this)">Источники</button>
-  <button class="tab" onclick="showAdminTab('responsibles', this)">Ответственные</button>
 </div>
 
 <section id="admin-vacancies" class="admin-page-section active">
@@ -81,7 +75,7 @@
   <div class="directory-layout">
     <div class="admin-list-card directory-table-card">
       <div class="section-title-row">
-        <h3>Источники</h3>
+        <h3>Источники вакансий</h3>
         <button class="icon-btn icon-btn-primary" data-tip="Новый источник" aria-label="Новый источник" onclick="resetSourceForm()"><svg class="icon"><use href="#i-plus"/></svg></button>
       </div>
       <div id="sourceTable"></div>

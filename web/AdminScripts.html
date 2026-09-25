@@ -279,11 +279,14 @@ async function refreshAdminPage(button){
   }).catch(()=>{});
 }
 
-function showAdminTab(name,button){
-  document.querySelectorAll('.admin-page-section').forEach(section=>section.classList.remove('active'));
-  document.querySelectorAll('.admin-tabs .tab').forEach(tab=>tab.classList.remove('active'));
-  el('admin-'+name).classList.add('active');
-  if(button)button.classList.add('active');
+// Раздел админки выбирается пунктом бокового меню (см. ADMIN_ROUTES).
+function showAdminSection(path){
+  const route=ADMIN_ROUTES[path]||ADMIN_ROUTES.vacancies;
+  document.querySelectorAll('.admin-page-section').forEach(section=>
+    section.classList.toggle('active',section.id==='admin-'+route.section)
+  );
+  el('adminPageTitle').textContent=route.title;
+  el('adminPageDescription').textContent=route.description;
 }
 
 function upsertById(collection,idKey,entity){

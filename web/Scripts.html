@@ -207,15 +207,63 @@ function sourceOptionLabel(source){
 }
 
 function init(){
+  initSidebar();
   initRouter();
   renderInitialShell();
   preloadAllData();
 }
 
+// ---------- Боковое меню ----------
+
+const SIDEBAR_STORAGE_KEY='ats:sidebar-collapsed';
+
+function initSidebar(){
+  let collapsed=false;
+  try{collapsed=localStorage.getItem(SIDEBAR_STORAGE_KEY)==='1'}catch(error){}
+  applySidebarState(collapsed);
+  NARROW_SCREEN.addEventListener('change',()=>applySidebarState(document.body.classList.contains('sidebar-collapsed')));
+}
+
+function toggleSidebar(){
+  const collapsed=!document.body.classList.contains('sidebar-collapsed');
+  applySidebarState(collapsed);
+  try{localStorage.setItem(SIDEBAR_STORAGE_KEY,collapsed?'1':'0')}catch(error){}
+}
+
+const NARROW_SCREEN=window.matchMedia('(max-width:900px)');
+
+function applySidebarState(collapsed){
+  document.body.classList.toggle('sidebar-collapsed',collapsed);
+  // Подсказки у пунктов нужны только когда видны одни иконки.
+  const iconsOnly=collapsed||NARROW_SCREEN.matches;
+  document.querySelectorAll('.sidebar-link').forEach(link=>{
+    if(iconsOnly)link.dataset.tip=link.textContent.trim();
+    else delete link.dataset.tip;
+  });
+  const toggle=el('sidebarToggle');
+  if(!toggle)return;
+  const tip=collapsed?'Развернуть меню':'Свернуть меню';
+  toggle.dataset.tip=tip;
+  toggle.setAttribute('aria-label',tip);
+  toggle.querySelector('use').setAttribute('href','#i-'+(collapsed?'chevrons-right':'chevrons-left'));
+}
+
+// ---------- Маршруты ----------
+// #/candidates, #/candidate/<id> — доска; остальные пункты меню — разделы админки.
+
+const ADMIN_ROUTES={
+  'vacancies':{section:'vacancies',title:'Вакансии',description:'Вакансии и шаблоны интервью по этапам.'},
+  'settings/sources':{section:'sources',title:'Источники вакансий',description:'Откуда приходят кандидаты.'},
+  'settings/responsibles':{section:'responsibles',title:'Ответственные',description:'Рекрутеры, HR и проф. интервьюверы с доступом к этапам.'}
+};
+
 function initRouter(){
   window.addEventListener('hashchange',applyRoute);
-  if(!location.hash){
-    history.replaceState(null,'','#/'+(window.__INITIAL_ROUTE__==='admin'?'admin':'candidates'));
+  const raw=location.hash.replace(/^#\//,'');
+  // Прежняя ссылка на админ-панель ведёт в «Вакансии».
+  if(!raw||raw==='admin'){
+    const start=raw==='admin'||window.__INITIAL_ROUTE__==='admin'?'vacancies':'candidates';
+    history.replaceState(null,'','#/'+start);
   }
   applyRoute();
 }
@@ -223,23 +271,32 @@ function initRouter(){
 function getRoute(){
   const raw=location.hash.replace(/^#\//,'');
   if(raw.startsWith('candidate/')){
-    return {page:'candidates',candidateId:decodeURIComponent(raw.slice('candidate/'.length))};
+    return {page:'candidates',path:'candidates',candidateId:decodeURIComponent(raw.slice('candidate/'.length))};
   }
-  return {page:raw==='admin'?'admin':'candidates',candidateId:''};
+  const path=raw==='admin'?'vacancies':raw;
+  if(ADMIN_ROUTES[path]){
+    return {page:'admin',path,section:ADMIN_ROUTES[path].section,candidateId:''};
+  }
+  return {page:'candidates',path:'candidates',candidateId:''};
 }
 
 function navigateTo(route){
-  location.hash='#/'+(route==='admin'?'admin':'candidates');
+  location.hash='#/'+(route==='admin'?'vacancies':route);
 }
 
 function applyRoute(){
   const route=getRoute();
   el('viewCandidates').hidden=route.page!=='candidates';
   el('viewAdmin').hidden=route.page!=='admin';
-  el('navCandidates').classList.toggle('nav-active',route.page==='candidates');
-  el('navAdmin').classList.toggle('nav-active',route.page==='admin');
+  document.querySelectorAll('.sidebar-link').forEach(link=>{
+    const active=link.dataset.route===route.path;
+    link.classList.toggle('active',active);
+    if(active)link.setAttribute('aria-current','page');
+    else link.removeAttribute('aria-current');
+  });
 
   if(route.page==='admin'){
+    if(typeof showAdminSection==='function')showAdminSection(route.path);
     if(typeof renderAdminAll==='function')renderAdminAll();
     if(state.loaded.references){
       ensureAdminUsersLoaded().catch(()=>{});
