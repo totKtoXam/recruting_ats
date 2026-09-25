@@ -95,7 +95,13 @@ export const config = Object.freeze({
     apiUrl: env('GOOGLE_DRIVE_API_URL')
   }),
 
-  intakeApiKey: env('ATS_API_KEY')
+  intakeApiKey: env('ATS_API_KEY'),
+
+  // Публичная страница /privacy (требуется Google для публикации OAuth-приложения).
+  legal: Object.freeze({
+    operatorName: env('LEGAL_OPERATOR_NAME', 'компании'),
+    contactEmail: env('LEGAL_CONTACT_EMAIL')
+  })
 });
 
 export function assertProductionConfig() {

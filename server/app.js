@@ -12,6 +12,7 @@ import { authRouter, loadUser, requireUserApi, requireUserPage } from './routes/
 import { filesRouter } from './routes/files.js';
 import { escapeJsString } from './routes/html.js';
 import { intakeRouter } from './routes/intake.js';
+import { legalRouter } from './routes/legal.js';
 
 const WEB_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'web');
 
@@ -55,6 +56,8 @@ export function createApp() {
     });
     next();
   });
+
+  app.use(legalRouter());
 
   app.get('/healthz', async (_req, res) => {
     try {

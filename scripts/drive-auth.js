@@ -50,11 +50,15 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  try {
-    if (requestUrl.searchParams.get('state') !== state) {
-      throw new Error('Некорректный state.');
-    }
+  // Чужой state (старая ссылка, повторный заход) не завершает скрипт — ждём корректный ответ.
+  if (requestUrl.searchParams.get('state') !== state) {
+    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Ссылка устарела. Откройте ссылку, которую сейчас показывает терминал.');
+    console.error('Получен ответ по устаревшей ссылке — ожидаю ответ по актуальной.');
+    return;
+  }
 
+  try {
     const error = requestUrl.searchParams.get('error');
     if (error) {
       throw new Error(`Google вернул ошибку: ${error}`);
@@ -72,13 +76,12 @@ const server = http.createServer(async (req, res) => {
     console.log('\nДобавьте в .env:\n');
     console.log(`GOOGLE_DRIVE_AUTH=oauth`);
     console.log(`GOOGLE_DRIVE_REFRESH_TOKEN=${tokens.refresh_token}\n`);
-  } catch (error) {
-    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.end(error.message);
-    console.error(error.message);
-    process.exitCode = 1;
-  } finally {
     server.close();
+  } catch (error) {
+    // Причину (например, настройки OAuth-клиента) можно исправить и открыть ссылку ещё раз.
+    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end(error.message + '\n\nИсправьте причину и откройте ссылку из терминала ещё раз.');
+    console.error(error.message + ' — ожидаю повторную попытку.');
   }
 });
 
