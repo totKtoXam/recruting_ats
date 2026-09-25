@@ -1707,7 +1707,7 @@ tr.filter-row select:focus{background-color:var(--primary-tint)}
 /* =====================================================================
    App shell: side menu + content
    ===================================================================== */
-:root{--sidebar-w:220px;--sidebar-w-collapsed:52px}
+:root{--sidebar-w:236px;--sidebar-w-collapsed:52px}
 
 .app-shell{
   display:flex;
@@ -1901,4 +1901,8 @@ body.sidebar-collapsed .sidebar-toggle{align-self:center}
   .sidebar-link,.sidebar-sublink{justify-content:center;padding:0}
   .sidebar-toggle{display:none}
 }
+
+.user-meta{display:flex;flex-direction:column;gap:2px;padding:8px 0;border-top:1px solid var(--line-soft);font-size:12px}
+.user-meta-row{display:flex;justify-content:space-between;gap:12px}
+.user-meta-row span:first-child{color:var(--muted)}
 </style>

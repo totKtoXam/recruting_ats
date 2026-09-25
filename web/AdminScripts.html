@@ -38,7 +38,7 @@ function mountServerTable(table){
     const handler='serverTableFilter(\''+table.id+'\',\''+filter.key+'\',this.value)';
     if(filter.type==='select'){
       return '<th><select class="filter-input" onchange="'+handler+'">'+
-        option('','Все')+filter.options().map(item=>option(item,item)).join('')+
+        option('','Все')+filter.options().map(item=>typeof item==='object'?option(item.value,item.label):option(item,item)).join('')+
       '</select></th>';
     }
     return '<th><input class="filter-input" type="'+(filter.type==='number'?'number':'search')+'" '+
@@ -215,7 +215,48 @@ const responsibleTable=createServerTable({
   ]
 });
 
+const USER_ACCESS_CHIPS={active:'status-hired',pending:'status-offer',disabled:'status-rejected'};
+
+function userAccessChip(user){
+  return '<span class="status-chip small '+(USER_ACCESS_CHIPS[user.accessStatus]||'')+'">'+escapeHtml(user['Статус доступа'])+'</span>';
+}
+
+function userQuickAction(user){
+  const self=state.currentUser&&String(state.currentUser['User ID'])===String(user['User ID']);
+  if(self)return '<span class="muted">Это вы</span>';
+  return user.accessStatus==='active'
+    ? iconBtn('x-circle','Закрыть доступ','event.stopPropagation();setUserAccess(\''+escJs(user['User ID'])+'\',false,this)','icon-btn-sm icon-btn-danger')
+    : iconBtn('check','Открыть доступ','event.stopPropagation();setUserAccess(\''+escJs(user['User ID'])+'\',true,this)','icon-btn-sm icon-btn-primary');
+}
+
+const userTable=createServerTable({
+  id:'users',
+  containerId:'userTable',
+  rpcName:'listUsers',
+  defaultSort:{key:'status',dir:'asc'},
+  rowId:item=>item['User ID'],
+  isSelected:item=>String(item['User ID'])===String(value('userId')),
+  onRowClick:item=>editUser(item),
+  columns:[
+    {label:'Email',sort:'email',filter:{key:'email',type:'text'},render:item=>escapeHtml(item.Email)},
+    {label:'ФИО',sort:'name',filter:{key:'name',type:'text'},render:item=>escapeHtml(item['ФИО']||'—')},
+    {label:'Доступ',sort:'status',width:'150px',filter:{key:'status',type:'select',options:()=>[
+      {value:'pending',label:'Ожидает доступа'},
+      {value:'active',label:'Доступ открыт'},
+      {value:'disabled',label:'Доступ отключён'}
+    ]},render:userAccessChip},
+    {label:'Админ',sort:'admin',width:'90px',filter:{key:'admin',type:'select',options:()=>[{value:'yes',label:'Да'},{value:'no',label:'Нет'}]},render:item=>item.isAdmin?'Да':'—'},
+    {label:'Последний вход',sort:'lastLogin',width:'150px',render:item=>escapeHtml(item['Последний вход']||'—')},
+    {label:'Запрос доступа',sort:'requested',width:'150px',render:item=>escapeHtml(item.accessStatus==='active'?'—':(item['Запрос доступа']||'—'))},
+    {label:'',width:'80px',render:userQuickAction}
+  ]
+});
+
 const ADMIN_TABLES=['vacancies','sources','responsibles'];
+
+function visibleAdminTables(){
+  return isAdminUser()?[...ADMIN_TABLES,'users']:ADMIN_TABLES;
+}
 
 function templateChips(templates){
   if(!templates.length)return '<span class="muted">Нет шаблонов</span>';
@@ -261,14 +302,14 @@ function renderAdminAll(){
 
   // Таблицы загружаются при первом открытии админ-панели.
   if(adminVisible()){
-    ADMIN_TABLES.forEach(id=>{
+    visibleAdminTables().forEach(id=>{
       if(!serverTables[id].data)loadServerTable(id);
     });
   }
 }
 
 function reloadAdminTables(){
-  return Promise.all(ADMIN_TABLES.map(id=>loadServerTable(id)));
+  return Promise.all(visibleAdminTables().map(id=>loadServerTable(id)));
 }
 
 async function refreshAdminPage(button){
@@ -728,5 +769,95 @@ async function deleteResponsibleUi(id,button){
     await loadServerTable('responsibles');
     showToast('Ответственный удалён.');
   }).catch(()=>{});
+}
+
+// ---------- Пользователи и доступ ----------
+
+function syncUserAdminCheckbox(){
+  // Администратор всегда имеет доступ.
+  if(el('userAdmin').checked)el('userActive').checked=true;
+  el('userAdmin').disabled=!el('userActive').checked;
+  if(!el('userActive').checked)el('userAdmin').checked=false;
+}
+
+function resetUserForm(){
+  el('userId').value='';
+  el('userEmail').value='';
+  el('userEmail').readOnly=false;
+  el('userFullName').value='';
+  el('userFullName').readOnly=false;
+  el('userActive').checked=true;
+  el('userAdmin').checked=false;
+  el('userAdmin').disabled=false;
+  el('userFormTitle').textContent='Новый пользователь';
+  el('userMeta').hidden=true;
+  rerenderServerTable('users');
+  el('userEmail').focus();
+}
+
+function editUser(user){
+  el('userId').value=user['User ID'];
+  el('userEmail').value=user.Email;
+  el('userEmail').readOnly=true;
+  el('userFullName').value=user['ФИО']||'';
+  // После первого входа ФИО приходит из Google.
+  el('userFullName').readOnly=!!user['Последний вход'];
+  el('userActive').checked=user.accessStatus==='active';
+  el('userAdmin').checked=!!user.isAdmin;
+  syncUserAdminCheckbox();
+  el('userFormTitle').textContent=user['ФИО']||user.Email;
+  const rows=[
+    ['Доступ',user['Статус доступа']],
+    ['Последний вход',user['Последний вход']],
+    ['Доступ выдан',user['Доступ выдан']],
+    ['Запрос доступа',user.accessStatus==='active'?'':user['Запрос доступа']],
+    ['Добавлен',user['Добавлен']]
+  ].filter(([,text])=>text);
+  el('userMeta').innerHTML=rows.map(([label,text])=>'<div class="user-meta-row"><span>'+escapeHtml(label)+'</span><span>'+escapeHtml(text)+'</span></div>').join('');
+  el('userMeta').hidden=!rows.length;
+  rerenderServerTable('users');
+}
+
+async function persistUser(payload,button,formId){
+  return runUiTask({button,formId,label:'Сохранение…'},async()=>{
+    const {user}=await rpc('saveUser',payload);
+    await loadServerTable('users');
+    // Список для привязки к ответственным содержит только пользователей с доступом.
+    ensureAdminUsersLoaded(true).catch(()=>{});
+    return user;
+  });
+}
+
+async function saveUserForm(button){
+  const id=value('userId');
+  if(!id&&!validateEmailField(el('userEmail')))return;
+  if(!id&&!value('userEmail').trim()){showToast('Укажите email.','error');return}
+
+  const user=await persistUser({
+    id,
+    email:value('userEmail').trim(),
+    fullName:value('userFullName').trim(),
+    isActive:el('userActive').checked,
+    isAdmin:el('userAdmin').checked
+  },button,'userForm').catch(()=>null);
+
+  if(user){
+    editUser(user);
+    showToast(id?'Пользователь сохранён.':'Пользователь добавлен. Он сможет войти через Google.');
+  }
+}
+
+async function setUserAccess(id,isActive,button){
+  const row=(serverTables.users.data&&serverTables.users.data.items||[]).find(item=>String(item['User ID'])===String(id));
+  if(!row)return;
+  if(!isActive){
+    const ok=await showConfirm('Закрыть доступ пользователю '+row.Email+'? Он будет разлогинен при следующем действии.','Закрытие доступа');
+    if(!ok)return;
+  }
+  const user=await persistUser({id,fullName:'',isActive,isAdmin:isActive&&row.isAdmin},button).catch(()=>null);
+  if(user){
+    if(String(value('userId'))===String(id))editUser(user);
+    showToast(isActive?'Доступ открыт: '+user.Email:'Доступ закрыт: '+user.Email);
+  }
 }
 </script>

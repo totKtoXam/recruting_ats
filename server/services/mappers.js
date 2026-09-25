@@ -97,8 +97,26 @@ export function toPublicUser(row) {
     'ФИО': row.full_name,
     'Avatar URL': row.avatar_url,
     'IsActive': row.is_active,
-    'Последний вход': formatDateTime(row.last_login_at)
+    isAdmin: Boolean(row.is_admin),
+    accessStatus: userAccessStatus(row),
+    'Статус доступа': USER_ACCESS_LABELS[userAccessStatus(row)],
+    'Последний вход': formatDateTime(row.last_login_at),
+    'Доступ выдан': formatDateTime(row.access_granted_at),
+    'Запрос доступа': formatDateTime(row.access_requested_at),
+    'Добавлен': formatDateTime(row.created_at)
   };
+}
+
+export const USER_ACCESS_LABELS = {
+  active: 'Доступ открыт',
+  pending: 'Ожидает доступа',
+  disabled: 'Доступ отключён'
+};
+
+// pending — доступ ещё ни разу не выдавался; disabled — был выдан и отозван.
+export function userAccessStatus(row) {
+  if (row.is_active) return 'active';
+  return row.access_granted_at ? 'disabled' : 'pending';
 }
 
 export function toResumeVersion(row) {
