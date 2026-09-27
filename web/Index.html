@@ -188,6 +188,10 @@
 
   <div id="candidateModal" class="modal">
     <div class="panel candidate-panel">
+      <!-- Появляется, когда над карточкой тащат файл: резюме можно бросить в любое место карточки. -->
+      <div id="resumeDropOverlay" class="resume-drop-overlay" hidden aria-hidden="true">
+        <div class="resume-drop-overlay-box"><svg class="icon"><use href="#i-upload"/></svg><strong id="resumeDropOverlayTitle">Отпустите резюме здесь</strong><small id="resumeDropOverlayText">ФИО и контакты заполнятся автоматически</small></div>
+      </div>
       <div class="candidate-header">
         <div class="candidate-header-title">
           <div class="eyebrow">Кандидат <span id="candidateNumberLabel"></span></div>
