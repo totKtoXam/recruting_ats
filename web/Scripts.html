@@ -2114,6 +2114,7 @@ function openCandidate(candidate){
 
   el('candidateResumeFile').value='';
   renderSelectedResumeFile();
+  if(typeof resetResumeAutofill==='function')resetResumeAutofill(isNew&&!readOnlyDraft(candidate));
   renderResumeVersions(candidate?candidate.resumeVersions||[]:[]);
   setLink('candidateFolderLink',candidate&&candidate['Папка кандидата'],'Открыть папку кандидата');
   renderCandidateLinks(candidate?candidate.links||[]:[]);
@@ -2150,6 +2151,9 @@ function openCandidate(candidate){
 
   el('candidateModal').classList.add('open');
 }
+
+// Черновик из API уже содержит резюме — автозаполнение по нему не предлагаем.
+function readOnlyDraft(candidate){return !candidate&&!!currentCandidateDraft}
 
 function closeCandidate(){
   el('candidateModal')
@@ -2562,6 +2566,7 @@ async function saveCandidateForm(button){
       resumeUploading=false;
       el('candidateResumeFile').value='';
       renderSelectedResumeFile();
+      if(typeof resetResumeAutofill==='function')resetResumeAutofill(false);
       renderResumeVersions(saved.resumeVersions||[]);
       setLink('candidateFolderLink',saved['Папка кандидата'],'Открыть папку кандидата');
       el('candidateNumberLabel').textContent='№'+(saved['№']||'—');

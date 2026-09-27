@@ -179,6 +179,10 @@
 
   <div id="candidateModal" class="modal">
     <div class="panel candidate-panel">
+      <!-- Появляется, когда над карточкой тащат файл: резюме можно бросить в любое место карточки. -->
+      <div id="resumeDropOverlay" class="resume-drop-overlay" hidden aria-hidden="true">
+        <div class="resume-drop-overlay-box"><svg class="icon"><use href="#i-upload"/></svg><strong id="resumeDropOverlayTitle">Отпустите резюме здесь</strong><small id="resumeDropOverlayText">ФИО и контакты заполнятся автоматически</small></div>
+      </div>
       <div class="candidate-header">
         <div class="candidate-header-title">
           <div class="eyebrow">Кандидат <span id="candidateNumberLabel"></span></div>
@@ -211,8 +215,14 @@
               <h3>Основные данные</h3>
               <p>ФИО, контакты и назначение.</p>
             </div>
+            <!-- Только для нового кандидата: выбор файла резюме с автозаполнением полей. -->
+            <div id="resumeFillWrap" class="resume-fill-wrap" hidden>
+              <button type="button" id="resumeFillButton" class="button resume-fill-btn" onclick="chooseResumeForAutofill()"><svg class="icon"><use href="#i-sparkles"/></svg><span>Заполнить из резюме</span></button>
+              <div id="resumeFillHint" class="resume-fill-hint" role="status" hidden>Загрузите резюме — ФИО и контакты заполнятся сами. Файл можно перетащить в поле «Резюме».</div>
+            </div>
           </div>
 
+          <div id="resumeAutofillPanel" class="autofill-panel" hidden></div>
           <div id="candidateRejectedInfo" class="rejected-info" hidden></div>
 
           <div class="candidate-fields">
@@ -230,6 +240,9 @@
                 <input id="candidateMiddleName" autocomplete="additional-name">
               </div>
             </div>
+
+            <!-- Похожие кандидаты по ФИО и контактам — предупреждение о дубле; только для нового кандидата. -->
+            <div id="candidateSimilar" class="similar-panel" role="status" aria-live="polite" hidden></div>
 
             <div class="field">
               <label>Вакансия *</label>
@@ -328,16 +341,16 @@
 
           <div class="field">
             <label>Резюме *</label>
-            <label class="file-drop">
+            <label class="file-drop" id="resumeDropZone" ondragenter="resumeDragOver(event)" ondragover="resumeDragOver(event)" ondragleave="resumeDragLeave(event)" ondrop="resumeDrop(event)">
               <input class="sr-only"
                 id="candidateResumeFile"
                 type="file"
                 accept=".pdf,.doc,.docx"
-                onchange="renderSelectedResumeFile()"
+                onchange="onResumeFileChange()"
               >
               <span class="file-drop-icon"><svg class="icon"><use href="#i-upload"/></svg></span>
               <span>
-                <strong>Выберите файл</strong>
+                <strong>Выберите файл или перетащите сюда</strong>
                 <small>PDF / DOC / DOCX до 10 МБ</small>
               </span>
             </label>
@@ -548,5 +561,6 @@
   <?!= include('Notifications'); ?>
   <?!= include('Integrations'); ?>
   <?!= include('Profile'); ?>
+  <?!= include('ResumeAutofill'); ?>
 </body>
 </html>

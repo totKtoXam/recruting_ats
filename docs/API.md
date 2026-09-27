@@ -296,6 +296,8 @@ Cookie: ats.sid=...
 | `getAllowedTransitions` | id кандидата | Допустимые переходы статуса |
 | `getCandidateTransitionStatusLog` | id кандидата | Журнал переходов статусов |
 | `getCandidateDraft` | token черновика | Данные черновика из Resume Intake API |
+| `parseResume` | `{ name, mimeType, base64 }` — файл резюме, как в `saveCandidate` | Разбор резюме для автозаполнения формы, ничего не сохраняет. Ответ: `status` (`ok` \| `scan` \| `not_resume`; у последних двух — `message`), `format` (`hh` \| `enbek` \| `linkedin` \| `generic`), `fields` (значение, `confidence` `high`/`medium` и фрагмент-источник) для `lastName`, `firstName`, `middleName`, `phone`, `email`, `telegram`, `github`, `linkedin`, `salary`; `suggestions` (неуверенные варианты; у `name` значение — объект Ф/И/О), `warnings`, `links` (профили для «Иных ссылок»), `hints` (`vacancy`, `source`: id, `confidence`, причина), `duplicates` (кандидаты с тем же email, телефоном или Telegram, включая архив и корзину), `summary` (строки для комментария), `hh` (события отклика/отказа, комментарии рекрутера, сопроводительное письмо), `fileHash` |
+| `findSimilarCandidates` | `{ lastName, firstName, middleName, email, phone, telegram, excludeId? }` | До 5 похожих кандидатов (включая архив и корзину): `id`, `number`, `fullName`, `vacancy`, `status`, `state` (`active` \| `archived` \| `deleted`), `matchedBy` (`email`, `phone`, `telegram` — точно; `name` — ФИО по Дамерау — Левенштейну), `nameScore` 0..1 |
 
 **Интервью и переходы**
 
