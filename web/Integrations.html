@@ -1,0 +1,201 @@
+<style>
+/* ---------- Настройки → Интеграции (только администраторы) ---------- */
+.integrations{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:12px;align-items:start}
+.integration-card .section-title-row{align-items:flex-start}
+.integration-card h3{margin:0}
+.integration-desc{margin:2px 0 0;font-size:12px;color:var(--muted)}
+.integration-fields{display:flex;flex-direction:column;gap:12px;margin-top:4px}
+.integration-field label.field-label{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.source-badge{font-size:10px;font-weight:600;padding:1px 6px;border-radius:999px;background:var(--surface-3);color:var(--muted);text-transform:none}
+.source-badge.src-db{background:var(--primary-soft);color:var(--primary)}
+.source-badge.src-env{background:var(--surface-3);color:var(--text-2)}
+.source-badge.src-broken{background:var(--danger-tint);color:var(--danger)}
+.secret-input{display:flex;gap:4px;align-items:center}
+.secret-input input{flex:1;min-width:0}
+.switch-line{display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer}
+.integration-result{margin-top:12px;padding:8px 10px;border-radius:var(--radius);font-size:12px;display:flex;gap:8px;align-items:flex-start}
+.integration-result[hidden]{display:none}
+.integration-result .icon{flex:0 0 auto;width:14px;height:14px;margin-top:1px}
+.integration-result.ok{background:var(--success-tint);color:var(--success)}
+.integration-result.error{background:var(--danger-tint);color:var(--danger)}
+.integration-result.busy{background:var(--surface-2);color:var(--text-2)}
+.integration-info{margin-top:12px;padding:10px;border-radius:var(--radius);background:var(--surface-2);border:1px solid var(--line-soft);font-size:12px;color:var(--text-2);display:flex;flex-direction:column;gap:6px}
+.integration-info code{font-size:11px;padding:1px 4px;border-radius:4px;background:var(--surface-3);color:var(--text);overflow-wrap:anywhere}
+.copy-line{display:flex;align-items:center;gap:6px}
+.copy-line code{flex:1}
+.integration-meta{margin-top:10px;font-size:11px;color:var(--muted)}
+.integration-card.is-dirty .save-integration{box-shadow:0 0 0 2px var(--primary-ring)}
+</style>
+
+<script>
+// ---------- Настройки → Интеграции ----------
+// Вход через Google, SMTP и Telegram-бот. Значения из интерфейса важнее .env и применяются
+// без перезапуска сервера. Секреты сервер не отдаёт: пустое поле секрета — «не менять».
+
+const integrations={data:null,initial:{},loading:false};
+const INTEGRATION_ICONS={auth:'user',smtp:'mail',telegram:'send'};
+const SOURCE_LABELS={db:'задано в ATS',env:'из .env',default:'по умолчанию',none:'не задано'};
+
+async function showIntegrations(){
+  if(integrations.loading)return;
+  integrations.loading=true;
+  try{
+    integrations.data=await rpc('getIntegrationSettings');
+    renderIntegrations();
+  }catch(error){
+    el('integrationsRoot').innerHTML='<div class="empty-state compact">'+escapeHtml(error.message||String(error))+'</div>';
+  }finally{
+    integrations.loading=false;
+  }
+}
+
+function sourceBadge(field){
+  if(field.broken)return '<span class="source-badge src-broken" data-tip="Сохранённое значение не расшифровано (сменился ключ шифрования) — действует .env. Введите заново.">не расшифровано</span>';
+  return '<span class="source-badge src-'+field.source+'"'+(field.source==='env'?' data-tip="Переменная '+escapeHtml(field.env)+'"':'')+'>'+SOURCE_LABELS[field.source]+'</span>';
+}
+
+function integrationFieldHtml(group,field){
+  const id='int-'+field.key.replace('.','-');
+  const label='<label class="field-label" for="'+id+'">'+escapeHtml(field.label)+' '+sourceBadge(field)+'</label>';
+  const hint=field.hint?'<small class="field-hint">'+escapeHtml(field.hint)+'</small>':'';
+  const oninput='markIntegrationDirty(\''+group+'\')';
+
+  if(field.type==='bool'){
+    return '<div class="field integration-field">'+
+      '<label class="switch-line"><span class="switch"><input id="'+id+'" type="checkbox" data-key="'+field.key+'"'+(field.value?' checked':'')+' onchange="'+oninput+'"><span class="switch-track"></span></span>'+
+      '<span>'+escapeHtml(field.label)+'</span> '+sourceBadge(field)+'</label>'+hint+'</div>';
+  }
+
+  if(field.type==='secret'){
+    const placeholder=field.isSet?'Задан ('+field.hintValue+') — оставьте пустым, чтобы не менять':'Не задан';
+    return '<div class="field integration-field">'+label+
+      '<div class="secret-input"><input id="'+id+'" type="password" autocomplete="new-password" data-key="'+field.key+'" placeholder="'+escapeHtml(placeholder)+'" oninput="'+oninput+'">'+
+      '<button type="button" class="icon-btn" data-tip="Показать" aria-label="Показать" onclick="toggleSecretInput(\''+id+'\',this)">'+icon('eye')+'</button></div>'+hint+'</div>';
+  }
+
+  return '<div class="field integration-field">'+label+
+    '<input id="'+id+'" type="'+(field.type==='number'?'number':'text')+'" data-key="'+field.key+'" value="'+escapeHtml(field.value)+'" placeholder="'+escapeHtml(field.placeholder)+'" oninput="'+oninput+'" autocomplete="off">'+hint+'</div>';
+}
+
+function authInfoHtml(info){
+  const copy=text=>'<button type="button" class="icon-btn icon-btn-sm" data-tip="Скопировать" aria-label="Скопировать" onclick="copyIntegrationText(\''+escJs(text)+'\')">'+icon('copy','icon-sm')+'</button>';
+  return '<div class="integration-info">'+
+    '<div>В Google Cloud Console → Clients у OAuth-клиента должны быть:</div>'+
+    '<div class="copy-line"><span>Redirect URI</span><code>'+escapeHtml(info.redirectUri)+'</code>'+copy(info.redirectUri)+'</div>'+
+    '<div class="copy-line"><span>JS origin</span><code>'+escapeHtml(info.javascriptOrigin)+'</code>'+copy(info.javascriptOrigin)+'</div>'+
+    '<div>Перед сохранением ATS проверяет Client ID и secret в Google: неверные значения не сохранятся, чтобы никто не потерял вход.</div>'+
+    (info.adminEmails.length?'<div>Постоянные администраторы из .env (<code>AUTH_ADMIN_EMAILS</code>): '+info.adminEmails.map(email=>'<code>'+escapeHtml(email)+'</code>').join(' ')+'</div>':'')+
+    '<div>Google Drive использует свой OAuth-клиент из .env — эти настройки на него не влияют.</div>'+
+    (info.authMode!=='google'?'<div><strong>Сейчас AUTH_MODE='+escapeHtml(info.authMode)+'</strong> — вход через Google выключен.</div>':'')+
+  '</div>';
+}
+
+function renderIntegrations(){
+  const data=integrations.data;
+  if(!data)return;
+  integrations.initial={};
+
+  el('integrationsRoot').innerHTML='<div class="integrations">'+data.groups.map(group=>{
+    integrations.initial[group.key]={};
+    group.fields.forEach(field=>{if(field.type!=='secret')integrations.initial[group.key][field.key]=field.value});
+    const g=group.key;
+    return '<section class="admin-list-card integration-card" id="integration-'+g+'">'+
+      '<div class="section-title-row">'+
+        '<div><h3>'+icon(INTEGRATION_ICONS[g]||'settings')+' '+escapeHtml(group.title)+'</h3><p class="integration-desc">'+escapeHtml(group.description)+'</p></div>'+
+        '<div class="header-actions">'+
+          '<button type="button" class="icon-btn" data-tip="Проверить подключение" aria-label="Проверить" onclick="testIntegration(\''+g+'\',this)">'+icon('check')+'</button>'+
+          (group.overridden?'<button type="button" class="icon-btn" data-tip="Сбросить к значениям из .env" aria-label="Сбросить к .env" onclick="resetIntegration(\''+g+'\',this)">'+icon('reset')+'</button>':'')+
+          '<button type="button" class="icon-btn icon-btn-primary save-integration" data-tip="Сохранить" aria-label="Сохранить" onclick="saveIntegration(\''+g+'\',this)">'+icon('save')+'</button>'+
+        '</div>'+
+      '</div>'+
+      '<div class="integration-fields">'+group.fields.map(field=>integrationFieldHtml(g,field)).join('')+'</div>'+
+      (g==='auth'?authInfoHtml(data.info):'')+
+      '<div class="integration-result" id="integrationResult-'+g+'" hidden></div>'+
+      (group.updatedAt?'<div class="integration-meta">Изменено '+escapeHtml(notifyFullTime(group.updatedAt))+(group.updatedBy?' · '+escapeHtml(group.updatedBy):'')+'</div>':'')+
+    '</section>';
+  }).join('')+'</div>'+
+  '<p class="muted notify-hint">Секреты хранятся в базе зашифрованными (ключ из '+escapeHtml(data.info.encryptionKey==='dev'?'dev-значения — задайте SESSION_SECRET':data.info.encryptionKey)+'). Если вход сломан неверными настройками — на сервере: <code>npm run settings:reset -- auth</code>.</p>';
+}
+
+function markIntegrationDirty(group){
+  el('integration-'+group).classList.add('is-dirty');
+}
+
+function toggleSecretInput(id,button){
+  const input=el(id);
+  const show=input.type==='password';
+  input.type=show?'text':'password';
+  button.querySelector('use').setAttribute('href','#i-'+(show?'eye-off':'eye'));
+}
+
+async function copyIntegrationText(text){
+  try{await navigator.clipboard.writeText(text);showToast('Скопировано.')}catch(error){showToast('Не удалось скопировать.','error')}
+}
+
+// Только изменённые поля: иначе неизменённые значения из .env «переехали» бы в базу.
+function collectIntegration(group){
+  const values={};
+  document.querySelectorAll('#integration-'+group+' [data-key]').forEach(input=>{
+    const key=input.dataset.key;
+    const current=input.type==='checkbox'?input.checked:input.value.trim();
+    if(input.type==='password'||input.dataset.secret){
+      if(current)values[key]=current;
+      return;
+    }
+    const initial=integrations.initial[group][key];
+    if(String(current)!==String(initial??''))values[key]=current;
+  });
+  return values;
+}
+
+function setIntegrationResult(group,type,message){
+  const box=el('integrationResult-'+group);
+  box.hidden=false;
+  box.className='integration-result '+type;
+  box.innerHTML=icon(type==='ok'?'check':type==='error'?'alert':'refresh')+'<span>'+escapeHtml(message)+'</span>';
+}
+
+async function testIntegration(group,button){
+  button.disabled=true;
+  setIntegrationResult(group,'busy',group==='smtp'?'Подключаюсь к SMTP и отправляю тестовое письмо…':'Проверяю…');
+  try{
+    const result=await rpc('testIntegration',{group,values:collectIntegration(group)});
+    setIntegrationResult(group,'ok',result.message);
+  }catch(error){
+    setIntegrationResult(group,'error',error.message||String(error));
+  }finally{
+    button.disabled=false;
+  }
+}
+
+async function saveIntegration(group,button){
+  const values=collectIntegration(group);
+  if(!Object.keys(values).length){showToast('Нет изменений.');return}
+  button.disabled=true;
+  if(group==='auth')setIntegrationResult(group,'busy','Проверяю Client ID и secret в Google…');
+  try{
+    integrations.data=await rpc('saveIntegration',{group,values});
+    renderIntegrations();
+    setIntegrationResult(group,'ok','Сохранено и применено.');
+    showToast('Настройки «'+integrations.data.groups.find(item=>item.key===group).title+'» сохранены.');
+  }catch(error){
+    setIntegrationResult(group,'error',error.message||String(error));
+  }finally{
+    button.disabled=false;
+  }
+}
+
+async function resetIntegration(group,button){
+  const title=integrations.data.groups.find(item=>item.key===group).title;
+  if(!await showConfirm('Удалить настройки «'+title+'», сохранённые в ATS? Будут действовать значения из .env.','Сбросить к .env'))return;
+  button.disabled=true;
+  try{
+    integrations.data=await rpc('resetIntegration',{group});
+    renderIntegrations();
+    setIntegrationResult(group,'ok','Действуют значения из .env.');
+  }catch(error){
+    setIntegrationResult(group,'error',error.message||String(error));
+    button.disabled=false;
+  }
+}
+</script>

@@ -13,11 +13,13 @@ import { config } from '../config.js';
 import { db, transaction } from '../db/pool.js';
 import { fail } from '../lib/errors.js';
 import { userDisplayName } from './mappers.js';
+import { onSettingsChanged, runtime } from './settings.js';
 
 const LINK_TTL_MINUTES = 15;
 
 let botUsername = '';
-let polling = false;
+// Поколение цикла опроса: при смене токена старый цикл завершается, запускается новый.
+let generation = 0;
 let pollAbort = null;
 
 export const getBotUsername = () => botUsername;
@@ -29,8 +31,8 @@ export class TelegramError extends Error {
   }
 }
 
-export async function telegramApi(method, body = {}, signal) {
-  const response = await fetch(`${config.telegram.apiUrl}/bot${config.telegram.botToken}/${method}`, {
+export async function telegramApi(method, body = {}, signal, token = runtime.telegram().botToken) {
+  const response = await fetch(`${config.telegram.apiUrl}/bot${token}/${method}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -57,7 +59,7 @@ export function sendTelegramMessage(chatId, html) {
 // ---------- Привязка ----------
 
 export async function createTelegramLink(_input, user) {
-  if (!config.telegram.botToken) fail('Telegram-бот не настроен на сервере.');
+  if (!runtime.telegram().botToken) fail('Telegram-бот не настроен (Настройки → Интеграции → Telegram).');
   if (!botUsername) fail('Telegram-бот сейчас недоступен. Попробуйте позже.');
 
   const token = randomBytes(18).toString('base64url');
@@ -153,10 +155,11 @@ async function handleMessage(message) {
 
 // ---------- Long polling ----------
 
-async function pollLoop() {
+async function pollLoop(loopGeneration) {
   let offset = 0;
+  const active = () => loopGeneration === generation;
 
-  while (polling) {
+  while (active()) {
     try {
       pollAbort = new AbortController();
       const updates = await telegramApi(
@@ -165,6 +168,8 @@ async function pollLoop() {
         pollAbort.signal
       );
 
+      if (!active()) break;
+
       for (const update of updates) {
         offset = update.update_id + 1;
         await handleMessage(update.message).catch(error =>
@@ -172,7 +177,7 @@ async function pollLoop() {
         );
       }
     } catch (error) {
-      if (!polling) break;
+      if (!active()) break;
       // 409 — обновления забирает другой экземпляр или настроен вебхук.
       console.error('Telegram: getUpdates:', error.message);
       await new Promise(resolve => setTimeout(resolve, error.code === 409 ? 30_000 : 5_000));
@@ -181,7 +186,9 @@ async function pollLoop() {
 }
 
 export async function startTelegramBot() {
-  if (!config.telegram.botToken) return null;
+  stopTelegramBot();
+  const settings = runtime.telegram();
+  if (!settings.botToken) return null;
 
   try {
     const me = await telegramApi('getMe');
@@ -191,15 +198,21 @@ export async function startTelegramBot() {
     return null;
   }
 
-  if (config.telegram.polling && !polling) {
-    polling = true;
-    pollLoop();
+  if (settings.polling) {
+    pollLoop(generation);
   }
 
   return botUsername;
 }
 
 export function stopTelegramBot() {
-  polling = false;
+  generation += 1;
+  botUsername = '';
   if (pollAbort) pollAbort.abort();
 }
+
+// Токен или режим поменяли в интерфейсе — перезапускаем бота.
+onSettingsChanged('telegram', async () => {
+  const bot = await startTelegramBot();
+  console.log(bot ? `Telegram: бот @${bot} подключён` : 'Telegram: бот отключён');
+});

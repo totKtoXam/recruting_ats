@@ -68,6 +68,9 @@ export const config = Object.freeze({
   databaseSsl: env('DATABASE_SSL', 'false') === 'true',
 
   sessionSecret: env('SESSION_SECRET'),
+  // Ключ шифрования секретов, которые администратор сохраняет в интерфейсе (SMTP, Telegram, Google).
+  // По умолчанию выводится из SESSION_SECRET; задайте отдельно, чтобы менять SESSION_SECRET без потери секретов.
+  settingsEncryptionKey: env('SETTINGS_ENCRYPTION_KEY'),
   sessionMaxAgeDays: Number(env('SESSION_MAX_AGE_DAYS', '14')),
 
   auth: Object.freeze({
@@ -140,13 +143,6 @@ export function assertProductionConfig() {
 
   if (config.auth.mode === 'dev') {
     problems.push('AUTH_MODE=dev запрещён в production.');
-  }
-
-  if (
-    config.auth.mode === 'google' &&
-    (!config.auth.googleClientId || !config.auth.googleClientSecret)
-  ) {
-    problems.push('Не заданы GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET.');
   }
 
   if (

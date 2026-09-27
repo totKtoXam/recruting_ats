@@ -21,6 +21,7 @@ import { richToText } from '../lib/richtext.js';
 import { composeFullName, optionalUuid } from '../lib/validation.js';
 import { isoOrEmpty as toIso } from '../lib/dates.js';
 import { userDisplayName } from './mappers.js';
+import { runtime } from './settings.js';
 
 export const KINDS = [
   {
@@ -63,8 +64,11 @@ const DEFAULTS = {
   stage_responsible: { app: true, email: true, telegram: true }
 };
 
-export const smtpConfigured = () => Boolean(config.smtp.host && config.smtp.from);
-export const telegramConfigured = () => Boolean(config.telegram.botToken);
+export const smtpConfigured = () => {
+  const smtp = runtime.smtp();
+  return Boolean(smtp.host && smtp.from);
+};
+export const telegramConfigured = () => Boolean(runtime.telegram().botToken);
 
 const ROLE_LABELS = {
   recruiter_id: 'Рекрутер',
@@ -578,11 +582,11 @@ export async function getNotificationSettings(_input, user) {
       reason:
         channel.key === 'email'
           ? !smtpConfigured()
-            ? 'Отправка почты не настроена на сервере (SMTP).'
+            ? 'Отправка почты не настроена (администратор: Настройки → Интеграции → SMTP).'
             : row.email.endsWith('.invalid') ? 'У вас не указан email.' : ''
           : channel.key === 'telegram'
             ? !telegramConfigured()
-              ? 'Telegram-бот не настроен на сервере.'
+              ? 'Telegram-бот не настроен (администратор: Настройки → Интеграции → Telegram).'
               : !row.telegram_chat_id ? 'Привяжите Telegram, чтобы получать уведомления.' : ''
             : ''
     })),

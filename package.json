@@ -14,7 +14,8 @@
     "cleanup-drafts": "node --env-file-if-exists=.env scripts/cleanup-drafts.js",
     "import:sheets": "node --env-file-if-exists=.env scripts/import-from-xlsx.js",
     "test": "node --test test/*.test.js",
-    "drive:auth": "node --env-file-if-exists=.env scripts/drive-auth.js"
+    "drive:auth": "node --env-file-if-exists=.env scripts/drive-auth.js",
+    "settings:reset": "node --env-file-if-exists=.env scripts/reset-settings.js"
   },
   "dependencies": {
     "@googleapis/drive": "^26.0.0",

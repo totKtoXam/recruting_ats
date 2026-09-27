@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import express from 'express';
 import { config } from '../config.js';
 import { AppError, toPublicError } from '../lib/errors.js';
+import { runtime } from '../services/settings.js';
 import { ACCESS_DENIED_MESSAGE, getActiveUser, upsertUserOnLogin } from '../services/users.js';
 import { escapeHtml } from './html.js';
 
@@ -113,7 +114,7 @@ export function authRouter() {
     req.session.returnTo = safeReturnTo(req.query.next);
 
     const params = new URLSearchParams({
-      client_id: config.auth.googleClientId,
+      client_id: runtime.auth().googleClientId,
       redirect_uri: redirectUri(),
       response_type: 'code',
       scope: 'openid email profile',
@@ -143,8 +144,8 @@ export function authRouter() {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
           code: String(code || ''),
-          client_id: config.auth.googleClientId,
-          client_secret: config.auth.googleClientSecret,
+          client_id: runtime.auth().googleClientId,
+          client_secret: runtime.auth().googleClientSecret,
           redirect_uri: redirectUri(),
           grant_type: 'authorization_code'
         })
