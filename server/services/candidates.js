@@ -26,6 +26,7 @@ import {
 } from './files.js';
 import { lockActiveDraft, markDraftUsed, tryLockActiveDraft } from './drafts.js';
 import { insertComment } from './comments.js';
+import { diffCandidate, notifyCandidateEvent } from './notifications.js';
 
 const personName = alias =>
   `concat_ws(' ', NULLIF(${alias}.last_name, ''), NULLIF(${alias}.first_name, ''), NULLIF(${alias}.middle_name, ''))`;
@@ -482,6 +483,16 @@ export async function saveCandidate(payload, changedBy) {
         await markDraftUsed(tx, draft.id, candidateId);
       }
 
+      if (isNew) {
+        await notifyCandidateEvent(tx, candidateId, changedBy, { type: 'created' });
+      } else {
+        const changes = diffCandidate(existing, saved);
+        if (uploaded) changes.push('Резюме');
+        if (changes.length) {
+          await notifyCandidateEvent(tx, candidateId, changedBy, { type: 'updated', changes, previous: existing });
+        }
+      }
+
       return {
         ok: true,
         candidate: await loadCandidateDto(candidateId, tx)
@@ -495,17 +506,22 @@ export async function saveCandidate(payload, changedBy) {
 
 // ---------- Архивация ----------
 
-export async function archiveCandidate(candidateId) {
+export async function archiveCandidate(candidateId, actor) {
   if (!isUuid(candidateId)) {
     fail('Кандидат не найден.', 404);
   }
 
   // Текущий статус сохраняется, кандидат лишь получает отметку архивации.
-  await db.query(
-    `UPDATE candidates SET archived_at = now(), updated_at = now()
-     WHERE id = $1 AND archived_at IS NULL AND deleted_at IS NULL`,
-    [candidateId]
-  );
+  await transaction(async tx => {
+    const result = await tx.query(
+      `UPDATE candidates SET archived_at = now(), updated_at = now()
+       WHERE id = $1 AND archived_at IS NULL AND deleted_at IS NULL`,
+      [candidateId]
+    );
+    if (result.rowCount) {
+      await notifyCandidateEvent(tx, candidateId, actor, { type: 'changed', text: 'Кандидат отправлен в архив.' });
+    }
+  });
 
   const candidate = await loadCandidateDto(candidateId);
 
@@ -516,20 +532,24 @@ export async function archiveCandidate(candidateId) {
   return { ok: true, candidate };
 }
 
-export async function unarchiveCandidate(candidateId) {
+export async function unarchiveCandidate(candidateId, actor) {
   if (!isUuid(candidateId)) {
     fail('Кандидат не найден.', 404);
   }
 
-  const row = await db.one(
-    `UPDATE candidates SET archived_at = NULL, updated_at = now()
-     WHERE id = $1 AND deleted_at IS NULL RETURNING id`,
-    [candidateId]
-  );
+  await transaction(async tx => {
+    const row = await tx.one(
+      `UPDATE candidates SET archived_at = NULL, updated_at = now()
+       WHERE id = $1 AND deleted_at IS NULL RETURNING id`,
+      [candidateId]
+    );
 
-  if (!row) {
-    fail('Кандидат не найден или находится в корзине.', 404);
-  }
+    if (!row) {
+      fail('Кандидат не найден или находится в корзине.', 404);
+    }
+
+    await notifyCandidateEvent(tx, candidateId, actor, { type: 'changed', text: 'Кандидат возвращён из архива.' });
+  });
 
   return { ok: true, candidate: await loadCandidateDto(candidateId) };
 }

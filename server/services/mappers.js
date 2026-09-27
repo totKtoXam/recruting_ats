@@ -118,6 +118,9 @@ export function toPublicUser(row) {
     'Имя': row.first_name || '',
     'Отчество': row.middle_name || '',
     stages: row.stages || [],
+    telegram: row.telegram_username ? '@' + row.telegram_username : '',
+    // Подтверждён — привязан через бота (есть chat_id), иначе ник указан вручную.
+    telegramVerified: Boolean(row.telegram_chat_id),
     // Email ещё не входил ни разу — его можно исправить (например, временный адрес).
     emailEditable: !row.google_subject,
     ...lifecycleFields(row),

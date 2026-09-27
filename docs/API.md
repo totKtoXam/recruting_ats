@@ -325,6 +325,24 @@ Cookie: ats.sid=...
 | `deleteComment` | id | Удаление (автор или администратор) |
 | `toggleReaction` | `{ commentId, emoji }` | Поставить/снять реакцию: 👍 👎 ❤️ 😂 🎉 👀 |
 
+**Уведомления** (методы работают с уведомлениями текущего пользователя)
+
+| Метод | Аргумент | Назначение |
+|---|---|---|
+| `getNotificationFeed` | `{ view: 'recent' \| 'unread' \| 'important', limit?, before? }` | Лента колокольчика (только канал «В приложении»): `{ items, hasMore, unread }`. `before` — `createdAt` последнего элемента для подгрузки |
+| `getNotificationUnread` | — | `{ unread }` — число непрочитанных (также `notificationsUnread` в `getBootstrapData`) |
+| `getNotification` | id | Уведомление с актуальными статусами доставки (`channels: [{ channel, status, recipient, attempts, error, sentAt }]`) |
+| `markNotificationRead` | `{ id, read? }` | Отметить прочитанным (`read: false` — непрочитанным) |
+| `markAllNotificationsRead` | — | Отметить все прочитанными |
+| `setNotificationImportant` | `{ id, important }` | Отметка «Важное» |
+| `listNotificationLog` | как у `list*` | Журнал. Фильтры: `q`, `kind`, `read` (`read`/`unread`), `important` (`yes`/`no`), `delivery` (`sent`/`pending`/`failed`/`skipped`/`app`) |
+| `getNotificationSettings` | — | Виды, каналы (с доступностью и причиной), `preferences[kind][channel]`, email, состояние Telegram |
+| `setNotificationPreference` | `{ kind, channel, enabled }` | Включить или выключить вид по каналу |
+| `setNotificationPreferences` | `{ items: [{ kind, channel, enabled }] }` | То же пачкой |
+| `getCandidateWatch` / `setCandidateWatch` | id / `{ candidateId, watch }` | «Следить» за кандидатом: `{ watching, watchers }` |
+| `createTelegramLink` | — | Одноразовая ссылка привязки `{ url, expiresAt }` (15 минут) |
+| `unlinkTelegram` | — | Отвязать Telegram |
+
 **Админ-панель**
 
 | Метод | Аргумент | Назначение |
@@ -335,7 +353,7 @@ Cookie: ats.sid=...
 | `listVacancyTemplates` | id вакансии | Все шаблоны вакансии, включая архивные |
 | `saveSource` | `{ id?, name }` | Источник |
 | `saveInterviewTemplate` | объект | Шаблон интервью; `questions` — массив `{ text, answers }` (answers — вероятные ответы) |
-| `saveUser` | `{ id?, email, lastName, firstName, middleName, stages, isActive, isAdmin }` | Пользователь. Непустой `stages` делает его ответственным за этапы. `isActive` учитывается только при создании. **Только администраторы** |
+| `saveUser` | `{ id?, email, lastName, firstName, middleName, stages, isActive, isAdmin, telegram? }` | Пользователь. Непустой `stages` делает его ответственным за этапы. `isActive` учитывается только при создании. **Только администраторы** |
 | `setUserAccess` | `{ id, isActive }` | Открыть/закрыть доступ в ATS. **Только администраторы**; нельзя себе и последнему администратору |
 
 Пример вызова из браузера (сессия уже есть):

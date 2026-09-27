@@ -3,6 +3,8 @@ import { createApp } from './app.js';
 import { migrate } from './db/migrate.js';
 import { pool } from './db/pool.js';
 import { verifyDriveAccess } from './lib/drive.js';
+import { startDeliveryWorker, stopDeliveryWorker } from './services/notification-delivery.js';
+import { startTelegramBot, stopTelegramBot } from './services/telegram.js';
 
 async function main() {
   assertProductionConfig();
@@ -13,11 +15,17 @@ async function main() {
   const folder = await verifyDriveAccess();
   console.log(`Google Drive: папка «${folder.name}» доступна`);
 
+  const bot = await startTelegramBot();
+  if (bot) console.log(`Telegram: бот @${bot} подключён`);
+  startDeliveryWorker();
+
   const server = createApp().listen(config.port, () => {
     console.log(`Recruiting ATS listening on ${config.publicUrl} (port ${config.port}, auth: ${config.auth.mode})`);
   });
 
   const shutdown = () => {
+    stopTelegramBot();
+    stopDeliveryWorker();
     server.close(() => pool.end().then(() => process.exit(0)));
     setTimeout(() => process.exit(1), 10_000).unref();
   };

@@ -6,7 +6,9 @@ import * as drafts from './services/drafts.js';
 import * as interviews from './services/interviews.js';
 import * as lifecycle from './services/lifecycle.js';
 import * as lists from './services/lists.js';
+import * as notifications from './services/notifications.js';
 import * as references from './services/references.js';
+import * as telegram from './services/telegram.js';
 import * as users from './services/users.js';
 
 async function getCandidateData() {
@@ -34,6 +36,7 @@ async function getBootstrapData(_args, { user }) {
 
   return {
     currentUser: users.toPublicUser(user),
+    notificationsUnread: await notifications.getUnreadCount(user),
     ...referenceData,
     ...candidateData
   };
@@ -59,8 +62,8 @@ export const rpcHandlers = {
 
   getCandidateDetails: id => candidates.getCandidateDetails(id),
   saveCandidate: (payload, { user }) => candidates.saveCandidate(payload, user),
-  archiveCandidate: id => candidates.archiveCandidate(id),
-  unarchiveCandidate: id => candidates.unarchiveCandidate(id),
+  archiveCandidate: (id, { user }) => candidates.archiveCandidate(id, user),
+  unarchiveCandidate: (id, { user }) => candidates.unarchiveCandidate(id, user),
   getAllowedTransitions: id => candidates.getAllowedTransitions(id),
   getCandidateTransitionStatusLog: id => candidates.getCandidateTransitionStatusLog(id),
   getCandidateDraft: token => drafts.getCandidateDraft(token),
@@ -68,7 +71,7 @@ export const rpcHandlers = {
   getInterviews: id => interviews.getInterviews(id),
   getInterviewContext: input => interviews.getInterviewContext(input),
   transitionCandidate: (input, { user }) => interviews.transitionCandidate(input, user),
-  updateInterview: input => interviews.updateInterview(input),
+  updateInterview: (input, { user }) => interviews.updateInterview(input, user),
 
   // Жизненный цикл любой записи: { type: candidate|vacancy|source|template|interview|user, id }.
   archiveEntity: (input, { user }) => lifecycle.archive(input, user),
@@ -82,6 +85,22 @@ export const rpcHandlers = {
   updateComment: (input, { user }) => comments.updateComment(input, user),
   deleteComment: (id, { user }) => comments.deleteComment(id, user),
   toggleReaction: (input, { user }) => comments.toggleReaction(input, user),
+
+  // Уведомления: колокольчик, журнал, настройки, подписка на кандидата, Telegram.
+  getNotificationFeed: (input, { user }) => notifications.getNotificationFeed(input, user),
+  getNotificationUnread: async (_input, { user }) => ({ unread: await notifications.getUnreadCount(user) }),
+  getNotification: (id, { user }) => notifications.getNotification(id, user),
+  markNotificationRead: (input, { user }) => notifications.markRead(input, user),
+  markAllNotificationsRead: (input, { user }) => notifications.markAllRead(input, user),
+  setNotificationImportant: (input, { user }) => notifications.setImportant(input, user),
+  listNotificationLog: (input, { user }) => lists.listNotificationLog(input, user),
+  getNotificationSettings: (input, { user }) => notifications.getNotificationSettings(input, user),
+  setNotificationPreference: (input, { user }) => notifications.setNotificationPreference(input, user),
+  setNotificationPreferences: (input, { user }) => notifications.setNotificationPreferences(input, user),
+  getCandidateWatch: (id, { user }) => notifications.getCandidateWatch(id, user),
+  setCandidateWatch: (input, { user }) => notifications.setCandidateWatch(input, user),
+  createTelegramLink: (input, { user }) => telegram.createTelegramLink(input, user),
+  unlinkTelegram: (input, { user }) => telegram.unlinkTelegram(input, user),
 
   // Серверные таблицы: фильтры, сортировка и пагинация в БД.
   listVacancies: input => lists.listVacancies(input),

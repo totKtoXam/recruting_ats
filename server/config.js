@@ -99,6 +99,27 @@ export const config = Object.freeze({
 
   intakeApiKey: env('ATS_API_KEY'),
 
+  // Email-уведомления через SMTP. Без SMTP_HOST канал «Эл. почта» считается не настроенным.
+  smtp: Object.freeze({
+    host: env('SMTP_HOST'),
+    port: Number(env('SMTP_PORT', '587')),
+    // true — TLS сразу (порт 465), false — STARTTLS (порт 587).
+    secure: env('SMTP_SECURE', env('SMTP_PORT') === '465' ? 'true' : 'false') === 'true',
+    user: env('SMTP_USER'),
+    pass: env('SMTP_PASS'),
+    from: env('MAIL_FROM', env('SMTP_USER'))
+  }),
+
+  // Telegram-бот: привязка аккаунтов по ссылке t.me/<бот>?start=<код> и отправка уведомлений.
+  telegram: Object.freeze({
+    botToken: env('TELEGRAM_BOT_TOKEN'),
+    // Получение обновлений long polling-ом: вебхук и публичный адрес не нужны.
+    // Выключите (false) на всех экземплярах, кроме одного, если их несколько.
+    polling: env('TELEGRAM_POLLING', 'true') === 'true',
+    // Только для тестов с эмулятором Bot API (в production запрещено).
+    apiUrl: env('TELEGRAM_API_URL', 'https://api.telegram.org').replace(/\/$/, '')
+  }),
+
   // Публичная страница /privacy (требуется Google для публикации OAuth-приложения).
   legal: Object.freeze({
     operatorName: env('LEGAL_OPERATOR_NAME', 'компании'),
@@ -138,6 +159,10 @@ export function assertProductionConfig() {
 
   if (config.drive.apiUrl) {
     problems.push('GOOGLE_DRIVE_API_URL предназначен только для тестов.');
+  }
+
+  if (config.telegram.apiUrl !== 'https://api.telegram.org') {
+    problems.push('TELEGRAM_API_URL предназначен только для тестов.');
   }
 
   if (problems.length) {

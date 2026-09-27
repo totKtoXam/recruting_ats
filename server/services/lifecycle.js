@@ -7,7 +7,31 @@ import { transaction } from '../db/pool.js';
 import { trashFile } from '../lib/drive.js';
 import { fail } from '../lib/errors.js';
 import { isUuid } from '../lib/validation.js';
+import { notifyCandidateEvent, purgeOldNotifications } from './notifications.js';
 import { requireAdmin } from './users.js';
+
+// Изменения жизненного цикла кандидата и его результатов интервью — это «изменения в карточке».
+const LIFECYCLE_TEXT = {
+  candidate: {
+    archive: 'Кандидат отправлен в архив.',
+    unarchive: 'Кандидат возвращён из архива.',
+    delete: 'Кандидат удалён в корзину.',
+    restore: 'Кандидат восстановлен из корзины (в архив).'
+  },
+  interview: {
+    archive: 'Результат интервью отправлен в архив.',
+    unarchive: 'Результат интервью возвращён из архива.',
+    delete: 'Результат интервью удалён в корзину.',
+    restore: 'Результат интервью восстановлен из корзины.'
+  }
+};
+
+function notifyLifecycle(tx, type, row, action, actor) {
+  const text = LIFECYCLE_TEXT[type] && LIFECYCLE_TEXT[type][action];
+  if (!text) return null;
+  const candidateId = type === 'candidate' ? row.id : row.candidate_id;
+  return notifyCandidateEvent(tx, candidateId, actor, { type: 'changed', text });
+}
 
 export const RETENTION_DAYS = APP_CONFIG.TRASH_RETENTION_DAYS;
 
@@ -98,6 +122,7 @@ export async function archive({ type, id } = {}, actor) {
       `UPDATE ${entity.table} SET archived_at = now()${entity.archiveSet || ''} WHERE id = $1`,
       [row.id]
     );
+    await notifyLifecycle(tx, type, row, 'archive', actor);
     return { ok: true };
   });
 }
@@ -110,7 +135,9 @@ export async function unarchive({ type, id } = {}, actor) {
     const row = await lockRow(tx, entity, id);
     if (row.deleted_at) fail('Сначала восстановите запись из корзины.');
     // Возвращённый из архива пользователь остаётся без доступа — его открывают отдельно.
+    if (!row.archived_at) return { ok: true };
     await tx.query(`UPDATE ${entity.table} SET archived_at = NULL WHERE id = $1`, [row.id]);
+    await notifyLifecycle(tx, type, row, 'unarchive', actor);
     return { ok: true };
   });
 }
@@ -126,6 +153,7 @@ export async function moveToTrash({ type, id } = {}, actor) {
     if (entity.beforeDelete) await entity.beforeDelete(tx, row, actor);
 
     await tx.query(`UPDATE ${entity.table} SET deleted_at = now() WHERE id = $1`, [row.id]);
+    await notifyLifecycle(tx, type, row, 'delete', actor);
     return { ok: true, purgeAfterDays: RETENTION_DAYS };
   });
 }
@@ -137,7 +165,9 @@ export async function restoreFromTrash({ type, id } = {}, actor) {
   return transaction(async tx => {
     const row = await lockRow(tx, entity, id);
     // Восстановленная запись возвращается в архив.
+    if (!row.deleted_at) return { ok: true };
     await tx.query(`UPDATE ${entity.table} SET deleted_at = NULL WHERE id = $1`, [row.id]);
+    await notifyLifecycle(tx, type, row, 'restore', actor);
     return { ok: true };
   });
 }
@@ -244,6 +274,10 @@ export function purgeIfDue() {
     .then(({ removed }) => {
       const total = Object.values(removed).reduce((sum, count) => sum + count, 0);
       if (total) console.log('Purge: removed', removed);
+      return purgeOldNotifications();
+    })
+    .then(count => {
+      if (count) console.log('Purge: old notifications removed:', count);
     })
     .catch(error => console.error('Purge failed:', error.message))
     .finally(() => {

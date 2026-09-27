@@ -6,6 +6,7 @@ import { APP_CONFIG } from '../config.js';
 import { db } from '../db/pool.js';
 import { clean } from '../lib/validation.js';
 import { toPublicUser, toSource, toVacancy } from './mappers.js';
+import { NOTIFICATION_LOG } from './notifications.js';
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
@@ -47,12 +48,13 @@ async function queryList(definition, input = {}) {
   );
   const requestedPage = Math.max(Number.parseInt(input.page, 10) || 1, 1);
 
-  const params = [];
+  // Параметры, на которые ссылается definition.where ($1, $2, …).
+  const params = [...(definition.params || [])];
   const param = () => `$${params.length + 1}`;
   const where = [...(definition.where || [])];
   const filters = input.filters || {};
   const state = STATES.includes(filters.state) ? filters.state : 'active';
-  where.push(stateClause(definition.alias, state));
+  if (!definition.stateless) where.push(stateClause(definition.alias, state));
 
   for (const [key, rawValue] of Object.entries(filters)) {
     const filter = definition.filters[key];
@@ -203,3 +205,7 @@ const USERS = {
 export const listVacancies = input => queryList(VACANCIES, input);
 export const listUsers = input => queryList(USERS, input);
 export const listSources = input => queryList(SOURCES, input);
+
+// Журнал уведомлений: только свои.
+export const listNotificationLog = (input, user) =>
+  queryList({ ...NOTIFICATION_LOG, where: ['n.user_id = $1'], params: [user.id] }, input);

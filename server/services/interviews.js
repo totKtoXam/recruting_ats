@@ -5,6 +5,7 @@ import { clean, composeFullName, isUuid, optionalUuid } from '../lib/validation.
 import { richFromInput, richToText } from '../lib/richtext.js';
 import { insertComment } from './comments.js';
 import { toInterview } from './mappers.js';
+import { notifyCandidateEvent } from './notifications.js';
 import { getTemplatesFor } from './references.js';
 import {
   appendTransitionLog,
@@ -333,6 +334,15 @@ export async function transitionCandidate(input, changedBy) {
       outcome = { responsible, comment: richToText(transitionComment) };
     }
 
+    await notifyCandidateEvent(tx, candidate.id, changedBy, {
+      type: 'status',
+      fromStatus,
+      toStatus,
+      // При отказе «ответственного за этап» нет: этап не начинается.
+      stageResponsibleId: toStatus !== REJECTED && outcome.responsible ? outcome.responsible.id : null,
+      comment: outcome.comment
+    });
+
     await appendTransitionLog(tx, {
       candidate: await tx.one('SELECT * FROM candidates WHERE id = $1', [candidate.id]),
       fromStatus,
@@ -351,7 +361,7 @@ export async function transitionCandidate(input, changedBy) {
   });
 }
 
-export async function updateInterview(input) {
+export async function updateInterview(input, actor) {
   const id = optionalUuid(input && input.id, 'Результат интервью не найден.');
 
   if (!id) {
@@ -364,21 +374,28 @@ export async function updateInterview(input) {
     fail('Укажите результат интервью/этапа.');
   }
 
-  const saved = await db.one(
-    `UPDATE interviews
-     SET answers = COALESCE($2::jsonb, answers), result = $3, updated_at = now()
-     WHERE id = $1 AND deleted_at IS NULL
-     RETURNING id`,
-    [
-      id,
-      Array.isArray(input.answers) ? JSON.stringify(normalizeAnswers(input.answers)) : null,
-      result
-    ]
-  );
+  await transaction(async tx => {
+    const saved = await tx.one(
+      `UPDATE interviews
+       SET answers = COALESCE($2::jsonb, answers), result = $3, updated_at = now()
+       WHERE id = $1 AND deleted_at IS NULL
+       RETURNING id, candidate_id, to_status`,
+      [
+        id,
+        Array.isArray(input.answers) ? JSON.stringify(normalizeAnswers(input.answers)) : null,
+        result
+      ]
+    );
 
-  if (!saved) {
-    fail('Результат интервью не найден.', 404);
-  }
+    if (!saved) {
+      fail('Результат интервью не найден.', 404);
+    }
+
+    await notifyCandidateEvent(tx, saved.candidate_id, actor, {
+      type: 'changed',
+      text: `Изменён результат этапа «${saved.to_status}».`
+    });
+  });
 
   return {
     ok: true,
