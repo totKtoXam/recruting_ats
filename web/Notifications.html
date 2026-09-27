@@ -446,19 +446,10 @@ async function toggleNotifyDetails(id){
 
 function openNotificationLog(){
   toggleNotifyPopover(false);
-  navigateTo('settings/notifications/log');
+  navigateTo('profile/log');
 }
 
 // ---------- Настройки → Уведомления ----------
-
-function showNotificationSettings(tab){
-  const log=tab==='log';
-  el('notifyTabSettings').hidden=log;
-  el('notifyTabLog').hidden=!log;
-  document.querySelectorAll('input[name="notifyTab"]').forEach(input=>input.checked=input.value===(log?'log':'settings'));
-  if(log)loadServerTable('notificationLog');
-  else loadNotificationSettings();
-}
 
 async function loadNotificationSettings(){
   try{
@@ -570,7 +561,7 @@ async function linkTelegram(button){
 function watchTelegramLink(until){
   clearInterval(notify.tgPoll);
   notify.tgPoll=setInterval(async()=>{
-    if(Date.now()>until||el('notifyTabSettings').hidden||el('viewAdmin').hidden){
+    if(Date.now()>until||el('notifyTabSettings').hidden||el('viewProfile').hidden){
       clearInterval(notify.tgPoll);
       return;
     }

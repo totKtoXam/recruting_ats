@@ -1620,6 +1620,8 @@ input[type=radio]:focus-visible{outline:2px solid var(--primary-ring);outline-of
 .vacancy-directory-layout{grid-template-columns:minmax(0,1fr) 360px 340px}
 /* legacy markup: vacancy form still contains nested template editor */
 .vacancy-directory-layout:not(:has(>.directory-side-card)){grid-template-columns:minmax(0,1fr) minmax(620px,52%)}
+/* Таблица на всю ширину: форма открывается в боковой панели (Drawer.html). */
+.directory-layout.directory-single{grid-template-columns:minmax(0,1fr)}
 
 .admin-list-card,
 .admin-form-card,

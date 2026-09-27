@@ -45,7 +45,7 @@ function emailContent(notification) {
 
   return {
     subject: notification.title,
-    text: `${notification.title}\n\n${notification.body}\n\nОткрыть в ATS: ${link}\n\n—\nRecruiting ATS. Настроить уведомления: ${config.publicUrl}/#/settings/notifications`,
+    text: `${notification.title}\n\n${notification.body}\n\nОткрыть в ATS: ${link}\n\n—\nRecruiting ATS. Настроить уведомления: ${config.publicUrl}/#/profile/notifications`,
     html: `<!doctype html><html><body style="margin:0;padding:24px;background:#f5f6f8;font-family:Arial,Helvetica,sans-serif;color:#1f2328">
 <div style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #e3e5e8;border-radius:10px;padding:20px 24px">
   <div style="font-size:12px;color:#6b7280;margin-bottom:8px">Recruiting ATS</div>
@@ -54,7 +54,7 @@ function emailContent(notification) {
   <a href="${escapeHtml(link)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:8px 14px;border-radius:6px;font-size:14px">Открыть в ATS</a>
 </div>
 <div style="max-width:560px;margin:12px auto 0;font-size:12px;color:#9ca3af;text-align:center">
-  <a href="${escapeHtml(config.publicUrl)}/#/settings/notifications" style="color:#9ca3af">Настроить уведомления</a>
+  <a href="${escapeHtml(config.publicUrl)}/#/profile/notifications" style="color:#9ca3af">Настроить уведомления</a>
 </div></body></html>`
   };
 }

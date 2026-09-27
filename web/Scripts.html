@@ -337,8 +337,6 @@ function applySidebarState(collapsed){
 const ADMIN_ROUTES={
   'vacancies':{section:'vacancies',title:'Вакансии',description:'Вакансии и шаблоны интервью по этапам.'},
   'settings/sources':{section:'sources',title:'Источники вакансий',description:'Откуда приходят кандидаты.'},
-  'settings/notifications':{section:'notifications',tab:'settings',title:'Уведомления',description:'Какие уведомления и куда получать. Журнал — все ваши уведомления.'},
-  'settings/notifications/log':{section:'notifications',tab:'log',title:'Уведомления',description:'Какие уведомления и куда получать. Журнал — все ваши уведомления.'},
   'settings/integrations':{section:'integrations',title:'Интеграции',description:'Вход через Google, отправка почты и Telegram-бот. Значения здесь важнее .env и применяются без перезапуска.',adminOnly:true},
   'settings/users':{section:'users',title:'Пользователи',description:'Войти может любой Google Account, работать в ATS — только тот, кому открыт доступ.',adminOnly:true}
 };
@@ -356,8 +354,18 @@ function initRouter(){
   applyRoute();
 }
 
+// Прежние адреса настроек уведомлений (в том числе из писем) ведут в профиль.
+const LEGACY_ROUTES={'settings/notifications':'profile/notifications','settings/notifications/log':'profile/log'};
+
 function getRoute(){
-  const raw=location.hash.replace(/^#\//,'');
+  let raw=location.hash.replace(/^#\//,'');
+  if(LEGACY_ROUTES[raw]){
+    raw=LEGACY_ROUTES[raw];
+    history.replaceState(null,'','#/'+raw);
+  }
+  if(raw==='profile'||raw.startsWith('profile/')){
+    return {page:'profile',path:raw,tab:raw.split('/')[1]||'',candidateId:''};
+  }
   if(raw.startsWith('candidate/')){
     return {page:'candidates',path:'candidates',candidateId:decodeURIComponent(raw.slice('candidate/'.length))};
   }
@@ -380,6 +388,8 @@ function applyRoute(){
   const route=getRoute();
   el('viewCandidates').hidden=route.page!=='candidates';
   el('viewAdmin').hidden=route.page!=='admin';
+  el('viewProfile').hidden=route.page!=='profile';
+  if(route.page==='profile'&&typeof showProfile==='function')showProfile(route.tab);
   document.querySelectorAll('.sidebar-link').forEach(link=>{
     const active=link.dataset.route===route.path||route.path.startsWith(link.dataset.route+'/');
     link.classList.toggle('active',active);
@@ -391,7 +401,6 @@ function applyRoute(){
   if(route.page==='admin'){
     if(typeof showAdminSection==='function')showAdminSection(route.path);
     if(typeof renderAdminAll==='function')renderAdminAll();
-    if(route.section==='notifications'&&typeof showNotificationSettings==='function')showNotificationSettings(ADMIN_ROUTES[route.path].tab);
     if(route.section==='integrations'&&typeof showIntegrations==='function')showIntegrations();
     if(state.loaded.references){
       ensureAdminUsersLoaded().catch(()=>{});
@@ -490,6 +499,11 @@ function renderCurrentUser(){
     }else{
       avatar.hidden=true;
     }
+  }
+  const initials=el('currentUserInitials');
+  if(initials&&typeof userInitials==='function'){
+    initials.textContent=userInitials(user);
+    initials.hidden=!!user['Avatar URL'];
   }
 
   if(name)name.textContent=user['ФИО']||user.Email||'Пользователь';
@@ -853,6 +867,7 @@ function updateSyncStatus(){
     state.loaded.candidates;
 
   const node=el('dataSyncStatus');
+  if(!node)return;
   node.textContent=
     ready
       ? 'Данные синхронизированы'
