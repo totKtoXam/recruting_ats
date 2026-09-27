@@ -8,6 +8,7 @@ import * as lifecycle from './services/lifecycle.js';
 import * as lists from './services/lists.js';
 import * as notifications from './services/notifications.js';
 import * as references from './services/references.js';
+import * as settings from './services/settings.js';
 import * as telegram from './services/telegram.js';
 import * as users from './services/users.js';
 
@@ -101,6 +102,12 @@ export const rpcHandlers = {
   setCandidateWatch: (input, { user }) => notifications.setCandidateWatch(input, user),
   createTelegramLink: (input, { user }) => telegram.createTelegramLink(input, user),
   unlinkTelegram: (input, { user }) => telegram.unlinkTelegram(input, user),
+
+  // Интеграции (вход через Google, SMTP, Telegram) — только администраторы.
+  getIntegrationSettings: (input, { user }) => settings.getIntegrationSettings(input, user),
+  saveIntegration: (input, { user }) => settings.saveIntegration(input, user),
+  testIntegration: (input, { user }) => settings.testIntegration(input, user),
+  resetIntegration: (input, { user }) => settings.resetIntegration(input, user),
 
   // Серверные таблицы: фильтры, сортировка и пагинация в БД.
   listVacancies: input => lists.listVacancies(input),

@@ -11,18 +11,21 @@ import {
   validateEmail
 } from '../lib/validation.js';
 import { toPublicUser, toResponsible } from './mappers.js';
+import { runtime } from './settings.js';
 
 export const ACCESS_DENIED_MESSAGE =
   'Доступ для этого Google Account не выдан или отключён. Обратитесь к администратору ATS.';
 
 const isAdminEmail = email => config.auth.adminEmails.includes(email);
 
+// Правила автоматического доступа меняются в «Настройки → Интеграции» без перезапуска.
+
 function isAllowlisted(email) {
   const domain = email.split('@')[1] || '';
 
   return (
-    config.auth.allowedEmails.includes(email) ||
-    config.auth.allowedDomains.includes(domain)
+    runtime.auth().allowedEmails.includes(email) ||
+    runtime.auth().allowedDomains.includes(domain)
   );
 }
 
@@ -114,8 +117,8 @@ export async function upsertUserOnLogin(identity) {
 
     const hasLists =
       config.auth.adminEmails.length > 0 ||
-      config.auth.allowedEmails.length > 0 ||
-      config.auth.allowedDomains.length > 0;
+      runtime.auth().allowedEmails.length > 0 ||
+      runtime.auth().allowedDomains.length > 0;
     const { count } = await tx.one('SELECT count(*)::int AS count FROM users');
     const firstUserBootstrap = !hasLists && count === 0;
     const allowed = admin || isAllowlisted(email) || firstUserBootstrap;

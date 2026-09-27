@@ -5,6 +5,7 @@ import { pool } from './db/pool.js';
 import { verifyDriveAccess } from './lib/drive.js';
 import { startDeliveryWorker, stopDeliveryWorker } from './services/notification-delivery.js';
 import { startTelegramBot, stopTelegramBot } from './services/telegram.js';
+import { assertAuthConfigured, loadSettings } from './services/settings.js';
 
 async function main() {
   assertProductionConfig();
@@ -12,6 +13,9 @@ async function main() {
   // Схема БД накатывается при старте (аналог ensureSchemaVersion_ из Apps Script),
   // доступ к корневой папке Google Drive проверяется сразу, а не при первой загрузке резюме.
   await migrate();
+  // Настройки интеграций из БД (Настройки → Интеграции) поверх .env.
+  await loadSettings();
+  assertAuthConfigured();
   const folder = await verifyDriveAccess();
   console.log(`Google Drive: папка «${folder.name}» доступна`);
 

@@ -54,6 +54,7 @@
           <a class="sidebar-link" href="#/settings/sources" data-route="settings/sources"><svg class="icon"><use href="#i-list"/></svg><span>Источники вакансий</span></a>
           <a class="sidebar-link" href="#/settings/notifications" data-route="settings/notifications"><svg class="icon"><use href="#i-bell"/></svg><span>Уведомления</span></a>
           <a class="sidebar-link" href="#/settings/users" data-route="settings/users" id="sidebarUsersLink" hidden><svg class="icon"><use href="#i-user"/></svg><span>Пользователи</span></a>
+          <a class="sidebar-link" href="#/settings/integrations" data-route="settings/integrations" data-admin-only hidden><svg class="icon"><use href="#i-link"/></svg><span>Интеграции</span></a>
           </div>
         </div>
       </nav>
@@ -479,5 +480,6 @@
   <?!= include('Scripts'); ?>
   <?!= include('AdminScripts'); ?>
   <?!= include('Notifications'); ?>
+  <?!= include('Integrations'); ?>
 </body>
 </html>

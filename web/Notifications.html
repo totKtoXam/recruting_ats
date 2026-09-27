@@ -486,7 +486,7 @@ function renderNotificationSettings(){
 
   let tgText,tgActions='';
   if(!telegram.botConfigured){
-    tgText='Telegram-бот не настроен на сервере. Администратору: создать бота в @BotFather и указать TELEGRAM_BOT_TOKEN.';
+    tgText='Telegram-бот не настроен. Администратору: создать бота в @BotFather и указать токен в «Настройки → Интеграции».';
   }else if(telegram.linked){
     tgText='Привязан'+(telegram.username?' аккаунт @'+telegram.username:'')+(telegram.verifiedAt?' · '+notifyFullTime(telegram.verifiedAt):'')+'. Отключить можно и в самом боте командой /stop.';
     tgActions='<button type="button" class="text-btn" onclick="unlinkTelegram(this)">Отвязать</button>';

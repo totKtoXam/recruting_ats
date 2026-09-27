@@ -339,6 +339,7 @@ const ADMIN_ROUTES={
   'settings/sources':{section:'sources',title:'Источники вакансий',description:'Откуда приходят кандидаты.'},
   'settings/notifications':{section:'notifications',tab:'settings',title:'Уведомления',description:'Какие уведомления и куда получать. Журнал — все ваши уведомления.'},
   'settings/notifications/log':{section:'notifications',tab:'log',title:'Уведомления',description:'Какие уведомления и куда получать. Журнал — все ваши уведомления.'},
+  'settings/integrations':{section:'integrations',title:'Интеграции',description:'Вход через Google, отправка почты и Telegram-бот. Значения здесь важнее .env и применяются без перезапуска.',adminOnly:true},
   'settings/users':{section:'users',title:'Пользователи',description:'Войти может любой Google Account, работать в ATS — только тот, кому открыт доступ.',adminOnly:true}
 };
 
@@ -391,6 +392,7 @@ function applyRoute(){
     if(typeof showAdminSection==='function')showAdminSection(route.path);
     if(typeof renderAdminAll==='function')renderAdminAll();
     if(route.section==='notifications'&&typeof showNotificationSettings==='function')showNotificationSettings(ADMIN_ROUTES[route.path].tab);
+    if(route.section==='integrations'&&typeof showIntegrations==='function')showIntegrations();
     if(state.loaded.references){
       ensureAdminUsersLoaded().catch(()=>{});
     }
@@ -463,6 +465,7 @@ async function maybeOpenCandidateFromRoute(){
 function renderCurrentUser(){
   const usersLink=el('sidebarUsersLink');
   if(usersLink)usersLink.hidden=!isAdminUser();
+  document.querySelectorAll('[data-admin-only]').forEach(link=>link.hidden=!isAdminUser());
   if(state.currentUser&&!isAdminUser()&&location.hash==='#/settings/users'){
     history.replaceState(null,'','#/candidates');
     applyRoute();

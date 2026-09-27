@@ -3,6 +3,7 @@
 // безопасно при нескольких экземплярах), при ошибке повторяются с растущей паузой.
 import nodemailer from 'nodemailer';
 import { config } from '../config.js';
+import { onSettingsChanged, runtime } from './settings.js';
 import { db } from '../db/pool.js';
 import { candidateLink, onNotificationsCreated, smtpConfigured, telegramConfigured } from './notifications.js';
 import { sendTelegramMessage } from './telegram.js';
@@ -18,15 +19,23 @@ let timer = null;
 
 function getTransporter() {
   if (!transporter) {
+    const smtp = runtime.smtp();
     transporter = nodemailer.createTransport({
-      host: config.smtp.host,
-      port: config.smtp.port,
-      secure: config.smtp.secure,
-      auth: config.smtp.user ? { user: config.smtp.user, pass: config.smtp.pass } : undefined
+      host: smtp.host,
+      port: smtp.port,
+      secure: smtp.secure,
+      auth: smtp.user ? { user: smtp.user, pass: smtp.pass } : undefined
     });
   }
   return transporter;
 }
+
+// Настройки SMTP поменяли в интерфейсе — пересоздаём подключение и досылаем очередь.
+onSettingsChanged('smtp', () => {
+  if (transporter) transporter.close();
+  transporter = null;
+  processDeliveryQueue();
+});
 
 const escapeHtml = value =>
   String(value ?? '').replace(/[&<>"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[char]);
@@ -69,7 +78,7 @@ async function deliver(delivery) {
     if (!smtpConfigured()) return { status: 'skipped', error: 'SMTP не настроен' };
     if (!user.email || user.email.endsWith('.invalid')) return { status: 'skipped', error: 'Нет email' };
 
-    await getTransporter().sendMail({ from: config.smtp.from, to: user.email, ...emailContent(notification) });
+    await getTransporter().sendMail({ from: runtime.smtp().from, to: user.email, ...emailContent(notification) });
     return { status: 'sent', recipient: user.email };
   }
 
@@ -163,10 +172,10 @@ export function startDeliveryWorker() {
   if (smtpConfigured()) {
     getTransporter()
       .verify()
-      .then(() => console.log(`Email-уведомления: SMTP ${config.smtp.host}:${config.smtp.port} доступен`))
+      .then(() => console.log(`Email-уведомления: SMTP ${runtime.smtp().host}:${runtime.smtp().port} доступен`))
       .catch(error => console.error('Email-уведомления: SMTP недоступен:', error.message));
   } else {
-    console.log('Email-уведомления: SMTP не настроен (SMTP_HOST, MAIL_FROM) — письма не отправляются.');
+    console.log('Email-уведомления: SMTP не настроен (Настройки → Интеграции или SMTP_HOST в .env) — письма не отправляются.');
   }
 }
 

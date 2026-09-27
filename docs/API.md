@@ -343,6 +343,15 @@ Cookie: ats.sid=...
 | `createTelegramLink` | — | Одноразовая ссылка привязки `{ url, expiresAt }` (15 минут) |
 | `unlinkTelegram` | — | Отвязать Telegram |
 
+**Интеграции** (только администраторы, иначе `403`; `group`: `auth` \| `smtp` \| `telegram`)
+
+| Метод | Аргумент | Назначение |
+|---|---|---|
+| `getIntegrationSettings` | — | Группы с полями: значение (у секретов — только `isSet` и `hintValue`), источник `db` / `env` / `default` / `none`; `info` — Redirect URI, JS origin, администраторы из `.env` |
+| `testIntegration` | `{ group, values }` | Проверка с учётом несохранённых значений: Google — Client ID/secret, SMTP — тестовое письмо текущему пользователю, Telegram — `getMe` |
+| `saveIntegration` | `{ group, values: { 'smtp.host': '…', … } }` | Сохранить изменённые поля (пустой секрет — не менять) и применить без перезапуска. Client ID/secret перед сохранением проверяются в Google |
+| `resetIntegration` | `{ group }` | Удалить значения группы, сохранённые в ATS, — действует `.env` |
+
 **Админ-панель**
 
 | Метод | Аргумент | Назначение |
