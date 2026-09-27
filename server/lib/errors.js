@@ -13,8 +13,8 @@ export function fail(message, status) {
 
 const PG_MESSAGES = {
   users_email_uq: 'Этот email уже закреплён за другим пользователем ATS. Обратитесь к администратору.',
+  vacancies_name_active_uq: 'Вакансия с таким названием уже существует.',
   sources_name_active_uq: 'Источник с таким названием уже существует.',
-  responsibles_user_active_uq: 'Этот пользователь уже привязан к другому ответственному.',
   interview_templates_required_uq: 'Для этой вакансии и этапа уже есть обязательный шаблон.'
 };
 

@@ -1,0 +1,212 @@
+<style>
+/* ---------- Профиль: меню под именем в шапке и страница «Профиль» ---------- */
+.profile-wrap{position:relative;display:inline-flex}
+.profile-trigger{cursor:pointer;border-top:0;border-right:0;border-bottom:0;background:transparent;color:inherit;font:inherit;text-align:left;border-radius:0 var(--radius) var(--radius) 0}
+.profile-trigger:hover{background:var(--topbar-hover)}
+.profile-trigger[aria-expanded="true"]{background:var(--topbar-active)}
+.profile-trigger .chevron{width:14px;height:14px;color:var(--topbar-muted);flex:0 0 auto}
+.avatar-initials{
+  width:24px;height:24px;border-radius:50%;flex:0 0 auto;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:var(--primary-soft);color:var(--primary);font-size:12px;font-weight:700;text-transform:uppercase
+}
+.avatar-initials[hidden]{display:none}
+.avatar-lg{width:48px;height:48px;font-size:18px}
+img.avatar-lg{border-radius:50%;object-fit:cover}
+
+.profile-menu{width:300px}
+.profile-menu-head{display:flex;gap:10px;align-items:center;padding:14px;border-bottom:1px solid var(--line-soft)}
+.profile-menu-head img{width:40px;height:40px;border-radius:50%;object-fit:cover}
+.profile-menu-head .avatar-initials{width:40px;height:40px;font-size:16px}
+.profile-menu-name{font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.profile-menu-email{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.profile-menu-roles{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+.profile-menu-list{padding:6px}
+.profile-menu-item{
+  display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border:0;border-radius:var(--radius);
+  background:transparent;color:var(--text);font-size:14px;text-align:left;cursor:pointer;text-decoration:none
+}
+.profile-menu-item:hover,.profile-menu-item:focus-visible{background:var(--hover);outline:none}
+.profile-menu-item .icon{width:16px;height:16px;color:var(--text-2)}
+.profile-menu-item .menu-badge{margin-left:auto}
+.profile-menu-sep{height:1px;background:var(--line-soft);margin:6px 4px}
+.profile-menu-theme{display:flex;align-items:center;gap:10px;padding:6px 10px;font-size:14px}
+.profile-menu-theme>span{flex:1}
+.theme-switch{display:inline-flex;gap:2px;padding:2px;border-radius:var(--radius);background:var(--surface-3)}
+.theme-switch button{width:30px;height:26px;border:0;border-radius:calc(var(--radius) - 2px);background:transparent;color:var(--text-2);display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.theme-switch button .icon{width:14px;height:14px}
+.theme-switch button[aria-pressed="true"]{background:var(--surface);color:var(--primary);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+
+/* Страница профиля */
+/* Страница со стандартными полями, карточки — с рамкой и внутренним отступом. */
+.profile-page{display:flex;flex-direction:column;gap:16px;padding:16px var(--page-pad) var(--page-pad);max-width:1280px}
+.profile-page .admin-list-card{border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface);box-shadow:var(--shadow);overflow:hidden}
+.profile-page .admin-list-card>.section-title-row{position:static;margin:0;padding:12px 16px;min-height:52px}
+#profileAccount,#profileTheme,#notifyChannels{padding:16px}
+#notifyTabLog{min-height:360px}
+.profile-tabs{align-self:flex-start}
+.profile-tabs .icon{vertical-align:-2px;margin-right:4px}
+.profile-grid{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:16px;align-items:start}
+@media(max-width:900px){.profile-grid{grid-template-columns:1fr}}
+.profile-grid[hidden]{display:none}
+.profile-account{display:flex;gap:14px;align-items:center;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--line-soft)}
+.profile-account-name{font-size:17px;font-weight:600}
+.profile-facts{display:grid;grid-template-columns:max-content 1fr;gap:10px 20px;margin:0 0 16px;font-size:14px;align-items:center}
+.profile-facts dt{color:var(--muted)}
+.profile-facts dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.theme-options{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.theme-option{
+  display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 8px;border-radius:var(--radius);
+  border:1px solid var(--line);background:var(--surface);color:var(--text-2);font-size:13px;font-weight:500;cursor:pointer;
+  transition:border-color var(--dur-fast),background-color var(--dur-fast),color var(--dur-fast)
+}
+.theme-option:focus-visible{outline:none;box-shadow:0 0 0 2px var(--primary-ring)}
+.theme-option .icon{width:18px;height:18px}
+.theme-option:hover{border-color:var(--line-strong)}
+.theme-option[aria-pressed="true"]{border-color:var(--primary);color:var(--primary);background:var(--primary-tint)}
+</style>
+
+<script>
+// ---------- Профиль ----------
+// Всё личное — под именем в шапке: профиль, уведомления, журнал уведомлений, тема, выход.
+
+const THEME_OPTIONS=[
+  {mode:'system',icon:'monitor',label:'Как в системе'},
+  {mode:'light',icon:'sun',label:'Светлая'},
+  {mode:'dark',icon:'moon',label:'Тёмная'}
+];
+let profileMenuOpen=false;
+
+function userInitials(user){
+  const parts=[user['Фамилия'],user['Имя']].filter(Boolean);
+  const source=parts.length?parts:[(user['ФИО']||user.Email||'?')];
+  return source.map(part=>String(part).trim()[0]||'').join('').slice(0,2)||'?';
+}
+
+function avatarHtml(user,cls){
+  return user['Avatar URL']
+    ?'<img class="'+(cls||'')+'" src="'+escapeHtml(user['Avatar URL'])+'" alt="" referrerpolicy="no-referrer">'
+    :'<span class="avatar-initials '+(cls||'')+'">'+escapeHtml(userInitials(user))+'</span>';
+}
+
+function userRoleChips(user){
+  const chips=[];
+  if(user.isAdmin)chips.push('<span class="mini-chip">Администратор</span>');
+  if((user.stages||[]).length)chips.push('<span class="mini-chip">Ответственный</span>');
+  return chips.join('');
+}
+
+function themeSwitchHtml(){
+  const current=window.ThemeManager?ThemeManager.get():'system';
+  return '<span class="theme-switch" role="group" aria-label="Тема">'+THEME_OPTIONS.map(option=>
+    '<button type="button" data-tip="'+option.label+'" aria-label="Тема: '+option.label+'" aria-pressed="'+(current===option.mode)+'" onclick="setThemeMode(\''+option.mode+'\')">'+icon(option.icon)+'</button>'
+  ).join('')+'</span>';
+}
+
+function setThemeMode(mode){
+  if(window.ThemeManager)ThemeManager.set(mode);
+  if(profileMenuOpen)renderProfileMenu();
+  if(!el('viewProfile').hidden)renderProfileMain();
+}
+
+function renderProfileMenu(){
+  const user=state.currentUser;
+  if(!user)return;
+  const unread=typeof notify!=='undefined'?notify.unread:0;
+  const item=(iconName,label,onclick,extra)=>
+    '<button type="button" class="profile-menu-item" role="menuitem" onclick="'+onclick+'">'+icon(iconName)+'<span>'+label+'</span>'+(extra||'')+'</button>';
+
+  el('profileMenu').innerHTML=
+    '<div class="profile-menu-head">'+avatarHtml(user)+
+      '<div style="min-width:0"><div class="profile-menu-name">'+escapeHtml(user['ФИО']||user.Email)+'</div>'+
+      (user['ФИО']&&user['ФИО']!==user.Email?'<div class="profile-menu-email">'+escapeHtml(user.Email||'')+'</div>':'')+
+      '<div class="profile-menu-roles">'+userRoleChips(user)+'</div></div>'+
+    '</div>'+
+    '<div class="profile-menu-list">'+
+      item('user','Профиль',"openProfile('')")+
+      item('bell','Уведомления',"openProfile('notifications')")+
+      item('history','Журнал уведомлений',"openProfile('log')",unread?'<span class="notify-badge menu-badge" style="position:static;box-shadow:none">'+(unread>99?'99+':unread)+'</span>':'')+
+      '<div class="profile-menu-sep"></div>'+
+      '<div class="profile-menu-theme">'+icon('sun')+'<span>Тема</span>'+themeSwitchHtml()+'</div>'+
+      '<div class="profile-menu-sep"></div>'+
+      item('logout','Выйти',"el('logoutForm').submit()")+
+    '</div>';
+}
+
+function toggleProfileMenu(force){
+  profileMenuOpen=force===undefined?!profileMenuOpen:force;
+  el('profileMenu').hidden=!profileMenuOpen;
+  el('currentUserBadge').setAttribute('aria-expanded',String(profileMenuOpen));
+  if(profileMenuOpen){
+    if(typeof toggleNotifyPopover==='function'&&notify.open)toggleNotifyPopover(false);
+    renderProfileMenu();
+    const first=el('profileMenu').querySelector('.profile-menu-item');
+    if(first)first.focus();
+  }
+}
+
+function openProfile(tab){
+  toggleProfileMenu(false);
+  navigateTo(tab?'profile/'+tab:'profile');
+}
+
+document.addEventListener('mousedown',event=>{
+  if(profileMenuOpen&&!event.target.closest('.profile-wrap'))toggleProfileMenu(false);
+});
+document.addEventListener('keydown',event=>{
+  if(event.key==='Escape'&&profileMenuOpen){
+    toggleProfileMenu(false);
+    el('currentUserBadge').focus();
+  }
+});
+window.addEventListener('hashchange',()=>{if(profileMenuOpen)toggleProfileMenu(false)});
+
+// ---------- Страница профиля ----------
+
+const PROFILE_TABS={
+  '':{title:'Профиль'},
+  notifications:{title:'Уведомления'},
+  log:{title:'Журнал уведомлений'}
+};
+
+function showProfile(tab){
+  tab=PROFILE_TABS[tab]?tab:'';
+  document.querySelectorAll('input[name="profileTab"]').forEach(input=>input.checked=input.value===tab);
+  el('profileTabMain').hidden=tab!=='';
+  el('notifyTabSettings').hidden=tab!=='notifications';
+  el('notifyTabLog').hidden=tab!=='log';
+  if(tab==='')renderProfileMain();
+  if(tab==='notifications')loadNotificationSettings();
+  if(tab==='log')loadServerTable('notificationLog');
+}
+
+function renderProfileTheme(){
+  const current=window.ThemeManager?ThemeManager.get():'system';
+  el('profileTheme').innerHTML='<div class="theme-options" role="group" aria-label="Тема оформления">'+THEME_OPTIONS.map(option=>
+    '<button type="button" class="theme-option" aria-pressed="'+(current===option.mode)+'" onclick="setThemeMode(\''+option.mode+'\')">'+icon(option.icon)+'<span>'+option.label+'</span></button>'
+  ).join('')+'</div>';
+}
+
+// Тема не зависит от загрузки профиля; карточка аккаунта дорисуется, когда придёт пользователь
+// (renderCurrentUser вызывает renderProfileMain повторно).
+function renderProfileMain(){
+  renderProfileTheme();
+  const user=state.currentUser;
+  if(!user){el('profileAccount').innerHTML='<div class="skeleton" style="height:120px"></div>';return}
+  const facts=[
+    ['Email',escapeHtml(user.Email||'')],
+    ['Роль',userRoleChips(user)||'Пользователь'],
+    ['Этапы',(user.stages||[]).length?'<div class="chip-wrap">'+user.stages.map(stage=>statusChip(stage,true)).join('')+'</div>':'<span class="muted">Не ответственный</span>'],
+    ['Telegram',user.telegram?escapeHtml(user.telegram)+(user.telegramVerified?' <span class="state-badge state-ok">Подтверждён</span>':' <span class="state-badge state-archived">Не подтверждён</span>'):'<span class="muted">Не привязан</span>']
+  ];
+  if(user['Последний вход'])facts.push(['Последний вход',escapeHtml(fmtDate(user['Последний вход']))]);
+
+  el('profileAccount').innerHTML=
+    '<div class="profile-account">'+avatarHtml(user,'avatar-lg')+
+      '<div><div class="profile-account-name">'+escapeHtml(user['ФИО']||user.Email)+'</div>'+
+      '<div class="muted">ФИО и этапы меняет администратор в «Настройки → Пользователи».</div></div>'+
+    '</div>'+
+    '<dl class="profile-facts">'+facts.map(([label,value])=>'<dt>'+label+'</dt><dd>'+value+'</dd>').join('')+'</dl>'+
+    '<div class="channel-card-actions"><button type="button" class="text-btn" onclick="navigateTo(\'profile/notifications\')">'+icon('send','icon-sm')+' Уведомления и Telegram</button></div>';
+}
+</script>

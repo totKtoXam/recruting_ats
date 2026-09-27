@@ -3,6 +3,23 @@
 import { formatDateTime } from '../lib/dates.js';
 import { composeFullName } from '../lib/validation.js';
 
+import { APP_CONFIG } from '../config.js';
+
+// Состояние записи: активная, в архиве или в корзине (с датой окончательного удаления).
+export function lifecycleFields(row) {
+  const deletedAt = row.deleted_at ? new Date(row.deleted_at) : null;
+  const retention = APP_CONFIG.TRASH_RETENTION_DAYS * 86_400_000;
+  const purgeAt = deletedAt ? new Date(deletedAt.getTime() + retention) : null;
+
+  return {
+    state: row.deleted_at ? 'deleted' : row.archived_at ? 'archived' : 'active',
+    archivedAt: formatDateTime(row.archived_at),
+    deletedAt: formatDateTime(row.deleted_at),
+    purgeAt: formatDateTime(purgeAt),
+    daysUntilPurge: purgeAt ? Math.max(0, Math.ceil((purgeAt.getTime() - Date.now()) / 86_400_000)) : null
+  };
+}
+
 export const fileUrl = fileId => (fileId ? `/files/${fileId}` : '');
 export const candidateFolderUrl = candidateId => `/candidates/${candidateId}/files`;
 
@@ -10,8 +27,7 @@ function softDeleteFields(row) {
   return {
     'Дата создания': formatDateTime(row.created_at),
     'Дата изменения': formatDateTime(row.updated_at),
-    'Удален': Boolean(row.deleted_at),
-    'Дата удаления': formatDateTime(row.deleted_at)
+    ...lifecycleFields(row)
   };
 }
 
@@ -21,7 +37,7 @@ export function toVacancy(row) {
     '№': row.number,
     'Вакансия': row.name,
     'Статус': row.status,
-    'Комментарий': row.comment,
+    links: Array.isArray(row.links) ? row.links : [],
     ...softDeleteFields(row)
   };
 }
@@ -31,29 +47,57 @@ export function toSource(row) {
     'Source ID': row.id,
     '№': row.number,
     'Название': row.name,
+    // Иконка: своя картинка важнее пресета; пустой ключ — определить по названию.
+    iconKey: row.icon_key || '',
+    iconUrl: row.icon_png ? `/source-icons/${row.id}?v=${row.icon_updated_at ? new Date(row.icon_updated_at).getTime() : 0}` : '',
     ...softDeleteFields(row)
   };
 }
 
+// Ответственный — пользователь с этапами; 'Responsible ID' совпадает с 'User ID'.
 export function toResponsible(row) {
   const stages = row.stages || [];
 
   return {
     'Responsible ID': row.id,
-    '№': row.number,
+    'User ID': row.id,
     'Фамилия': row.last_name,
     'Имя': row.first_name,
     'Отчество': row.middle_name,
-    'ФИО': composeFullName(row.last_name, row.first_name, row.middle_name),
+    'ФИО': userDisplayName(row),
     'Email': row.email,
-    'User ID': row.user_id || '',
     'Доступные этапы': JSON.stringify(stages),
     stages,
-    ...softDeleteFields(row)
+    hasAccess: Boolean(row.is_active)
   };
 }
 
+export function userDisplayName(row) {
+  return composeFullName(row.last_name, row.first_name, row.middle_name) || row.full_name || row.email || '';
+}
+
+// Вопрос шаблона: { text, answers } — текст и список вероятных ответов.
+// Старый формат (строка) приводится к объекту.
+export function normalizeTemplateQuestions(questions) {
+  return (Array.isArray(questions) ? questions : [])
+    .map(question => {
+      const item = typeof question === 'string' ? { text: question } : question || {};
+      const text = String(item.text ?? '').trim();
+      const answers = [
+        ...new Set(
+          (Array.isArray(item.answers) ? item.answers : [])
+            .map(answer => String(answer ?? '').trim())
+            .filter(Boolean)
+        )
+      ];
+      return { text, answers };
+    })
+    .filter(question => question.text);
+}
+
 export function toTemplate(row) {
+  const questions = normalizeTemplateQuestions(row.questions);
+
   return {
     'Template ID': row.id,
     '№': row.number,
@@ -62,9 +106,9 @@ export function toTemplate(row) {
     'Вакансия': row.vacancy_name || '',
     'Этап': row.stage,
     'Обязательный': row.required,
-    'Вопросы': JSON.stringify(row.questions || []),
+    'Вопросы': JSON.stringify(questions),
     required: row.required,
-    questions: row.questions || [],
+    questions,
     ...softDeleteFields(row)
   };
 }
@@ -73,11 +117,39 @@ export function toPublicUser(row) {
   return {
     'User ID': row.id,
     'Email': row.email,
-    'ФИО': row.full_name,
+    'ФИО': userDisplayName(row),
+    'Фамилия': row.last_name || '',
+    'Имя': row.first_name || '',
+    'Отчество': row.middle_name || '',
+    stages: row.stages || [],
+    telegram: row.telegram_username ? '@' + row.telegram_username : '',
+    // Подтверждён — привязан через бота (есть chat_id), иначе ник указан вручную.
+    telegramVerified: Boolean(row.telegram_chat_id),
+    // Email ещё не входил ни разу — его можно исправить (например, временный адрес).
+    emailEditable: !row.google_subject,
+    ...lifecycleFields(row),
     'Avatar URL': row.avatar_url,
     'IsActive': row.is_active,
-    'Последний вход': formatDateTime(row.last_login_at)
+    isAdmin: Boolean(row.is_admin),
+    accessStatus: userAccessStatus(row),
+    'Статус доступа': USER_ACCESS_LABELS[userAccessStatus(row)],
+    'Последний вход': formatDateTime(row.last_login_at),
+    'Доступ выдан': formatDateTime(row.access_granted_at),
+    'Запрос доступа': formatDateTime(row.access_requested_at),
+    'Добавлен': formatDateTime(row.created_at)
   };
+}
+
+export const USER_ACCESS_LABELS = {
+  active: 'Доступ открыт',
+  pending: 'Ожидает доступа',
+  disabled: 'Доступ отключён'
+};
+
+// pending — доступ ещё ни разу не выдавался; disabled — был выдан и отозван.
+export function userAccessStatus(row) {
+  if (row.is_active) return 'active';
+  return row.access_granted_at ? 'disabled' : 'pending';
 }
 
 export function toResumeVersion(row) {
@@ -87,6 +159,12 @@ export function toResumeVersion(row) {
     name: row.original_name,
     uploadedAt: formatDateTime(row.uploaded_at)
   };
+}
+
+function rejectedByLabel(row) {
+  if (!row.rejected_at) return '';
+  if (row.rejected_by_type === 'candidate') return 'Кандидат';
+  return row.rejected_by_responsible_name || '';
 }
 
 // row — результат CANDIDATE_SELECT; resumeVersions передаются только для полной карточки.
@@ -120,16 +198,28 @@ export function toCandidate(row, resumeVersions) {
     'HR Responsible ID': row.hr_responsible_id,
     'Ответственный HR': row.hr_responsible_name || '',
     'Tech Interviewer ID': row.tech_interviewer_id,
-    'Ответственный тех. интервьювер': row.tech_interviewer_name || '',
+    'Ответственный проф. интервьювер': row.tech_interviewer_name || '',
     'Резюме': latestResumeUrl,
     'Resume File ID': row.latest_resume_file_id || '',
     'Папка кандидата': candidateFolderUrl(row.id),
-    'Комментарий': row.comment,
     'Дата добавления': formatDateTime(row.created_at),
     'Дата изменения': formatDateTime(row.updated_at),
     'Архивирован': archived,
     'Дата архивации': formatDateTime(row.archived_at),
+    ...lifecycleFields(row),
     'Причина отказа': row.rejection_reason,
+    'Комментарий к отказу': row.rejection_comment || '',
+    'Кем отказано': rejectedByLabel(row),
+    'Дата отказа': formatDateTime(row.rejected_at),
+    rejection: row.rejected_at
+      ? {
+          fromStatus: row.rejected_from_status || '',
+          byType: row.rejected_by_type || '',
+          byResponsibleId: row.rejected_by_responsible_id || '',
+          reason: row.rejection_reason || '',
+          comment: row.rejection_comment || ''
+        }
+      : null,
     archived
   };
 
@@ -175,7 +265,6 @@ export function toInterview(row) {
     ),
     'Responsible ID': row.responsible_id || '',
     'Вопросы и ответы': JSON.stringify(answers),
-    'Комментарий': row.comment,
     'Результат': row.result,
     answers,
     ...softDeleteFields(row)
@@ -196,6 +285,7 @@ export function toTransitionLogEntry(row) {
     'Changed By': row.changed_by_name,
     'Changed By Email': row.changed_by_email,
     'Комментарий': row.comment,
+    details: row.details || null,
     'Дата': formatDateTime(row.created_at)
   };
 }

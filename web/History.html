@@ -1,0 +1,219 @@
+<style>
+/* =====================================================================
+   History (audit log) — right-hand sheet above cards, drawers and modals.
+   Built on .modal so the UiKit modal manager handles focus trap / Esc.
+   ===================================================================== */
+.modal.history-modal{z-index:60;justify-content:flex-end;align-items:stretch;padding:0}
+.history-modal .panel{
+  width:min(560px,100%);height:100%;max-height:100dvh;border-radius:0;border-width:0 0 0 1px;
+  display:flex;flex-direction:column
+}
+.modal.history-modal.open>.panel{animation:historyIn var(--dur-slow) var(--ease-out)}
+@keyframes historyIn{from{transform:translateX(24px);opacity:0}to{transform:none;opacity:1}}
+.history-modal .panel-header{flex:0 0 auto}
+.history-filters{display:flex;gap:4px;padding:10px 20px;border-bottom:1px solid var(--line-soft);flex:0 0 auto}
+.history-filter{height:28px;padding:0 12px;border:0;border-radius:999px;background:transparent;color:var(--text-2);font:inherit;font-size:13px;font-weight:500;cursor:pointer}
+.history-filter:hover{background:var(--hover);color:var(--text)}
+.history-filter[aria-pressed="true"]{background:var(--primary-tint-2);color:var(--primary-strong)}
+.history-filter:focus-visible{outline:none;box-shadow:0 0 0 2px var(--primary-ring)}
+.history-body{flex:1 1 auto;min-height:0;overflow-y:auto;padding:8px 20px 24px}
+.history-day{position:sticky;top:0;z-index:1;margin:12px 0 4px;padding:4px 0;background:var(--surface);font-size:12px;font-weight:600;color:var(--muted)}
+.history-list{list-style:none;margin:0;padding:0}
+.history-item{position:relative;display:grid;grid-template-columns:28px minmax(0,1fr);gap:4px 10px;padding:10px 0;border-bottom:1px solid var(--line-soft)}
+.history-item:last-child{border-bottom:0}
+.history-ava{grid-row:1 / span 3;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--primary-soft);color:var(--primary);font-size:12px;font-weight:700;text-transform:uppercase}
+.history-ava.is-system{background:var(--surface-3);color:var(--muted)}
+.history-line{display:flex;align-items:baseline;gap:8px;min-width:0;font-size:14px;line-height:1.4;color:var(--text-2)}
+.history-line strong{color:var(--text);font-weight:600}
+.history-line .history-text{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}
+.history-time{flex:0 0 auto;font-size:12px;color:var(--faint);font-variant-numeric:tabular-nums}
+.history-diff{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:13px;line-height:1.4}
+.history-old,.history-new{max-width:100%;padding:2px 8px;border-radius:var(--radius-sm);overflow-wrap:anywhere}
+.history-old{background:var(--danger-tint);color:var(--text-2);text-decoration:line-through;text-decoration-color:color-mix(in srgb,var(--danger) 60%,transparent)}
+.history-new{background:var(--success-tint);color:var(--text)}
+.history-diff .history-arrow{color:var(--faint);display:inline-flex}
+.history-comment{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.history-actions{display:flex;gap:6px;margin-top:2px}
+.history-badge{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 8px;border-radius:999px;background:var(--surface-3);color:var(--muted);font-size:12px;font-weight:500}
+.history-empty{display:flex;flex-direction:column;align-items:center;gap:6px;padding:48px 16px;color:var(--muted);text-align:center}
+.history-empty .icon{width:28px;height:28px;color:var(--faint);stroke-width:1.5}
+.history-empty strong{color:var(--text-2);font-size:14px}
+@media(prefers-reduced-motion:reduce){.modal.history-modal.open>.panel{animation:none}}
+</style>
+
+<script>
+// История изменений записи: кто, когда, какое поле, было → стало, и «Вернуть».
+// HistoryPanel.open({ entityType, entityId, title, onReverted })
+(function(){
+  if(window.HistoryPanel){return;}
+
+  const FILTERS=[['all','Все'],['fields','Поля'],['status','Статусы и архив']];
+  const STATUS_ACTIONS=['create','status','archive','unarchive','delete','restore'];
+  let ctx=null;
+  let entries=[];
+  let filter='all';
+
+  function esc(v){return String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;')}
+  function ico(name,cls){return '<svg class="icon'+(cls?' '+cls:'')+'" aria-hidden="true" focusable="false"><use href="#i-'+name+'"/></svg>'}
+
+  function ensureModal(){
+    let modal=document.getElementById('historyModal');
+    if(modal){return modal;}
+    modal=document.createElement('div');
+    modal.id='historyModal';
+    modal.className='modal history-modal';
+    modal.setAttribute('data-backdrop-close','');
+    modal.innerHTML=
+      '<div class="panel">'+
+        '<div class="panel-header">'+
+          '<div><div class="eyebrow">История изменений</div><h2 id="historyTitle">Запись</h2></div>'+
+          '<div class="header-actions">'+
+            '<button type="button" class="icon-btn" data-tip="Обновить" aria-label="Обновить" onclick="HistoryPanel.reload()">'+ico('refresh')+'</button>'+
+            '<button type="button" class="icon-btn" data-modal-close data-tip="Закрыть (Esc)" aria-label="Закрыть" onclick="HistoryPanel.close()">'+ico('close')+'</button>'+
+          '</div>'+
+        '</div>'+
+        '<div class="history-filters" role="group" aria-label="Показать">'+
+          FILTERS.map(([key,label])=>'<button type="button" class="history-filter" data-filter="'+key+'" aria-pressed="false" onclick="HistoryPanel.setFilter(\''+key+'\')">'+label+'</button>').join('')+
+        '</div>'+
+        '<div class="history-body" id="historyBody" aria-live="polite"></div>'+
+      '</div>';
+    modal.addEventListener('click',e=>{if(e.target===modal)close();});
+    document.body.appendChild(modal);
+    return modal;
+  }
+
+  function initials(name){
+    const parts=String(name||'').trim().split(/\s+/).filter(Boolean);
+    return ((parts[0]||'')[0]||'')+((parts[1]||'')[0]||'');
+  }
+
+  function sentence(e){
+    const who='<strong>'+esc(e.actorName)+'</strong>';
+    const field='«'+esc(e.fieldLabel)+'»';
+    switch(e.action){
+      case 'create':return who+' создал(а) запись';
+      case 'update':return who+' изменил(а) '+field;
+      case 'status':return who+' сменил(а) '+(e.fieldLabel?field:'статус');
+      case 'archive':return who+' отправил(а) в архив';
+      case 'unarchive':return who+' вернул(а) из архива';
+      case 'delete':return who+' удалил(а) в корзину';
+      case 'restore':return who+' восстановил(а) из корзины';
+      case 'revert':return who+' вернул(а) прежнее значение '+field;
+      default:return who+' — '+esc(e.actionLabel);
+    }
+  }
+
+  function diffHtml(e){
+    if(e.action==='create'){
+      return e.newDisplay&&e.field!=='status'?'<div class="history-diff"><span class="history-new">'+esc(e.newDisplay)+'</span></div>':
+        e.field==='status'&&e.newDisplay?'<div class="history-diff">'+(window.statusChip?statusChip(e.newDisplay,true):'<span class="history-new">'+esc(e.newDisplay)+'</span>')+'</div>':'';
+    }
+    if(!e.oldDisplay&&!e.newDisplay){return '';}
+    if(e.field==='status'&&window.statusChip&&e.oldDisplay&&!/^(Открыта|На паузе|Закрыта)$/.test(e.newDisplay)){
+      return '<div class="history-diff">'+statusChip(e.oldDisplay,true)+'<span class="history-arrow">'+ico('arrow-right','icon-sm')+'</span>'+statusChip(e.newDisplay,true)+'</div>';
+    }
+    return '<div class="history-diff">'+
+      (e.oldDisplay?'<span class="history-old"><span class="sr-only">Было: </span>'+esc(e.oldDisplay)+'</span>':'')+
+      (e.oldDisplay&&e.newDisplay?'<span class="history-arrow">'+ico('arrow-right','icon-sm')+'</span>':'')+
+      (e.newDisplay?'<span class="history-new"><span class="sr-only">Стало: </span>'+esc(e.newDisplay)+'</span>':'')+
+    '</div>';
+  }
+
+  function dayLabel(iso){
+    const d=new Date(iso);
+    const today=new Date();
+    const y=new Date(today);y.setDate(today.getDate()-1);
+    const same=(a,b)=>a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate();
+    if(same(d,today))return 'Сегодня';
+    if(same(d,y))return 'Вчера';
+    return d.toLocaleDateString('ru-RU',{day:'numeric',month:'long',year:d.getFullYear()===today.getFullYear()?undefined:'numeric'});
+  }
+
+  function visible(){
+    if(filter==='fields')return entries.filter(e=>e.action==='update'||e.action==='revert');
+    if(filter==='status')return entries.filter(e=>STATUS_ACTIONS.includes(e.action));
+    return entries;
+  }
+
+  function render(){
+    const body=document.getElementById('historyBody');
+    document.querySelectorAll('#historyModal .history-filter').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.filter===filter)));
+    const list=visible();
+    if(!list.length){
+      body.innerHTML='<div class="history-empty">'+ico('history')+'<strong>'+(entries.length?'Нет записей в этом разделе':'Изменений пока нет')+'</strong>'+
+        '<span>'+(entries.length?'Выберите другой фильтр.':'Здесь появятся правки полей, смена статусов, архив и корзина.')+'</span></div>';
+      return;
+    }
+    let html='';
+    let lastDay='';
+    list.forEach(e=>{
+      const day=dayLabel(e.createdAtIso);
+      if(day!==lastDay){
+        if(lastDay)html+='</ul>';
+        html+='<div class="history-day">'+esc(day)+'</div><ul class="history-list">';
+        lastDay=day;
+      }
+      const time=new Date(e.createdAtIso).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+      const system=!e.actorName||e.actorName==='Система';
+      html+='<li class="history-item">'+
+        '<span class="history-ava'+(system?' is-system':'')+'" aria-hidden="true">'+esc(system?'·':initials(e.actorName))+'</span>'+
+        '<div class="history-line"><span class="history-text">'+sentence(e)+'</span><time class="history-time" datetime="'+esc(e.createdAtIso)+'">'+esc(time)+'</time></div>'+
+        diffHtml(e)+
+        (e.comment&&e.comment!=='Кандидат создан'?'<div class="history-comment">'+esc(e.comment)+'</div>':'')+
+        (e.canRevert?'<div class="history-actions"><button type="button" class="button button-ghost button-small" onclick="HistoryPanel.revert(\''+esc(e.id)+'\',this)">'+ico('undo','icon-sm')+'<span>Вернуть «'+esc(e.oldDisplay.length>40?e.oldDisplay.slice(0,39)+'…':e.oldDisplay)+'»</span></button></div>':'')+
+      '</li>';
+    });
+    body.innerHTML=html+'</ul>';
+  }
+
+  async function load(){
+    const body=document.getElementById('historyBody');
+    body.innerHTML='<div class="skeleton" style="height:56px;margin-top:12px"></div><div class="skeleton" style="height:56px;margin-top:8px"></div><div class="skeleton" style="height:56px;margin-top:8px"></div>';
+    try{
+      const data=await rpc('getHistory',{entityType:ctx.entityType,entityId:ctx.entityId});
+      entries=data.entries||[];
+      render();
+    }catch(error){
+      body.innerHTML='<div class="history-empty">'+ico('alert')+'<strong>Не удалось загрузить историю</strong><span>'+esc(error.message||String(error))+'</span>'+
+        '<button type="button" class="button button-secondary button-small" onclick="HistoryPanel.reload()">'+ico('refresh','icon-sm')+'<span>Повторить</span></button></div>';
+    }
+  }
+
+  function open(options){
+    ctx=options||{};
+    filter='all';
+    entries=[];
+    const modal=ensureModal();
+    document.getElementById('historyTitle').textContent=ctx.title||'Запись';
+    modal.classList.add('open');
+    load();
+  }
+
+  function close(){
+    const modal=document.getElementById('historyModal');
+    if(modal)modal.classList.remove('open');
+  }
+
+  async function revert(id,button){
+    const entry=entries.find(e=>String(e.id)===String(id));
+    if(!entry)return;
+    const ok=await showConfirm('Вернуть «'+entry.fieldLabel+'» к значению «'+entry.oldDisplay+'»? Это действие тоже попадёт в историю.','Возврат значения',{danger:false,confirmLabel:'Вернуть'});
+    if(!ok)return;
+    await runUiTask({button,label:'Возвращаю…'},async()=>{
+      await rpc('revertChange',{id});
+      showToast('Значение «'+entry.fieldLabel+'» возвращено.');
+      await load();
+      if(ctx&&typeof ctx.onReverted==='function')await ctx.onReverted(entry);
+      window.dispatchEvent(new CustomEvent('ats:reverted',{detail:{entityType:ctx.entityType,entityId:ctx.entityId}}));
+    }).catch(()=>{});
+  }
+
+  window.HistoryPanel={
+    open,
+    close,
+    reload:()=>ctx&&load(),
+    setFilter:key=>{filter=key;render();},
+    revert
+  };
+})();
+</script>

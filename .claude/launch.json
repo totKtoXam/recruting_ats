@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "recruiting-ats",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--env-file=.env", "server/index.js"],
+      "port": 3040
+    }
+  ]
+}

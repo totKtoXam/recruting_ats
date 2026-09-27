@@ -1,383 +1,938 @@
 <script>
+// ---------- Серверные таблицы ----------
+// Фильтрация, сортировка и пагинация выполняются в БД: таблица отправляет
+// { page, pageSize, sort, filters } в RPC и рисует полученную страницу.
+
+const PAGE_SIZES=[10,20,50,100];
+const serverTables={};
+
+function createServerTable(config){
+  const table={
+    ...config,
+    query:{page:1,pageSize:20,sort:{...config.defaultSort},filters:{}},
+    data:null,
+    requestId:0,
+    mounted:false,
+    filterTimer:null
+  };
+  serverTables[config.id]=table;
+  return table;
+}
+
+function mountServerTable(table){
+  const root=el(table.containerId);
+  if(!root||table.mounted)return;
+
+  const header=table.columns.map(column=>{
+    const sortable=!!column.sort;
+    const sortCall='serverTableSort(\''+table.id+'\',\''+column.sort+'\')';
+    return '<th'+(sortable?' class="sortable" tabindex="0" aria-sort="none" onclick="'+sortCall+'" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();'+sortCall+'}"':'')+
+      ' data-sort-key="'+escapeHtml(column.sort||'')+'"'+(column.width?' style="width:'+column.width+'"':'')+'>'+
+      (column.label?'<span>'+escapeHtml(column.label)+'</span>':'<span class="sr-only">Действия</span>')+
+      (sortable?' '+icon('sort','icon-sm sort-icon'):'')+
+    '</th>';
+  }).join('');
+
+  const filters=table.columns.map(column=>{
+    const filter=column.filter;
+    if(!filter)return '<th class="no-filter"></th>';
+    const label=' data-label="'+escapeHtml(column.label||'')+'"';
+    const handler='serverTableFilter(\''+table.id+'\',\''+filter.key+'\',this.value)';
+    if(filter.type==='select'){
+      return '<th'+label+'><select class="filter-input" aria-label="Фильтр: '+escapeHtml(column.label||'')+'" onchange="'+handler+'">'+
+        option('','Все')+filter.options().map(item=>typeof item==='object'?option(item.value,item.label):option(item,item)).join('')+
+      '</select></th>';
+    }
+    const name=column.label||'значению';
+    return '<th'+label+'><input class="filter-input" type="'+(filter.type==='number'?'number':'search')+'" '+
+      'placeholder="'+(filter.type==='number'?'№':'Поиск')+'" aria-label="Фильтр по '+escapeHtml(name.toLowerCase())+'" oninput="'+handler+'"></th>';
+  }).join('');
+
+  root.innerHTML=
+    '<div class="table-scroll">'+
+      '<table class="data-table">'+
+        '<thead><tr>'+header+'</tr><tr class="filter-row">'+filters+'</tr></thead>'+
+        '<tbody></tbody>'+
+      '</table>'+
+    '</div>'+
+    '<div class="table-pagination"></div>';
+
+  table.mounted=true;
+}
+
+async function loadServerTable(id){
+  const table=serverTables[id];
+  if(!table)return;
+  mountServerTable(table);
+
+  const root=el(table.containerId);
+  const requestId=++table.requestId;
+  root.classList.add('table-loading');
+
+  try{
+    const data=await rpc(table.rpcName,table.query);
+    // Ответ на устаревший запрос (фильтр успели изменить) не рисуем.
+    if(requestId!==table.requestId)return;
+    table.data=data;
+    table.query.page=data.page;
+    renderServerTableBody(table);
+  }catch(error){
+    if(requestId===table.requestId){
+      showToast(error&&error.message?error.message:String(error),'error');
+    }
+  }finally{
+    if(requestId===table.requestId)root.classList.remove('table-loading');
+  }
+}
+
+// Только что созданные записи: закреплены сверху первой страницы и подсвечены,
+// пока их не откроют (или до перезагрузки страницы).
+const freshRecords={vacancies:new Map(),sources:new Map(),users:new Map(),templates:new Set()};
+
+function markFresh(tableId,item){
+  const table=serverTables[tableId];
+  if(table&&freshRecords[tableId])freshRecords[tableId].set(String(table.rowId(item)),item);
+}
+
+function isFresh(tableId,id){
+  const bucket=freshRecords[tableId];
+  return !!(bucket&&bucket.has(String(id)));
+}
+
+function clearFresh(tableId,id){
+  const bucket=freshRecords[tableId];
+  if(bucket&&bucket.delete(String(id)))rerenderServerTable(tableId);
+}
+
+function tableItemsWithFresh(table){
+  const data=table.data;
+  const bucket=freshRecords[table.id];
+  const stateFilter=table.query.filters.state||'active';
+  if(!bucket||!bucket.size||data.page!==1||!['active','all'].includes(stateFilter))return data.items;
+  const pinnedIds=new Set(bucket.keys());
+  const pinned=[...bucket.values()].map(item=>
+    data.items.find(row=>String(table.rowId(row))===String(table.rowId(item)))||item
+  ).filter(item=>!item.state||item.state==='active');
+  return [...pinned,...data.items.filter(row=>!pinnedIds.has(String(table.rowId(row))))];
+}
+
+function renderServerTableBody(table){
+  const root=el(table.containerId);
+  const data=table.data;
+  if(!root||!data)return;
+  renderStateSwitches(table.id);
+
+  root.querySelectorAll('th[data-sort-key]').forEach(th=>{
+    const key=th.dataset.sortKey;
+    if(!key)return;
+    const active=table.query.sort.key===key;
+    if(active)th.dataset.sort=table.query.sort.dir;
+    else delete th.dataset.sort;
+    th.setAttribute('aria-sort',active?(table.query.sort.dir==='asc'?'ascending':'descending'):'none');
+    const use=th.querySelector('.sort-icon use');
+    if(use)use.setAttribute('href','#i-'+(active?(table.query.sort.dir==='asc'?'sort-asc':'sort-desc'):'sort'));
+  });
+
+  const items=tableItemsWithFresh(table);
+  root.querySelector('tbody').innerHTML=items.length
+    ? items.map(item=>{
+        const selected=table.isSelected&&table.isSelected(item);
+        const fresh=isFresh(table.id,table.rowId(item));
+        const stateClass=(item.state&&item.state!=='active'?' row-'+item.state:'')+(fresh?' row-fresh':'')+(table.rowClass?' '+table.rowClass(item):'');
+        return '<tr class="clickable-row'+(selected?' selected-row':'')+stateClass+'" tabindex="0"'+(selected?' aria-selected="true"':'')+
+          ' onkeydown="if(event.key===\'Enter\'&&event.target===this)this.click()"'+
+          ' onclick="serverTableRowClick(\''+table.id+'\',\''+escJs(table.rowId(item))+'\')">'+
+          table.columns.map((column,index)=>'<td data-label="'+escapeHtml(column.label||'')+'">'+
+            (index===0&&fresh?'<span class="fresh-badge">Новая</span>':'')+column.render(item)+'</td>').join('')+
+        '</tr>';
+      }).join('')
+    : '<tr><td class="table-empty" colspan="'+table.columns.length+'">'+serverTableEmptyHtml(table)+'</td></tr>';
+
+  const from=data.total?(data.page-1)*data.pageSize+1:0;
+  const to=Math.min(data.page*data.pageSize,data.total);
+  const lastPage=Math.max(Math.ceil(data.total/data.pageSize),1);
+  const nav=(name,tip,page,disabled)=>
+    '<button class="icon-btn icon-btn-sm" data-tip="'+tip+'" aria-label="'+tip+'"'+(disabled?' disabled':'')+
+    ' onclick="serverTableGo(\''+table.id+'\','+page+')">'+icon(name,'icon-sm')+'</button>';
+
+  root.querySelector('.table-pagination').innerHTML=
+    '<span class="pagination-info">'+from+'–'+to+' из '+data.total+'</span>'+
+    '<select class="page-size" aria-label="Строк на странице" onchange="serverTablePageSize(\''+table.id+'\',this.value)">'+
+      PAGE_SIZES.map(size=>option(size,size+' на стр.',size===data.pageSize)).join('')+
+    '</select>'+
+    nav('chevrons-left','Первая страница',1,data.page<=1)+
+    nav('chevron-left','Предыдущая страница',data.page-1,data.page<=1)+
+    '<span class="pagination-info">'+data.page+' / '+lastPage+'</span>'+
+    nav('chevron-right','Следующая страница',data.page+1,data.page>=lastPage)+
+    nav('chevrons-right','Последняя страница',lastPage,data.page>=lastPage);
+}
+
+// Пустая таблица объясняет почему: фильтры, архив/корзина или записей ещё нет.
+function serverTableEmptyHtml(table){
+  const filters={...table.query.filters};
+  const stateFilter=filters.state||'active';
+  delete filters.state;
+  let title=table.emptyText||'Записей пока нет';
+  let text='';
+  if(Object.keys(filters).length){title='Ничего не найдено';text='Измените или очистите фильтры в шапке таблицы.'}
+  else if(stateFilter==='archived')title='В архиве пусто';
+  else if(stateFilter==='deleted'){title='Корзина пуста';text='Удалённые записи хранятся здесь 30 дней.'}
+  else if(table.emptyHint)text=table.emptyHint;
+  return '<div class="table-empty-state">'+icon(Object.keys(filters).length?'search':'inbox')+
+    '<strong>'+escapeHtml(title)+'</strong>'+(text?'<span>'+escapeHtml(text)+'</span>':'')+'</div>';
+}
+
+function serverTableSort(id,key){
+  const table=serverTables[id];
+  const sort=table.query.sort;
+  table.query.sort={key,dir:sort.key===key&&sort.dir==='asc'?'desc':'asc'};
+  table.query.page=1;
+  loadServerTable(id);
+}
+
+function serverTableFilter(id,key,rawValue){
+  const table=serverTables[id];
+  const filterValue=String(rawValue||'').trim();
+  if(filterValue)table.query.filters[key]=filterValue;
+  else delete table.query.filters[key];
+  table.query.page=1;
+  clearTimeout(table.filterTimer);
+  table.filterTimer=setTimeout(()=>loadServerTable(id),300);
+}
+
+function serverTableGo(id,page){
+  serverTables[id].query.page=page;
+  loadServerTable(id);
+}
+
+function serverTablePageSize(id,size){
+  const table=serverTables[id];
+  table.query.pageSize=Number(size)||20;
+  table.query.page=1;
+  loadServerTable(id);
+}
+
+function serverTableRowClick(id,rowId){
+  const table=serverTables[id];
+  if(isFresh(id,rowId)){freshRecords[id].delete(String(rowId))}
+  const item=(table.data&&table.data.items||[]).find(row=>String(table.rowId(row))===String(rowId));
+  if(item&&table.onRowClick)table.onRowClick(item);
+}
+
+function rerenderServerTable(id){
+  const table=serverTables[id];
+  if(table&&table.data)renderServerTableBody(table);
+}
+
+// ---------- Состояние записей: активные / архив / корзина ----------
+
+const STATE_LABELS={active:'Активные',archived:'Архив',deleted:'Корзина',all:'Все'};
+const STATE_ICONS={active:'i-dot',archived:'i-archive',deleted:'i-trash',all:'i-list'};
+
+function stateCountHtml(count){
+  return '<span class="seg-count'+(Number(count)?'':' is-zero')+'">'+count+'</span>';
+}
+
+// Переключатель состояния с количеством записей в каждом (с учётом фильтров таблицы).
+function renderStateSwitches(onlyId){
+  document.querySelectorAll('.state-switch[data-table]').forEach(root=>{
+    const id=root.dataset.table;
+    if(onlyId&&id!==onlyId)return;
+    const table=serverTables[id];
+    if(!table)return;
+    const current=table.query.filters.state||'active';
+    const counts=table.data&&table.data.counts||{};
+    // Корзину видят только администраторы: удалять и восстанавливать могут только они.
+    const states=isAdminUser()?['active','archived','deleted','all']:['active','archived','all'];
+    root.setAttribute('role','radiogroup');
+    root.setAttribute('aria-label','Показать записи');
+    root.innerHTML=states.map(state=>
+      '<label class="segmented-option" data-state="'+state+'"><input type="radio" name="state-'+id+'" value="'+state+'"'+(state===current?' checked':'')+
+      ' onchange="setTableState(\''+id+'\',this.value)"><span><svg class="icon seg-icon" aria-hidden="true"><use href="#'+STATE_ICONS[state]+'"/></svg>'+STATE_LABELS[state]+
+      (counts[state]!==undefined?stateCountHtml(counts[state]):'')+'</span></label>'
+    ).join('');
+  });
+}
+
+function setTableState(id,state){
+  const table=serverTables[id];
+  table.query.filters.state=state;
+  table.query.page=1;
+  loadServerTable(id);
+}
+
+function stateBadge(item){
+  if(item.state==='archived')return '<span class="state-badge state-archived">В архиве</span>';
+  if(item.state==='deleted')return '<span class="state-badge state-deleted" data-tip="Удалится окончательно '+escapeHtml(fmtDate(item.purgeAt))+'">Удалится через '+escapeHtml(item.daysUntilPurge)+' дн.</span>';
+  return '';
+}
+
+// Кнопки жизненного цикла для записи в зависимости от её состояния.
+function lifecycleButtons(type,id,state,small){
+  const size=small?' icon-btn-sm':'';
+  const call=action=>'event.stopPropagation();entityAction(\''+type+'\',\''+escJs(id)+'\',\''+action+'\',this)';
+  if(state==='deleted'){
+    return isAdminUser()?iconBtn('restore','Восстановить из корзины',call('restore'),size.trim()):'';
+  }
+  if(state==='archived'){
+    return iconBtn('unarchive','Вернуть из архива',call('unarchive'),size.trim())+
+      (isAdminUser()?iconBtn('trash','Удалить (корзина, 30 дней)',call('delete'),(size+' icon-btn-danger').trim()):'');
+  }
+  return iconBtn('archive','В архив',call('archive'),size.trim());
+}
+
+function lifecycleNote(item){
+  if(!item||item.state==='active')return '';
+  if(item.state==='archived'){
+    return '<div class="lifecycle-note">'+icon('archive','icon-sm')+'<span>В архиве с '+escapeHtml(fmtDate(item.archivedAt))+'. Удалить можно только архивную запись.</span></div>';
+  }
+  return '<div class="lifecycle-note deleted">'+icon('trash','icon-sm')+'<span>В корзине. Будет удалено окончательно '+escapeHtml(fmtDate(item.purgeAt))+' (через '+escapeHtml(item.daysUntilPurge)+' дн.). До этого её можно восстановить.</span></div>';
+}
+
+const ENTITY_ACTIONS={
+  archive:{rpc:'archiveEntity',done:'Отправлено в архив.'},
+  unarchive:{rpc:'unarchiveEntity',done:'Возвращено из архива.'},
+  delete:{rpc:'deleteEntity',done:'Перемещено в корзину. Восстановить можно в течение 30 дней.'},
+  restore:{rpc:'restoreEntity',done:'Восстановлено из корзины (в архив).'}
+};
+
+const ENTITY_AFTER={
+  vacancy:async id=>{await refreshReferences();await loadServerTable('vacancies');if(String(value('vacancyId'))===String(id))await reopenVacancy(id)},
+  source:async id=>{await refreshReferences();await loadServerTable('sources');if(String(value('sourceId'))===String(id))reopenSource(id)},
+  user:async id=>{await refreshReferences();ensureAdminUsersLoaded(true).catch(()=>{});await loadServerTable('users');if(String(value('userId'))===String(id))reopenUser(id)},
+  template:async()=>{await refreshReferences();await loadVacancyTemplates();await loadServerTable('vacancies');closeTemplateModal()}
+};
+
+async function entityAction(type,id,action,button){
+  if(action==='delete'){
+    const ok=await showConfirm('Удалить запись? Она будет в корзине 30 дней — за это время её можно восстановить. Потом она удалится из базы окончательно.','Удаление');
+    if(!ok)return;
+  }
+  await runUiTask({button,label:'…'},async()=>{
+    await rpc(ENTITY_ACTIONS[action].rpc,{type,id});
+    if(ENTITY_AFTER[type])await ENTITY_AFTER[type](id);
+    showToast(ENTITY_ACTIONS[action].done);
+  }).catch(()=>{});
+}
+
+// Строка таблицы перерисовывается по данным сервера; для формы ищем запись по id.
+function tableItem(tableId,idKey,id){
+  const table=serverTables[tableId];
+  return (table&&table.data&&table.data.items||[]).find(item=>String(item[idKey])===String(id))||null;
+}
+
+async function findInTable(tableId,idKey,id){
+  let item=tableItem(tableId,idKey,id);
+  if(item)return item;
+  // Запись могла сменить состояние и уйти на другой «таб» — ищем во всех состояниях.
+  const table=serverTables[tableId];
+  for(const state of ['active','archived','deleted']){
+    const data=await rpc(table.rpcName,{page:1,pageSize:100,filters:{state}}).catch(()=>null);
+    item=data&&data.items.find(row=>String(row[idKey])===String(id));
+    if(item)return item;
+  }
+  return null;
+}
+
+function historyButton(type,id,title){
+  return id?iconBtn('history','История изменений','openHistory(\''+type+'\',\''+escJs(id)+'\',\''+escJs(title||'')+'\')'):'';
+}
+
+function formActions(containerId,buttons){
+  el(containerId).innerHTML=buttons.filter(Boolean).join('');
+}
+
+// ---------- Таблицы ----------
+
+function vacancyStatusButtons(item,small){
+  if(item.state!=='active')return '';
+  const next=(state.vacancyStatusTransitions||{})[item['Статус']]||[];
+  // Кнопка называет действие («Приостановить»), а не целевой статус — иначе её путают с самим статусом.
+  const actions={'Открыта':['check','Открыть'],'На паузе':['clock','Приостановить'],'Закрыта':['x-circle','Закрыть']};
+  return '<span class="status-actions">'+next.map(status=>{
+    const [name,verb]=actions[status]||['arrow-right',status];
+    return '<button type="button" class="status-action" data-tip="Статус станет «'+escapeHtml(status)+'»" onclick="event.stopPropagation();setVacancyStatusUi(\''+escJs(item['Vacancy ID'])+'\',\''+escJs(status)+'\',this)">'+
+      icon(name,'icon-sm')+'<span>'+escapeHtml(verb)+'</span></button>';
+  }
+  ).join('')+'</span>';
+}
+
+const vacancyTable=createServerTable({
+  id:'vacancies',
+  containerId:'vacancyTable',
+  rpcName:'listVacancies',
+  emptyText:'Вакансий пока нет',
+  emptyHint:'Создайте первую кнопкой «Новая вакансия».',
+  defaultSort:{key:'number',dir:'desc'},
+  rowId:item=>item['Vacancy ID'],
+  isSelected:item=>String(item['Vacancy ID'])===String(value('vacancyId')),
+  onRowClick:item=>editVacancy(item['Vacancy ID'],item),
+  columns:[
+    {label:'№',sort:'number',width:'64px',filter:{key:'number',type:'number'},render:item=>escapeHtml(item['№'])},
+    {label:'Вакансия',sort:'name',filter:{key:'name',type:'text'},render:item=>escapeHtml(item['Вакансия'])+' '+stateBadge(item)},
+    {label:'Статус',sort:'status',width:'250px',filter:{key:'status',type:'select',options:()=>['Открыта','На паузе','Закрыта']},render:item=>
+      '<div class="chip-wrap">'+vacancyStatusChip(item['Статус'])+vacancyStatusButtons(item,true)+'</div>'},
+    {label:'Кандидаты',sort:'candidates',width:'90px',render:item=>escapeHtml(item.candidateCount||0)},
+    {label:'Публикации',width:'150px',render:item=>vacancyLinksHtml(item.links||[])},
+    {label:'Шаблоны',sort:'templates',render:item=>templateChips(item.templates||[])},
+    {label:'',width:'76px',render:item=>'<div class="row-actions">'+lifecycleButtons('vacancy',item['Vacancy ID'],item.state,true)+'</div>'}
+  ]
+});
+
+const sourceTable=createServerTable({
+  id:'sources',
+  containerId:'sourceTable',
+  rpcName:'listSources',
+  emptyText:'Источников пока нет',
+  emptyHint:'Добавьте, откуда приходят кандидаты: LinkedIn, hh, рекомендации…',
+  defaultSort:{key:'name',dir:'asc'},
+  rowId:item=>item['Source ID'],
+  isSelected:item=>String(item['Source ID'])===String(value('sourceId')),
+  onRowClick:item=>editSource(item['Source ID'],item),
+  columns:[
+    {label:'№',sort:'number',width:'64px',filter:{key:'number',type:'number'},render:item=>escapeHtml(item['№'])},
+    {label:'Источник',sort:'name',filter:{key:'name',type:'text'},render:item=>'<div class="source-name-cell">'+sourceIconHtml(item)+'<span>'+escapeHtml(item['Название'])+'</span> '+stateBadge(item)+'</div>'},
+    {label:'',width:'76px',render:item=>'<div class="row-actions">'+lifecycleButtons('source',item['Source ID'],item.state,true)+'</div>'}
+  ]
+});
+
+function userAccessSwitch(user){
+  const self=state.currentUser&&String(state.currentUser['User ID'])===String(user['User ID']);
+  const disabled=self||user.state!=='active';
+  const tip=self?'Это вы':user.state!=='active'?'Сначала верните из архива':(user.accessStatus==='active'?'Закрыть доступ':'Открыть доступ');
+  return '<label class="switch" data-tip="'+escapeHtml(tip)+'" onclick="event.stopPropagation()">'+
+    '<input type="checkbox"'+(user.accessStatus==='active'?' checked':'')+(disabled?' disabled':'')+
+    ' aria-label="Доступ в ATS" onchange="setUserAccess(\''+escJs(user['User ID'])+'\',this.checked,this)">'+
+    '<span class="switch-track"></span></label>'+
+    (user.accessStatus==='pending'&&user['Запрос доступа']?' <span class="state-badge state-archived" data-tip="Пытался войти '+escapeHtml(user['Запрос доступа'])+'">Ждёт</span>':'');
+}
+
+const userTable=createServerTable({
+  id:'users',
+  containerId:'userTable',
+  rpcName:'listUsers',
+  emptyText:'Пользователей нет',
+  defaultSort:{key:'status',dir:'asc'},
+  rowId:item=>item['User ID'],
+  isSelected:item=>String(item['User ID'])===String(value('userId')),
+  onRowClick:item=>editUser(item),
+  columns:[
+    {label:'ФИО',sort:'name',filter:{key:'name',type:'text'},render:item=>{
+      const name=item['ФИО']&&item['ФИО']!==item.Email?escapeHtml(item['ФИО']):'<span class="muted">Имя не указано</span>';
+      return '<div class="user-name-cell">'+name+(item.isAdmin?'<span class="mini-chip">Админ</span>':'')+stateBadge(item)+'</div>';
+    }},
+    {label:'Email',sort:'email',filter:{key:'email',type:'text'},render:item=>escapeHtml(item.Email)},
+    {label:'Telegram',width:'150px',render:item=>item.telegram
+      ?'<span class="nowrap">'+escapeHtml(item.telegram)+(item.telegramVerified?' <span class="tg-verified" data-tip="Подтверждён через бота">'+icon('check','icon-sm')+'</span>':' <span class="tg-unverified" data-tip="Не подтверждён через бота">'+icon('clock','icon-sm')+'</span>')+'</span>'
+      :'<span class="muted">—</span>'},
+    {label:'Доступ',sort:'status',width:'120px',filter:{key:'status',type:'select',options:()=>[
+      {value:'pending',label:'Ожидает'},
+      {value:'active',label:'Открыт'},
+      {value:'disabled',label:'Отключён'}
+    ]},render:userAccessSwitch},
+    {label:'Ответственный за этапы',sort:'stages',filter:{key:'stage',type:'select',options:()=>state.pipelineStatuses||[]},render:item=>
+      (item.stages||[]).length?'<div class="chip-wrap">'+item.stages.map(stage=>statusChip(stage,true)).join('')+'</div>':'<span class="muted">—</span>'},
+    {label:'Последний вход',sort:'lastLogin',width:'150px',render:item=>item['Последний вход']?'<span class="nowrap" data-tip="'+escapeHtml(item['Последний вход'])+'">'+escapeHtml(fmtDate(item['Последний вход']))+'</span>':'<span class="muted">Не входил</span>'},
+    {label:'',width:'76px',render:item=>'<div class="row-actions">'+lifecycleButtons('user',item['User ID'],item.state,true)+'</div>'}
+  ]
+});
+
+const ADMIN_TABLES=['vacancies','sources'];
+
+function visibleAdminTables(){
+  return isAdminUser()?[...ADMIN_TABLES,'users']:ADMIN_TABLES;
+}
+
+function templateChips(templates){
+  if(!templates.length)return '<span class="muted">Нет шаблонов</span>';
+  return '<div class="chip-wrap">'+
+    templates.slice(0,4).map(t=>
+      '<span class="mini-chip status-'+statusKey(t.stage)+'">№'+escapeHtml(t.number)+' '+escapeHtml(t.name)+(t.required?' *':'')+'</span>'
+    ).join('')+
+    (templates.length>4?'<span class="more-chip">+'+(templates.length-4)+'</span>':'')+
+  '</div>';
+}
+
+// ---------- Общее ----------
+
+let adminInitialized=false;
+
+function initAdmin(){
+  if(adminInitialized)return;
+  adminInitialized=true;
+  // Модальное окно шаблона лежит в разметке админки, но должно жить в <body>,
+  // иначе оно скрыто вместе с разделом, когда открыта доска кандидатов.
+  document.body.appendChild(el('templateModal'));
+  // Формы справочников — боковые панели (Drawer.html); закрытие снимает выбор строки.
+  Drawer.register('vacancyDrawer',{onClose:onVacancyDrawerClose});
+  Drawer.register('sourceDrawer',{onClose:onSourceDrawerClose});
+  Drawer.register('userDrawer',{onClose:onUserDrawerClose});
+  renderVacancyFormActions(null);
+  renderSourceFormActions(null);
+  renderUserFormActions(null);
+}
+
+function adminVisible(){
+  return !el('viewAdmin').hidden;
+}
+
 function renderAdminAll(){
+  initAdmin();
+
   if(!state.loaded.references){
-    ['vacancyList','sourceList','responsibleList'].forEach(id=>{
+    ['vacancyTable','sourceTable','userTable'].forEach(id=>{
       if(el(id))el(id).innerHTML='<div class="empty-state compact">Данные загружаются в фоне…</div>';
     });
     return;
   }
 
-  renderVacancies();
-  renderSources();
-  renderResponsibles();
-  renderResponsibleUserOptions();
-  renderResponsibleStageOptions();
+  renderStateSwitches();
+  renderUserStageOptions();
   renderTemplateStageOptions();
-  renderVacancyTemplatesForSelected();
   renderSourceFormIcon();
+
+  // Таблицы загружаются при первом открытии админ-панели.
+  if(adminVisible()){
+    visibleAdminTables().forEach(id=>{
+      if(!serverTables[id].data)loadServerTable(id);
+    });
+  }
+}
+
+function reloadAdminTables(){
+  return Promise.all(visibleAdminTables().map(id=>loadServerTable(id)));
 }
 
 async function refreshAdminPage(button){
   await runUiTask({button,pageId:'viewAdmin',label:'Обновление…'},async()=>{
     await refreshAll();
+    await reloadAdminTables();
     showToast('Справочники обновлены.');
   }).catch(()=>{});
 }
 
-function showAdminTab(name,button){
-  document.querySelectorAll('.admin-page-section').forEach(section=>section.classList.remove('active'));
-  document.querySelectorAll('.admin-tabs .tab').forEach(tab=>tab.classList.remove('active'));
-  el('admin-'+name).classList.add('active');
-  if(button)button.classList.add('active');
+// Раздел админки выбирается пунктом бокового меню (см. ADMIN_ROUTES).
+// Вкладки страницы «Настройки». Пользователи и интеграции — только администраторам.
+const SETTINGS_TABS=[
+  {key:'sources',label:'Источники вакансий',icon:'list',route:'settings/sources'},
+  {key:'users',label:'Пользователи',icon:'users',route:'settings/users',adminOnly:true},
+  {key:'integrations',label:'Интеграции',icon:'link',route:'settings/integrations/auth',adminOnly:true}
+];
+
+function renderSettingsTabs(route){
+  const nav=el('settingsTabs');
+  if(!nav)return;
+  nav.hidden=!route.tab;
+  if(!route.tab)return;
+  nav.innerHTML=SETTINGS_TABS.filter(tab=>!tab.adminOnly||isAdminUser()).map(tab=>{
+    const active=tab.key===route.tab;
+    return '<a class="tab'+(active?' active':'')+'" href="#/'+tab.route+'"'+(active?' aria-current="page"':'')+'>'+
+      icon(tab.icon,'icon-sm')+'<span>'+escapeHtml(tab.label)+'</span></a>';
+  }).join('');
 }
 
-function adminTable(headers,rows){
-  return '<div class="table-scroll"><table class="admin-table"><thead><tr>'+
-    headers.map(header=>'<th>'+escapeHtml(header)+'</th>').join('')+
-    '</tr></thead><tbody>'+
-    (rows.length
-      ? rows.map(row=>
-          '<tr class="'+[
-            row._class||'',
-            row._selected?'selected-row':'',
-            row._clickable?'clickable-row':''
-          ].filter(Boolean).join(' ')+'" '+
-          (row._onclick?'onclick="'+row._onclick+'"':'')+'>'+
-            row.cells.map(cell=>'<td>'+(cell&&cell.html!==undefined?cell.html:escapeHtml(cell??''))+'</td>').join('')+
-          '</tr>'
-        ).join('')
-      : '<tr><td colspan="'+headers.length+'" class="empty-cell">Нет данных</td></tr>')+
-    '</tbody></table></div>';
+function showAdminSection(path){
+  const route=ADMIN_ROUTES[path]||ADMIN_ROUTES.vacancies;
+  document.querySelectorAll('.admin-page-section').forEach(section=>
+    section.classList.toggle('active',section.id==='admin-'+route.section)
+  );
+  el('adminPageTitle').textContent=route.title;
+  el('adminPageDescription').textContent=route.description;
+  renderSettingsTabs(route);
 }
 
-function deleteCell(deleteFn,id,pending){
-  if(pending){
-    return '<button class="button button-ghost button-small" disabled><span class="spinner spinner-dark"></span></button>';
-  }
-  return '<button class="button button-ghost button-small danger-text" onclick="event.stopPropagation();'+deleteFn+'(\''+escJs(id)+'\',this)">Удалить</button>';
+function upsertById(collection,idKey,entity){
+  const index=collection.findIndex(item=>String(item[idKey])===String(entity[idKey]));
+  if(index>=0)collection[index]=entity;
+  else collection.push(entity);
 }
 
-function entityId(collectionName,item){
-  const keys={
-    vacancies:'Vacancy ID',
-    sources:'Source ID',
-    responsibles:'Responsible ID',
-    interviewTemplates:'Template ID'
-  };
-  return item[keys[collectionName]];
+// Лента комментариев: одна на форму, пересоздаётся при смене записи.
+const commentThreads={};
+
+function mountCommentThread(key,containerId,entityType,entityId){
+  const container=el(containerId);
+  if(commentThreads[key]){commentThreads[key].destroy();delete commentThreads[key]}
+  container.innerHTML='';
+  if(!entityId||typeof CommentThread==='undefined')return;
+  commentThreads[key]=CommentThread.mount(container,{entityType,entityId,currentUser:state.currentUser});
 }
 
-function nextEntityNumber(collectionName){
-  return state[collectionName].reduce((max,item)=>Math.max(max,Number(item['№']||0)||0),0)+1;
-}
+// ---------- Вакансии ----------
 
-function clearSyncLater(collectionName,id){
-  setTimeout(()=>{
-    const item=state[collectionName].find(x=>String(entityId(collectionName,x))===String(id));
-    if(item&&item._sync==='success'){
-      delete item._sync;
-      renderAdminAll();
-    }
-  },1800);
-}
+let currentVacancy=null;
 
-async function optimisticSave({
-  collectionName,
-  idKey,
-  payload,
-  localEntity,
-  rpcName,
-  responseKey,
-  button,
-  formId,
-  onSuccess
-}){
-  const snapshot=state[collectionName].map(x=>({
-    ...x,
-    stages:x.stages?[...x.stages]:x.stages,
-    questions:x.questions?[...x.questions]:x.questions
-  }));
-
-  const existingId=payload.id||'';
-  const localId=existingId||('tmp_'+collectionName+'_'+Date.now());
-  const existing=state[collectionName].find(x=>String(x[idKey])===String(existingId));
-
-  const optimistic={
-    ...(existing||{}),
-    ...localEntity,
-    [idKey]:localId,
-    '№':existing?.['№']||nextEntityNumber(collectionName),
-    _sync:'pending',
-    _temp:!existingId
-  };
-
-  if(existing){
-    state[collectionName][state[collectionName].indexOf(existing)]=optimistic;
+function setVacancyNameError(message){
+  const node=el('vacancyNameError');
+  node.textContent=message||'';
+  node.hidden=!message;
+  el('vacancyName').classList.toggle('input-error',!!message);
+  if(message){
+    el('vacancyName').setAttribute('aria-invalid','true');
+    el('vacancyName').setAttribute('aria-describedby','vacancyNameError');
+    el('vacancyName').focus();
   }else{
-    state[collectionName].unshift(optimistic);
-  }
-
-  renderAdminAll();
-
-  try{
-    await runUiTask({button,formId,label:'Сохранение…'},async()=>{
-      const response=await rpc(rpcName,payload);
-      const serverEntity=response[responseKey];
-      const index=state[collectionName].findIndex(x=>String(x[idKey])===String(localId));
-      const normalized={...serverEntity,_sync:'success'};
-
-      if(collectionName==='responsibles')normalized.stages=localEntity.stages||[];
-      if(collectionName==='interviewTemplates')normalized.questions=localEntity.questions||[];
-
-      if(index>=0)state[collectionName][index]=normalized;
-      else state[collectionName].unshift(normalized);
-
-      if(onSuccess)onSuccess(normalized,localId);
-      renderAdminAll();
-      clearSyncLater(collectionName,serverEntity[idKey]);
-    });
-  }catch(error){
-    state[collectionName]=snapshot;
-    renderAdminAll();
+    el('vacancyName').removeAttribute('aria-invalid');
+    el('vacancyName').removeAttribute('aria-describedby');
   }
 }
 
-async function optimisticDelete({collectionName,id,rpcName,button,onSuccess}){
-  const snapshot=state[collectionName].map(x=>({...x}));
-  const item=state[collectionName].find(x=>String(entityId(collectionName,x))===String(id));
-  if(!item)return;
+// ---------- Публикации вакансии: ссылки на hh, Telegram, LinkedIn… ----------
 
-  item._sync='pending';
-  renderAdminAll();
-
-  try{
-    await runUiTask({button,label:'Удаление…'},async()=>{
-      await rpc(rpcName,id);
-      item._sync='success';
-      renderAdminAll();
-
-      setTimeout(()=>{
-        state[collectionName]=state[collectionName].filter(x=>String(entityId(collectionName,x))!==String(id));
-        if(onSuccess)onSuccess();
-        renderAdminAll();
-      },450);
-    });
-  }catch(error){
-    state[collectionName]=snapshot;
-    renderAdminAll();
-  }
+function vacancyLinkHost(url){
+  try{return new URL(url).hostname.replace(/^www\./,'')}catch(error){return ''}
 }
 
-function renderVacancies(){
-  el('vacancyCount').textContent=state.vacancies.length+' шт.';
-  const selected=value('vacancyId');
+// Иконки публикаций в таблице: до 5 штук, остальное — «+N».
+function vacancyLinksHtml(links){
+  if(!links.length)return '<span class="muted">—</span>';
+  const shown=links.slice(0,5).map(link=>{
+    const label=link.name||vacancyLinkHost(link.url)||link.url;
+    return '<a class="pub-link" href="'+escapeHtml(link.url)+'" target="_blank" rel="noopener" data-tip="'+escapeHtml(label)+'" aria-label="'+escapeHtml(label)+' (откроется в новой вкладке)" onclick="event.stopPropagation()">'+
+      brandIconHtml(detectBrandKey(link.url+' '+(link.name||'')))+'</a>';
+  }).join('');
+  return '<span class="pub-links">'+shown+(links.length>5?'<span class="more-chip">+'+(links.length-5)+'</span>':'')+'</span>';
+}
 
-  const rows=state.vacancies.map(v=>{
-    const templates=state.interviewTemplates.filter(t=>String(t['Vacancy ID'])===String(v['Vacancy ID']));
-    const templateHtml=templates.length
-      ? '<div class="chip-wrap">'+templates.slice(0,4).map(t=>'<span class="mini-chip status-'+statusKey(t['Этап'])+'">№'+escapeHtml(t['№']||'—')+' '+escapeHtml(t['Название'])+'</span>').join('')+(templates.length>4?'<span class="more-chip">+'+(templates.length-4)+'</span>':'')+'</div>'
-      : '<span class="muted">Нет шаблонов</span>';
+function vacancyLinkRow(link={},readOnly=false){
+  const url=link.url||'';
+  return '<div class="vacancy-link-row">'+
+    '<span class="vacancy-link-icon">'+brandIconHtml(url?detectBrandKey(url+' '+(link.name||'')):'other')+'</span>'+
+    '<input class="vacancy-link-url" type="url" inputmode="url" spellcheck="false" placeholder="https://hh.kz/vacancy/…" aria-label="Ссылка на публикацию" value="'+escapeHtml(url)+'"'+(readOnly?' readonly':'')+' oninput="updateVacancyLinkRow(this)">'+
+    '<input class="vacancy-link-name" placeholder="Подпись (необязательно)" aria-label="Подпись ссылки" value="'+escapeHtml(link.name||'')+'"'+(readOnly?' readonly':'')+' oninput="updateVacancyLinkRow(this)">'+
+    '<a class="icon-btn icon-btn-sm vacancy-link-open" href="'+escapeHtml(url||'#')+'" target="_blank" rel="noopener" data-tip="Открыть" aria-label="Открыть ссылку"'+(/^https?:\/\//i.test(url)?'':' hidden')+'>'+icon('external','icon-sm')+'</a>'+
+    (readOnly?'':iconBtn('trash','Удалить ссылку','this.closest(\'.vacancy-link-row\').remove();Drawer.markDirty(\'vacancyDrawer\');updateVacancyLinksEmpty()','icon-btn-sm icon-btn-danger'))+
+  '</div>';
+}
 
-    return {
-      _class:v._sync==='pending'?'row-pending':'',
-      _selected:String(selected)===String(v['Vacancy ID']),
-      _clickable:true,
-      _onclick:"editVacancy('"+escJs(v['Vacancy ID'])+"')",
-      cells:[
-        {html:syncIcon(v._sync)},
-        v['№']||'—',
-        v['Вакансия'],
-        {html:vacancyStatusChip(v['Статус'])},
-        {html:templateHtml},
-        {html:deleteCell('deleteVacancyUi',v['Vacancy ID'],v._sync==='pending')}
-      ]
-    };
-  });
+function renderVacancyLinks(links,readOnly){
+  el('vacancyLinks').innerHTML=links.map(link=>vacancyLinkRow(link,readOnly)).join('');
+  el('vacancyLinkAdd').hidden=!!readOnly;
+  updateVacancyLinksEmpty();
+}
 
-  el('vacancyList').innerHTML=adminTable(['','№','Вакансия','Статус','Шаблоны',''],rows);
+function updateVacancyLinksEmpty(){
+  el('vacancyLinksEmpty').hidden=!!el('vacancyLinks').children.length;
+}
+
+function addVacancyLink(){
+  el('vacancyLinks').insertAdjacentHTML('beforeend',vacancyLinkRow());
+  updateVacancyLinksEmpty();
+  const rows=el('vacancyLinks').querySelectorAll('.vacancy-link-url');
+  rows[rows.length-1].focus();
+}
+
+function updateVacancyLinkRow(input){
+  const row=input.closest('.vacancy-link-row');
+  const url=row.querySelector('.vacancy-link-url').value.trim();
+  const name=row.querySelector('.vacancy-link-name').value.trim();
+  row.querySelector('.vacancy-link-icon').innerHTML=brandIconHtml(url?detectBrandKey(url+' '+name):'other');
+  const open=row.querySelector('.vacancy-link-open');
+  open.hidden=!/^https?:\/\/\S+\.\S+/i.test(url);
+  open.href=url||'#';
+}
+
+// null — есть ошибки (показаны у полей).
+function collectVacancyLinks(){
+  const errors=[];
+  const links=[...document.querySelectorAll('#vacancyLinks .vacancy-link-row')].map(row=>{
+    const urlInput=row.querySelector('.vacancy-link-url');
+    const url=urlInput.value.trim();
+    const name=row.querySelector('.vacancy-link-name').value.trim();
+    if(!url&&!name)return null;
+    if(!/^https?:\/\/\S+\.\S+/i.test(url))errors.push({field:urlInput,message:'Ссылка должна начинаться с https:// или http://'});
+    return {url,name};
+  }).filter(Boolean);
+  return UiKit.showFieldErrors(errors)?links:null;
+}
+
+function renderVacancyFormActions(vacancy){
+  const readOnly=vacancy&&vacancy.state==='deleted';
+  formActions('vacancyFormActions',[
+    vacancy?historyButton('vacancy',vacancy['Vacancy ID'],'№'+(vacancy['№']||'—')+' · '+vacancy['Вакансия']):'',
+    vacancy?lifecycleButtons('vacancy',vacancy['Vacancy ID'],vacancy.state):'',
+    readOnly?'':textBtn('save','Сохранить','saveVacancyForm(this)')
+  ]);
+}
+
+function onVacancyDrawerClose(){
+  currentVacancy=null;
+  vacancyTemplatesCache=[];
+  el('vacancyId').value='';
+  setVacancyNameError('');
+  mountCommentThread('vacancy','vacancyComments','vacancy',null);
+  rerenderServerTable('vacancies');
+}
+
+function renderVacancyStatus(vacancy){
+  el('vacancyStatusField').hidden=!vacancy;
+  if(!vacancy)return;
+  el('vacancyStatusChip').innerHTML=vacancyStatusChip(vacancy['Статус']);
+  el('vacancyStatusActions').innerHTML=vacancyStatusButtons(vacancy);
 }
 
 function resetVacancyForm(){
+  Drawer.open('vacancyDrawer');
+  currentVacancy=null;
   el('vacancyId').value='';
   el('vacancyName').value='';
-  el('vacancyStatus').value='Открыта';
-  el('vacancyComment').value='';
+  el('vacancyName').readOnly=false;
   el('vacancyFormTitle').textContent='Новая вакансия';
-  resetTemplateForm();
-  renderVacancies();
-  renderVacancyTemplatesForSelected();
+  el('vacancyLifecycleNote').innerHTML='';
+  setVacancyNameError('');
+  renderVacancyLinks([],false);
+  renderVacancyFormActions(null);
+  renderVacancyStatus(null);
+  mountCommentThread('vacancy','vacancyComments','vacancy',null);
+  rerenderServerTable('vacancies');
+  loadVacancyTemplates();
+  Drawer.markClean('vacancyDrawer');
+  el('vacancyName').focus();
 }
 
-function editVacancy(id){
-  const vacancy=state.vacancies.find(x=>String(x['Vacancy ID'])===String(id));
-  if(!vacancy||vacancy._sync==='pending')return;
+function editVacancy(id,item){
+  const vacancy=item||tableItem('vacancies','Vacancy ID',id)||state.vacancies.find(x=>String(x['Vacancy ID'])===String(id));
+  if(!vacancy)return;
+  Drawer.open('vacancyDrawer');
+  currentVacancy=vacancy;
 
   el('vacancyId').value=id;
   el('vacancyName').value=vacancy['Вакансия']||'';
-  el('vacancyStatus').value=vacancy['Статус']||'Открыта';
-  el('vacancyComment').value=vacancy['Комментарий']||'';
+  el('vacancyName').readOnly=vacancy.state==='deleted';
   el('vacancyFormTitle').textContent='№'+(vacancy['№']||'—')+' · '+vacancy['Вакансия'];
-  resetTemplateForm();
-  renderVacancies();
-  renderVacancyTemplatesForSelected();
+  el('vacancyLifecycleNote').innerHTML=lifecycleNote(vacancy);
+  setVacancyNameError('');
+  renderVacancyLinks(vacancy.links||[],vacancy.state==='deleted');
+  renderVacancyFormActions(vacancy);
+  renderVacancyStatus(vacancy);
+  mountCommentThread('vacancy','vacancyComments','vacancy',id);
+  rerenderServerTable('vacancies');
+  loadVacancyTemplates();
+  Drawer.markClean('vacancyDrawer');
+}
+
+async function reopenVacancy(id){
+  const item=await findInTable('vacancies','Vacancy ID',id);
+  if(item)editVacancy(id,item);
+  else resetVacancyForm();
 }
 
 async function saveVacancyForm(button){
   const name=value('vacancyName').trim();
   if(!name){
-    showToast('Укажите название вакансии.','error');
+    setVacancyNameError('Укажите название вакансии.');
     return;
   }
 
   const id=value('vacancyId');
-  const payload={
-    id,
-    name,
-    status:value('vacancyStatus'),
-    comment:value('vacancyComment')
-  };
-
-  await optimisticSave({
-    collectionName:'vacancies',
-    idKey:'Vacancy ID',
-    payload,
-    localEntity:{
-      'Вакансия':name,
-      'Статус':payload.status,
-      'Комментарий':payload.comment
-    },
-    rpcName:'saveVacancy',
-    responseKey:'vacancy',
-    button,
-    formId:'vacancyForm',
-    onSuccess:saved=>{
-      el('vacancyId').value=saved['Vacancy ID'];
-      el('vacancyFormTitle').textContent='№'+(saved['№']||'—')+' · '+saved['Вакансия'];
-      populateGlobalFilters();
-      showToast('Вакансия сохранена.');
-    }
-  });
-}
-
-async function deleteVacancyUi(id,button){
-  const vacancy=state.vacancies.find(x=>String(x['Vacancy ID'])===String(id));
-  const ok=await showConfirm(
-    'Удалить вакансию «'+(vacancy?vacancy['Вакансия']:'')+'»? Она останется в базе как soft deleted.',
-    'Soft delete'
+  const duplicate=state.vacancies.find(v=>
+    String(v['Vacancy ID'])!==String(id)&&
+    String(v['Вакансия']||'').trim().toLowerCase()===name.toLowerCase()
   );
-  if(!ok)return;
+  if(duplicate){
+    setVacancyNameError('Вакансия с таким названием уже существует (№'+(duplicate['№']||'—')+').');
+    return;
+  }
 
-  await optimisticDelete({
-    collectionName:'vacancies',
-    id,
-    rpcName:'deleteVacancy',
-    button,
-    onSuccess:()=>{
-      state.interviewTemplates=state.interviewTemplates.filter(t=>String(t['Vacancy ID'])!==String(id));
-      if(String(value('vacancyId'))===String(id))resetVacancyForm();
+  const links=collectVacancyLinks();
+  if(!links)return;
+
+  await runUiTask({button,formId:'vacancyForm',label:'Сохранение…'},async()=>{
+    try{
+      const {vacancy}=await rpc('saveVacancy',{id,name,links});
+      upsertById(state.vacancies,'Vacancy ID',vacancy);
       populateGlobalFilters();
-      showToast('Вакансия удалена.');
+      if(!id){
+        // Новая запись: форма закрывается, строка — сверху таблицы с подсветкой.
+        markFresh('vacancies',vacancy);
+        Drawer.markClean('vacancyDrawer');
+        Drawer.close('vacancyDrawer');
+        await loadServerTable('vacancies');
+        showToast('Вакансия «'+vacancy['Вакансия']+'» создана. Откройте её, чтобы добавить шаблоны интервью.');
+        return;
+      }
+      await loadServerTable('vacancies');
+      editVacancy(vacancy['Vacancy ID'],tableItem('vacancies','Vacancy ID',vacancy['Vacancy ID'])||vacancy);
+      showToast('Вакансия сохранена.');
+    }catch(error){
+      if(/уже существует/.test(error.message))setVacancyNameError(error.message);
+      throw error;
     }
-  });
+  }).catch(()=>{});
 }
+
+async function setVacancyStatusUi(id,status,button){
+  await runUiTask({button,label:'…'},async()=>{
+    const {vacancy}=await rpc('setVacancyStatus',{id,status});
+    upsertById(state.vacancies,'Vacancy ID',vacancy);
+    populateGlobalFilters();
+    await loadServerTable('vacancies');
+    if(String(value('vacancyId'))===String(id))editVacancy(id,tableItem('vacancies','Vacancy ID',id)||vacancy);
+    showToast('Статус вакансии: «'+status+'».');
+  }).catch(()=>{});
+}
+
+// ---------- Шаблоны интервью ----------
+
+let vacancyTemplatesCache=[];
 
 function renderTemplateStageOptions(selected){
   if(!el('templateStage'))return;
   const current=selected!==undefined?selected:value('templateStage');
   el('templateStage').innerHTML=option('','Выберите этап')+
-    state.pipelineStatuses.map(status=>option(status,status,status===current)).join('');
+    (state.pipelineStatuses||[]).map(status=>option(status,status,status===current)).join('');
 }
 
-function questionRow(question=''){
-  return '<div class="question-editor-row">'+
-    '<span class="question-drag">⋮⋮</span>'+
-    '<input class="template-question" placeholder="Введите вопрос" value="'+escapeHtml(question)+'">'+
-    '<button class="button button-ghost button-small danger-text" type="button" onclick="this.parentElement.remove();renumberTemplateQuestions()">×</button>'+
-  '</div>';
-}
-
-function addTemplateQuestion(question=''){
-  el('templateQuestionsList').insertAdjacentHTML('beforeend',questionRow(question));
-  renumberTemplateQuestions();
-}
-
-function renumberTemplateQuestions(){
-  [...document.querySelectorAll('#templateQuestionsList .question-editor-row')].forEach((row,index)=>{
-    row.dataset.number=String(index+1);
-    row.querySelector('.question-drag').textContent=(index+1)+'.';
-  });
-}
-
-function collectTemplateQuestions(){
-  return [...document.querySelectorAll('.template-question')]
-    .map(input=>input.value.trim())
-    .filter(Boolean);
-}
-
-function resetTemplateForm(){
-  if(!el('templateId'))return;
-  el('templateId').value='';
-  el('templateName').value='';
-  el('templateQuestionsList').innerHTML='';
-  el('templateRequired').checked=false;
-  renderTemplateStageOptions('');
-  addTemplateQuestion('');
-  renderVacancyTemplatesForSelected();
-}
-
-function editTemplate(id){
-  const template=state.interviewTemplates.find(x=>String(x['Template ID'])===String(id));
-  if(!template||template._sync==='pending')return;
-
-  if(String(value('vacancyId'))!==String(template['Vacancy ID'])){
-    editVacancy(template['Vacancy ID']);
+async function loadVacancyTemplates(){
+  const vacancyId=value('vacancyId');
+  vacancyTemplatesCache=[];
+  if(vacancyId){
+    vacancyTemplatesCache=await rpc('listVacancyTemplates',vacancyId).catch(error=>{showToast(error.message,'error');return []});
+    if(String(value('vacancyId'))!==String(vacancyId))return;
   }
-
-  el('templateId').value=id;
-  el('templateName').value=template['Название']||'';
-  el('templateRequired').checked=!!template.required;
-  renderTemplateStageOptions(template['Этап']);
-  el('templateQuestionsList').innerHTML='';
-  (template.questions||[]).forEach(question=>addTemplateQuestion(question));
-  if(!(template.questions||[]).length)addTemplateQuestion('');
   renderVacancyTemplatesForSelected();
 }
 
 function renderVacancyTemplatesForSelected(){
   const vacancyId=value('vacancyId');
-  const editor=el('templateEditor');
+  const list=el('vacancyTemplateList');
   const empty=el('vacancyTemplateEmpty');
+  const vacancyActive=currentVacancy&&currentVacancy.state==='active';
+
+  el('templateAddButton').disabled=!vacancyId||!vacancyActive;
 
   if(!vacancyId){
-    editor.hidden=true;
     empty.hidden=false;
+    empty.textContent='Сначала сохраните вакансию — после этого можно добавить шаблоны.';
+    list.innerHTML='';
     el('vacancyTemplateCount').textContent='0';
     return;
   }
 
-  editor.hidden=false;
-  empty.hidden=true;
-  const selectedTemplate=value('templateId');
-  const templates=state.interviewTemplates.filter(t=>String(t['Vacancy ID'])===String(vacancyId));
+  const order=state.pipelineStatuses||[];
+  const showAll=el('templateShowAll').checked;
+  const templates=vacancyTemplatesCache
+    .filter(t=>showAll||t.state==='active')
+    .sort((a,b)=>order.indexOf(a['Этап'])-order.indexOf(b['Этап'])||(a['№']||0)-(b['№']||0));
 
-  el('vacancyTemplateCount').textContent=templates.length;
+  el('vacancyTemplateCount').textContent=vacancyTemplatesCache.filter(t=>t.state==='active').length;
+  empty.hidden=templates.length>0;
+  empty.textContent=showAll?'Шаблонов нет.':'Активных шаблонов нет.';
 
-  el('vacancyTemplateList').innerHTML=templates.length
-    ? templates.map(t=>
-      '<div class="template-row '+(t._sync==='pending'?'row-pending ':'')+(String(selectedTemplate)===String(t['Template ID'])?'selected-template':'')+'" onclick="editTemplate(\''+escJs(t['Template ID'])+'\')">'+
-        syncIcon(t._sync)+
-        '<div class="template-row-main">'+
-          '<strong>№'+escapeHtml(t['№']||'—')+' · '+escapeHtml(t['Название'])+'</strong>'+
-          '<div class="chip-wrap">'+
-            statusChip(t['Этап'],true)+
-            (t.required?'<span class="mini-chip">Обязательный</span>':'')+
-          '</div>'+
-          '<small>'+escapeHtml(String((t.questions||[]).length))+' вопросов</small>'+
+  const selected=el('templateModal').classList.contains('open')?value('templateId'):'';
+
+  list.innerHTML=templates.map(t=>
+    '<div class="template-row'+(String(selected)===String(t['Template ID'])?' selected-template':'')+(freshRecords.templates.has(String(t['Template ID']))?' row-fresh':'')+'" tabindex="0" onkeydown="if(event.key===\'Enter\'&&event.target===this)this.click()" onclick="openTemplateModal(\''+escJs(t['Template ID'])+'\')">'+
+      '<div class="template-row-main">'+
+        '<strong>'+(freshRecords.templates.has(String(t['Template ID']))?'<span class="fresh-badge">Новый</span>':'')+'№'+escapeHtml(t['№']||'—')+' · '+escapeHtml(t['Название'])+'</strong>'+
+        '<div class="chip-wrap">'+
+          statusChip(t['Этап'],true)+
+          (t.required?'<span class="mini-chip">Обязательный</span>':'')+
+          '<span class="muted">'+(t.questions||[]).length+' вопр.</span>'+
+          stateBadge(t)+
         '</div>'+
-        '<button class="button button-ghost button-small danger-text" onclick="event.stopPropagation();deleteTemplateUi(\''+escJs(t['Template ID'])+'\',this)">Удалить</button>'+
-      '</div>'
-    ).join('')
-    : '<div class="empty-state compact">Шаблонов пока нет.</div>';
+      '</div>'+
+      '<div class="row-actions">'+lifecycleButtons('template',t['Template ID'],t.state,true)+'</div>'+
+    '</div>'
+  ).join('');
+}
+
+function answerChip(answer){
+  return '<span class="answer-chip" data-value="'+escapeHtml(answer)+'">'+
+    '<span>'+escapeHtml(answer)+'</span>'+
+    '<button class="icon-btn icon-btn-sm" type="button" data-tip="Убрать ответ" aria-label="Убрать ответ" onclick="this.parentElement.remove()">'+icon('close','icon-sm')+'</button>'+
+  '</span>';
+}
+
+function questionBlock(question){
+  const item=typeof question==='string'?{text:question,answers:[]}:(question||{text:'',answers:[]});
+  return '<div class="question-block">'+
+    '<div class="question-editor-row">'+
+      '<span class="question-number"></span>'+
+      '<input class="template-question" placeholder="Текст вопроса" value="'+escapeHtml(item.text||'')+'">'+
+      '<button class="icon-btn icon-btn-sm icon-btn-danger" type="button" data-tip="Удалить вопрос" aria-label="Удалить вопрос" onclick="this.closest(\'.question-block\').remove();renumberTemplateQuestions()">'+icon('trash','icon-sm')+'</button>'+
+    '</div>'+
+    '<div class="answer-editor">'+
+      '<div class="answer-chips">'+(item.answers||[]).map(answerChip).join('')+'</div>'+
+      '<div class="answer-add">'+
+        '<input class="answer-add-input" placeholder="Вероятный ответ — Enter, чтобы добавить" onkeydown="if(event.key===\'Enter\'){event.preventDefault();addAnswerChip(this)}">'+
+        '<button class="icon-btn icon-btn-sm" type="button" data-tip="Добавить вероятный ответ" aria-label="Добавить вероятный ответ" onclick="addAnswerChip(this.previousElementSibling)">'+icon('plus','icon-sm')+'</button>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+}
+
+function addAnswerChip(input){
+  const answer=input.value.trim();
+  if(!answer)return;
+  const chips=input.closest('.answer-editor').querySelector('.answer-chips');
+  const exists=[...chips.querySelectorAll('.answer-chip')].some(chip=>chip.dataset.value.toLowerCase()===answer.toLowerCase());
+  if(!exists)chips.insertAdjacentHTML('beforeend',answerChip(answer));
+  input.value='';
+  input.focus();
+}
+
+function addTemplateQuestion(question){
+  el('templateQuestionsList').insertAdjacentHTML('beforeend',questionBlock(question||{text:'',answers:[]}));
+  renumberTemplateQuestions();
+  if(!question){
+    const inputs=el('templateQuestionsList').querySelectorAll('.template-question');
+    inputs[inputs.length-1].focus();
+  }
+}
+
+function renumberTemplateQuestions(){
+  el('templateQuestionsList').querySelectorAll('.question-block').forEach((block,index)=>{
+    block.querySelector('.question-number').textContent=(index+1)+'.';
+  });
+}
+
+function collectTemplateQuestions(){
+  return [...el('templateQuestionsList').querySelectorAll('.question-block')].map(block=>{
+    // Невнесённый в список ответ из поля ввода тоже сохраняется.
+    const pending=block.querySelector('.answer-add-input').value.trim();
+    const answers=[...block.querySelectorAll('.answer-chip')].map(chip=>chip.dataset.value);
+    if(pending&&!answers.includes(pending))answers.push(pending);
+    return {text:block.querySelector('.template-question').value.trim(),answers};
+  }).filter(question=>question.text);
+}
+
+function openTemplateModal(id){
+  const vacancyId=value('vacancyId');
+  if(!vacancyId)return;
+  if(id&&freshRecords.templates.delete(String(id)))renderVacancyTemplatesForSelected();
+
+  const template=id?vacancyTemplatesCache.find(x=>String(x['Template ID'])===String(id)):null;
+  const readOnly=template&&template.state==='deleted';
+
+  el('templateId').value=template?template['Template ID']:'';
+  el('templateName').value=template?template['Название']||'':'';
+  el('templateRequired').checked=!!(template&&template.required);
+  renderTemplateStageOptions(template?template['Этап']:'');
+  el('templateModalTitle').textContent=template?'№'+(template['№']||'—')+' · '+template['Название']:'Новый шаблон';
+  el('templateModalVacancy').innerHTML=(currentVacancy?'Вакансия: '+escapeHtml(currentVacancy['Вакансия']):'')+(template?' '+stateBadge(template):'');
+
+  formActions('templateFormActions',[
+    template?historyButton('template',template['Template ID'],template['Название']):'',
+    template?lifecycleButtons('template',template['Template ID'],template.state):'',
+    readOnly?'':textBtn('save','Сохранить','saveTemplateForm(this)'),
+    '<span class="toolbar-divider" aria-hidden="true"></span>',
+    '<button type="button" class="icon-btn" data-modal-close data-tip="Закрыть (Esc)" aria-label="Закрыть" onclick="closeTemplateModal()">'+icon('close')+'</button>'
+  ]);
+
+  el('templateQuestionsList').innerHTML='';
+  const questions=template?template.questions||[]:[];
+  if(questions.length)questions.forEach(question=>addTemplateQuestion(question));
+  else addTemplateQuestion({text:'',answers:[]});
+
+  el('templateModal').classList.add('open');
+  renderVacancyTemplatesForSelected();
+  el('templateName').focus();
+}
+
+function closeTemplateModal(){
+  el('templateModal').classList.remove('open');
+  renderVacancyTemplatesForSelected();
 }
 
 async function saveTemplateForm(button){
@@ -387,322 +942,341 @@ async function saveTemplateForm(button){
   const required=el('templateRequired').checked;
   const questions=collectTemplateQuestions();
 
-  if(!vacancyId){
-    showToast('Сначала сохраните вакансию.','error');
-    return;
-  }
-  if(!name){
-    showToast('Укажите название шаблона.','error');
-    return;
-  }
-  if(!stage){
-    showToast('Выберите этап.','error');
-    return;
-  }
-  if(!questions.length){
-    showToast('Добавьте хотя бы один вопрос.','error');
-    return;
-  }
+  if(!vacancyId){showToast('Сначала сохраните вакансию.','error');return}
+  const templateErrors=[
+    [!name,'templateName','Укажите название шаблона.'],
+    [!stage,'templateStage','Выберите этап.']
+  ].filter(([bad])=>bad).map(([,field,message])=>({field,message}));
+  if(!UiKit.showFieldErrors(templateErrors))return;
+  if(!questions.length){showToast('Добавьте хотя бы один вопрос.','error');return}
 
-  const id=value('templateId');
-  const vacancy=state.vacancies.find(v=>String(v['Vacancy ID'])===String(vacancyId));
-
-  await optimisticSave({
-    collectionName:'interviewTemplates',
-    idKey:'Template ID',
-    payload:{id,name,vacancyId,stage,required,questions},
-    localEntity:{
-      'Название':name,
-      'Vacancy ID':vacancyId,
-      'Вакансия':vacancy?vacancy['Вакансия']:'',
-      'Этап':stage,
-      'Обязательный':required,
-      required,
-      questions
-    },
-    rpcName:'saveInterviewTemplate',
-    responseKey:'template',
-    button,
-    formId:'vacancyForm',
-    onSuccess:saved=>{
-      el('templateId').value=saved['Template ID'];
-      showToast('Шаблон интервью сохранён.');
-    }
-  });
+  await runUiTask({button,formId:'templateForm',label:'Сохранение…'},async()=>{
+    const created=!value('templateId');
+    const {template}=await rpc('saveInterviewTemplate',{id:value('templateId'),name,vacancyId,stage,required,questions});
+    if(created&&template)freshRecords.templates.add(String(template['Template ID']));
+    await refreshReferences();
+    closeTemplateModal();
+    await loadVacancyTemplates();
+    await loadServerTable('vacancies');
+    showToast('Шаблон интервью сохранён.');
+  }).catch(()=>{});
 }
 
-async function deleteTemplateUi(id,button){
-  const template=state.interviewTemplates.find(x=>String(x['Template ID'])===String(id));
-  const ok=await showConfirm('Удалить шаблон «'+(template?template['Название']:'')+'»?','Soft delete');
-  if(!ok)return;
+// ---------- Источники ----------
 
-  await optimisticDelete({
-    collectionName:'interviewTemplates',
-    id,
-    rpcName:'deleteInterviewTemplate',
-    button,
-    onSuccess:()=>{
-      if(String(value('templateId'))===String(id))resetTemplateForm();
-      showToast('Шаблон удалён.');
-    }
-  });
+// Иконка в форме источника: «Авто» (по названию), пресет или своя картинка.
+// data: undefined — не менять, '' — убрать свою картинку, data URL — новая картинка.
+let sourceIconDraft={key:'',customUrl:'',data:undefined};
+
+function resetSourceIconDraft(source){
+  sourceIconDraft={key:source&&source.iconKey||'',customUrl:source&&source.iconUrl||'',data:undefined};
+  renderSourceIconPicker();
+}
+
+function sourceIconCustomSrc(){
+  if(sourceIconDraft.data)return sourceIconDraft.data;
+  return sourceIconDraft.data===''?'':sourceIconDraft.customUrl;
 }
 
 function renderSourceFormIcon(){
   const node=el('sourceFormIcon');
   if(!node)return;
-  const brand=sourceBrand(value('sourceName'));
-  node.className='brand-icon brand-'+brand.key;
-  node.textContent=brand.text;
+  const custom=sourceIconCustomSrc();
+  const preview={'Название':value('sourceName'),iconKey:sourceIconDraft.key,iconUrl:custom};
+  paintSourceIcon(node,preview);
+  const auto=el('sourceIconAutoPreview');
+  if(auto)auto.innerHTML=brandIconHtml(detectBrandKey(value('sourceName')));
 }
 
-function renderSources(){
-  el('sourceCount').textContent=state.sources.length+' шт.';
-  const selected=value('sourceId');
+function renderSourceIconPicker(){
+  const root=el('sourceIconPicker');
+  if(!root)return;
+  const readOnly=el('sourceName').readOnly;
+  const custom=sourceIconCustomSrc();
+  const tile=(key,inner,label,pressed)=>
+    '<button type="button" class="icon-tile'+(pressed?' is-selected':'')+'" aria-pressed="'+pressed+'" data-tip="'+escapeHtml(label)+'" aria-label="'+escapeHtml(label)+'"'+
+    (readOnly?' disabled':'')+' onclick="pickSourceIcon(\''+key+'\')">'+inner+'</button>';
+  const keys=(state.sourceIconKeys&&state.sourceIconKeys.length?state.sourceIconKeys:Object.keys(BRANDS)).filter(key=>BRANDS[key]);
+  root.innerHTML=
+    tile('','<span class="icon-tile-auto" id="sourceIconAutoPreview">'+brandIconHtml(detectBrandKey(value('sourceName')))+'</span><span class="icon-tile-caption">Авто</span>','Авто — по названию',!custom&&!sourceIconDraft.key)+
+    keys.map(key=>tile(key,brandIconHtml(key),BRANDS[key].label,!custom&&sourceIconDraft.key===key)).join('')+
+    (custom
+      ? '<div class="icon-tile icon-tile-custom is-selected" role="group" aria-label="Своя картинка">'+
+          '<span class="brand-icon brand-custom"><img src="'+escapeHtml(custom)+'" alt="Своя картинка"></span>'+
+          (readOnly?'':'<span class="icon-tile-actions">'+
+            iconBtn('edit','Изменить картинку','editSourceIcon()','icon-btn-sm')+
+            iconBtn('close','Убрать свою картинку','removeSourceIcon()','icon-btn-sm')+
+          '</span>')+
+        '</div>'
+      : '<button type="button" class="icon-tile icon-tile-upload" data-tip="Загрузить свою картинку" aria-label="Загрузить свою картинку"'+(readOnly?' disabled':'')+' onclick="editSourceIcon()">'+icon('upload')+'<span class="icon-tile-caption">Своя</span></button>');
+  renderSourceFormIcon();
+}
 
-  const rows=state.sources.map(source=>({
-    _class:source._sync==='pending'?'row-pending':'',
-    _selected:String(selected)===String(source['Source ID']),
-    _clickable:true,
-    _onclick:"editSource('"+escJs(source['Source ID'])+"')",
-    cells:[
-      {html:syncIcon(source._sync)},
-      source['№']||'—',
-      {html:'<div class="source-name-cell">'+sourceIconHtml(source['Название'])+'<span>'+escapeHtml(source['Название'])+'</span></div>'},
-      {html:deleteCell('deleteSourceUi',source['Source ID'],source._sync==='pending')}
-    ]
-  }));
+function pickSourceIcon(key){
+  sourceIconDraft.key=key;
+  if(sourceIconCustomSrc())sourceIconDraft.data='';
+  Drawer.markDirty('sourceDrawer');
+  renderSourceIconPicker();
+}
 
-  el('sourceList').innerHTML=adminTable(['','№','Источник',''],rows);
+async function editSourceIcon(){
+  if(!window.IconEditor){showToast('Редактор иконок не загрузился. Обновите страницу.','error');return}
+  const result=await IconEditor.open({title:'Иконка: '+(value('sourceName')||'новый источник'),src:sourceIconCustomSrc()||undefined});
+  if(!result)return;
+  sourceIconDraft.data=result;
+  Drawer.markDirty('sourceDrawer');
+  renderSourceIconPicker();
+}
+
+function removeSourceIcon(){
+  sourceIconDraft.data='';
+  Drawer.markDirty('sourceDrawer');
+  renderSourceIconPicker();
+}
+
+function renderSourceFormActions(source){
+  const readOnly=source&&source.state==='deleted';
+  formActions('sourceFormActions',[
+    source?historyButton('source',source['Source ID'],source['Название']):'',
+    source?lifecycleButtons('source',source['Source ID'],source.state):'',
+    readOnly?'':textBtn('save','Сохранить','saveSourceForm(this)')
+  ]);
+}
+
+function onSourceDrawerClose(){
+  el('sourceId').value='';
+  rerenderServerTable('sources');
 }
 
 function resetSourceForm(){
+  Drawer.open('sourceDrawer');
   el('sourceId').value='';
   el('sourceName').value='';
+  el('sourceName').readOnly=false;
   el('sourceFormTitle').textContent='Новый источник';
-  renderSourceFormIcon();
-  renderSources();
+  el('sourceLifecycleNote').innerHTML='';
+  renderSourceFormActions(null);
+  resetSourceIconDraft(null);
+  rerenderServerTable('sources');
+  Drawer.markClean('sourceDrawer');
+  el('sourceName').focus();
 }
 
-function editSource(id){
-  const source=state.sources.find(x=>String(x['Source ID'])===String(id));
-  if(!source||source._sync==='pending')return;
+function editSource(id,item){
+  const source=item||tableItem('sources','Source ID',id)||state.sources.find(x=>String(x['Source ID'])===String(id));
+  if(!source)return;
+  Drawer.open('sourceDrawer');
 
   el('sourceId').value=id;
   el('sourceName').value=source['Название']||'';
+  el('sourceName').readOnly=source.state==='deleted';
   el('sourceFormTitle').textContent='№'+(source['№']||'—')+' · '+source['Название'];
-  renderSourceFormIcon();
-  renderSources();
+  el('sourceLifecycleNote').innerHTML=lifecycleNote(source);
+  renderSourceFormActions(source);
+  resetSourceIconDraft(source);
+  rerenderServerTable('sources');
+  Drawer.markClean('sourceDrawer');
+}
+
+async function reopenSource(id){
+  const item=await findInTable('sources','Source ID',id);
+  if(item)editSource(id,item);
+  else resetSourceForm();
 }
 
 async function saveSourceForm(button){
   const name=value('sourceName').trim();
-  if(!name){
-    showToast('Укажите название источника.','error');
-    return;
-  }
+  if(!name){UiKit.showFieldErrors([{field:'sourceName',message:'Укажите название источника.'}]);return}
 
   const id=value('sourceId');
+  const payload={id,name,iconKey:sourceIconDraft.key};
+  if(sourceIconDraft.data!==undefined)payload.iconData=sourceIconDraft.data;
 
-  await optimisticSave({
-    collectionName:'sources',
-    idKey:'Source ID',
-    payload:{id,name},
-    localEntity:{'Название':name},
-    rpcName:'saveSource',
-    responseKey:'source',
-    button,
-    formId:'sourceForm',
-    onSuccess:saved=>{
-      el('sourceId').value=saved['Source ID'];
-      el('sourceFormTitle').textContent='№'+(saved['№']||'—')+' · '+saved['Название'];
-      populateGlobalFilters();
-      renderSourceFormIcon();
-      showToast('Источник сохранён.');
+  await runUiTask({button,formId:'sourceForm',label:'Сохранение…'},async()=>{
+    const {source}=await rpc('saveSource',payload);
+    upsertById(state.sources,'Source ID',source);
+    populateGlobalFilters();
+    if(!id){
+      markFresh('sources',source);
+      Drawer.markClean('sourceDrawer');
+      Drawer.close('sourceDrawer');
+      await loadServerTable('sources');
+      showToast('Источник «'+source['Название']+'» добавлен.');
+      return;
     }
-  });
+    await loadServerTable('sources');
+    editSource(source['Source ID'],tableItem('sources','Source ID',source['Source ID'])||source);
+    showToast('Источник сохранён.');
+  }).catch(()=>{});
 }
 
-async function deleteSourceUi(id,button){
-  const source=state.sources.find(x=>String(x['Source ID'])===String(id));
-  const ok=await showConfirm('Удалить источник «'+(source?source['Название']:'')+'»?','Soft delete');
-  if(!ok)return;
+// ---------- Пользователи (они же ответственные) ----------
 
-  await optimisticDelete({
-    collectionName:'sources',
-    id,
-    rpcName:'deleteSource',
-    button,
-    onSuccess:()=>{
-      if(String(value('sourceId'))===String(id))resetSourceForm();
-      populateGlobalFilters();
-      showToast('Источник удалён.');
-    }
-  });
-}
-
-function renderResponsibleStageOptions(selected){
-  if(!el('responsibleStages'))return;
+function renderUserStageOptions(selected){
+  if(!el('userStages'))return;
   const current=selected!==undefined
     ? selected
-    : [...document.querySelectorAll('.responsible-stage:checked')].map(x=>x.value);
+    : [...document.querySelectorAll('.user-stage:checked')].map(x=>x.value);
 
-  el('responsibleStages').innerHTML=state.pipelineStatuses.map(stage=>
-    '<label class="stage-check status-soft-'+statusKey(stage)+'">'+
-      '<input type="checkbox" class="responsible-stage" value="'+escapeHtml(stage)+'" '+(current.includes(stage)?'checked':'')+'>'+
+  el('userStages').innerHTML=(state.pipelineStatuses||[]).map(stage=>
+    '<label class="stage-toggle stage-'+statusKey(stage)+'">'+
+      '<input type="checkbox" class="user-stage" value="'+escapeHtml(stage)+'" '+(current.includes(stage)?'checked':'')+'>'+
       '<span>'+escapeHtml(stage)+'</span>'+
     '</label>'
   ).join('');
 }
 
-function userDisplayName(user){
-  if(!user)return '—';
-  const name=user['ФИО']||user.Email||'Пользователь';
-  return user.Email&&user.Email!==name
-    ? name+' · '+user.Email
-    : name;
+function renderUserFormActions(user){
+  const readOnly=user&&user.state==='deleted';
+  formActions('userFormActions',[
+    user?historyButton('user',user['User ID'],user['ФИО']||user.Email):'',
+    user?lifecycleButtons('user',user['User ID'],user.state):'',
+    readOnly?'':textBtn('save','Сохранить','saveUserForm(this)')
+  ]);
 }
 
-function renderResponsibleUserOptions(selected){
-  const select=el('responsibleUserId');
-  if(!select)return;
-
-  const current=selected!==undefined
-    ? String(selected||'')
-    : String(select.value||'');
-
-  select.innerHTML=
-    option('','Не привязан',!current)+
-    (state.users||[]).map(user=>
-      option(
-        user['User ID'],
-        userDisplayName(user),
-        String(user['User ID'])===current
-      )
-    ).join('');
+function onUserDrawerClose(){
+  el('userId').value='';
+  rerenderServerTable('users');
 }
 
-function renderResponsibles(){
-  el('responsibleCount').textContent=state.responsibles.length+' шт.';
-  const selected=value('responsibleId');
-
-  const rows=state.responsibles.map(responsible=>{
-    const linkedUser=(state.users||[]).find(user=>
-      String(user['User ID'])===String(responsible['User ID']||'')
-    );
-
-    return {
-    _class:responsible._sync==='pending'?'row-pending':'',
-    _selected:String(selected)===String(responsible['Responsible ID']),
-    _clickable:true,
-    _onclick:"editResponsible('"+escJs(responsible['Responsible ID'])+"')",
-    cells:[
-      {html:syncIcon(responsible._sync)},
-      responsible['№']||'—',
-      responsible['Фамилия']||'',
-      responsible['Имя']||'',
-      responsible['Отчество']||'',
-      responsible['Email']||'',
-      linkedUser?userDisplayName(linkedUser):'—',
-      {html:'<div class="chip-wrap">'+(responsible.stages||[]).map(stage=>statusChip(stage,true)).join('')+'</div>'},
-      {html:deleteCell('deleteResponsibleUi',responsible['Responsible ID'],responsible._sync==='pending')}
-    ]
-  };
-  });
-
-  el('responsibleList').innerHTML=adminTable(['','№','Фамилия','Имя','Отчество','Email','Пользователь','Этапы',''],rows);
+function setUserFormReadOnly(readOnly){
+  ['userLastName','userFirstName','userMiddleName','userTelegram'].forEach(id=>el(id).readOnly=readOnly);
+  document.querySelectorAll('#userForm input[type=checkbox]').forEach(box=>box.disabled=readOnly);
 }
 
-function resetResponsibleForm(){
-  el('responsibleId').value='';
-  el('responsibleLastName').value='';
-  el('responsibleFirstName').value='';
-  el('responsibleMiddleName').value='';
-  el('responsibleEmail').value='';
-  el('responsibleUserId').value='';
-  el('responsibleFormTitle').textContent='Новый ответственный';
-  renderResponsibleUserOptions('');
-  renderResponsibleStageOptions([]);
-  renderResponsibles();
+function resetUserForm(){
+  Drawer.open('userDrawer');
+  el('userId').value='';
+  ['userLastName','userFirstName','userMiddleName','userEmail','userTelegram'].forEach(id=>el(id).value='');
+  renderUserTelegramStatus(null);
+  el('userEmail').readOnly=false;
+  el('userEmailHint').textContent='Любой домен. Человек войдёт через Google с этим адресом.';
+  el('userActive').checked=true;
+  el('userNewAccessField').hidden=false;
+  el('userAdmin').checked=false;
+  el('userFormTitle').textContent='Новый пользователь';
+  el('userLifecycleNote').innerHTML='';
+  el('userMeta').hidden=true;
+  setUserFormReadOnly(false);
+  renderUserStageOptions([]);
+  renderUserFormActions(null);
+  rerenderServerTable('users');
+  Drawer.markClean('userDrawer');
+  el('userLastName').focus();
 }
 
-function editResponsible(id){
-  const responsible=state.responsibles.find(x=>String(x['Responsible ID'])===String(id));
-  if(!responsible||responsible._sync==='pending')return;
+function editUser(user){
+  Drawer.open('userDrawer');
+  el('userId').value=user['User ID'];
+  el('userLastName').value=user['Фамилия']||'';
+  el('userFirstName').value=user['Имя']||'';
+  el('userMiddleName').value=user['Отчество']||'';
+  el('userEmail').value=user.Email;
+  el('userTelegram').value=user.telegram||'';
+  renderUserTelegramStatus(user);
+  el('userEmail').readOnly=!user.emailEditable;
+  el('userEmailHint').textContent=user.emailEditable
+    ?'Пользователь ещё не входил — email можно исправить.'
+    :'Email подтверждён входом через Google и не меняется.';
+  // Доступ переключается в списке; в форме — только для нового пользователя.
+  el('userNewAccessField').hidden=true;
+  el('userAdmin').checked=!!user.isAdmin;
+  el('userFormTitle').textContent=user['ФИО']||user.Email;
+  el('userLifecycleNote').innerHTML=lifecycleNote(user);
+  setUserFormReadOnly(user.state==='deleted');
+  renderUserStageOptions(user.stages||[]);
+  renderUserFormActions(user);
 
-  el('responsibleId').value=id;
-  el('responsibleLastName').value=responsible['Фамилия']||'';
-  el('responsibleFirstName').value=responsible['Имя']||'';
-  el('responsibleMiddleName').value=responsible['Отчество']||'';
-  el('responsibleEmail').value=responsible['Email']||'';
-  el('responsibleFormTitle').textContent='№'+(responsible['№']||'—')+' · '+fullNameOf(responsible);
-  renderResponsibleUserOptions(responsible['User ID']||'');
-  renderResponsibleStageOptions(responsible.stages||[]);
-  renderResponsibles();
+  const rows=[
+    ['Доступ',user['Статус доступа']],
+    ['Последний вход',fmtDate(user['Последний вход'])],
+    ['Доступ выдан',fmtDate(user['Доступ выдан'])],
+    ['Запрос доступа',user.accessStatus==='active'?'':fmtDate(user['Запрос доступа'])],
+    ['Добавлен',fmtDate(user['Добавлен'])]
+  ].filter(([,text])=>text);
+  el('userMeta').innerHTML=rows.map(([label,text])=>'<div class="user-meta-row"><span>'+escapeHtml(label)+'</span><span>'+escapeHtml(text)+'</span></div>').join('');
+  el('userMeta').hidden=!rows.length;
+  rerenderServerTable('users');
+  Drawer.markClean('userDrawer');
 }
 
-async function saveResponsibleForm(button){
-  const lastName=value('responsibleLastName').trim();
-  const firstName=value('responsibleFirstName').trim();
-  const middleName=value('responsibleMiddleName').trim();
-  const email=value('responsibleEmail');
-  const userId=value('responsibleUserId');
-  const stages=[...document.querySelectorAll('.responsible-stage:checked')].map(x=>x.value);
+function renderUserTelegramStatus(user){
+  const badge=el('userTelegramStatus');
+  if(!user||!user.telegram){badge.hidden=true;return}
+  badge.hidden=false;
+  badge.className='state-badge '+(user.telegramVerified?'state-ok':'state-archived');
+  badge.textContent=user.telegramVerified?'Подтверждён':'Не подтверждён';
+}
 
-  if(!lastName||!firstName){
-    showToast('Фамилия и имя обязательны.','error');
-    return;
-  }
-  if(!stages.length){
-    showToast('Выберите хотя бы один этап.','error');
-    return;
-  }
-  if(!validateEmailField(el('responsibleEmail')))return;
+async function reopenUser(id){
+  const item=await findInTable('users','User ID',id);
+  if(item)editUser(item);
+  else resetUserForm();
+}
 
-  const id=value('responsibleId');
-  const fullName=[lastName,firstName,middleName].filter(Boolean).join(' ');
+async function afterUserChange(user){
+  await loadServerTable('users');
+  // Ответственные для форм кандидатов и список для упоминаний.
+  refreshReferences().catch(()=>{});
+  ensureAdminUsersLoaded(true).catch(()=>{});
+  if(user&&String(value('userId'))===String(user['User ID']))editUser(tableItem('users','User ID',user['User ID'])||user);
+}
 
-  await optimisticSave({
-    collectionName:'responsibles',
-    idKey:'Responsible ID',
-    payload:{id,lastName,firstName,middleName,email,userId,stages},
-    localEntity:{
-      'Фамилия':lastName,
-      'Имя':firstName,
-      'Отчество':middleName,
-      'ФИО':fullName,
-      'Email':email,
-      'User ID':userId,
-      stages
-    },
-    rpcName:'saveResponsible',
-    responseKey:'responsible',
-    button,
-    formId:'responsibleForm',
-    onSuccess:saved=>{
-      el('responsibleId').value=saved['Responsible ID'];
-      el('responsibleFormTitle').textContent='№'+(saved['№']||'—')+' · '+fullNameOf(saved);
-      populateGlobalFilters();
-      showToast('Ответственный сохранён.');
+async function saveUserForm(button){
+  const id=value('userId');
+  const lastName=value('userLastName').trim();
+  const firstName=value('userFirstName').trim();
+  const userErrors=[
+    [!lastName,'userLastName','Укажите фамилию.'],
+    [!firstName,'userFirstName','Укажите имя.'],
+    [!value('userEmail').trim(),'userEmail','Укажите email Google Account.']
+  ].filter(([bad])=>bad).map(([,field,message])=>({field,message}));
+  if(!UiKit.showFieldErrors(userErrors))return;
+  if(!el('userEmail').readOnly&&!validateEmailField(el('userEmail')))return;
+
+  await runUiTask({button,formId:'userForm',label:'Сохранение…'},async()=>{
+    const {user}=await rpc('saveUser',{
+      id,
+      email:value('userEmail').trim(),
+      lastName,
+      firstName,
+      middleName:value('userMiddleName').trim(),
+      stages:[...document.querySelectorAll('.user-stage:checked')].map(x=>x.value),
+      isActive:el('userActive').checked,
+      isAdmin:el('userAdmin').checked,
+      telegram:value('userTelegram').trim()
+    });
+    if(!id){
+      markFresh('users',user);
+      Drawer.markClean('userDrawer');
+      Drawer.close('userDrawer');
+      await afterUserChange(user);
+      showToast('Пользователь '+(user['ФИО']||user.Email)+' добавлен.');
+      return;
     }
-  });
+    el('userId').value=user['User ID'];
+    await afterUserChange(user);
+    showToast('Пользователь сохранён.');
+  }).catch(()=>{});
 }
 
-async function deleteResponsibleUi(id,button){
-  const responsible=state.responsibles.find(x=>String(x['Responsible ID'])===String(id));
-  const ok=await showConfirm('Удалить ответственного «'+(responsible?fullNameOf(responsible):'')+'»?','Soft delete');
-  if(!ok)return;
-
-  await optimisticDelete({
-    collectionName:'responsibles',
-    id,
-    rpcName:'deleteResponsible',
-    button,
-    onSuccess:()=>{
-      if(String(value('responsibleId'))===String(id))resetResponsibleForm();
-      populateGlobalFilters();
-      showToast('Ответственный удалён.');
-    }
-  });
+async function setUserAccess(id,isActive,input){
+  const row=tableItem('users','User ID',id);
+  if(!isActive&&row){
+    const ok=await showConfirm('Закрыть доступ пользователю '+row.Email+'? Он будет разлогинен при следующем действии.','Закрытие доступа');
+    if(!ok){input.checked=true;return}
+  }
+  input.disabled=true;
+  try{
+    const {user}=await rpc('setUserAccess',{id,isActive});
+    await afterUserChange(user);
+    showToast(isActive?'Доступ открыт: '+user.Email:'Доступ закрыт: '+user.Email);
+  }catch(error){
+    input.checked=!isActive;
+    showToast(error.message,'error');
+  }finally{
+    input.disabled=false;
+  }
 }
 </script>

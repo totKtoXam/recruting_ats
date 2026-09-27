@@ -13,6 +13,8 @@ import ExcelJS from 'exceljs';
 import { APP_CONFIG, config } from '../server/config.js';
 import { pool, transaction } from '../server/db/pool.js';
 import { isUuid, splitFullName } from '../server/lib/validation.js';
+import { normalizeTemplateQuestions } from '../server/services/mappers.js';
+import { textToRich } from '../server/lib/richtext.js';
 
 const SHEETS = {
   users: 'Пользователи',
@@ -103,6 +105,24 @@ const MIME_BY_EXTENSION = {
 
 const mimeFor = name => MIME_BY_EXTENSION[str(name).split('.').pop().toLowerCase()] || 'application/octet-stream';
 
+// Этапы, переименованные после Apps Script-версии.
+const RENAMED_STAGES = { 'Техническое интервью': APP_CONFIG.PROF_INTERVIEW_STATUS };
+const stage = value => RENAMED_STAGES[str(value)] || str(value);
+
+// Удалённые в старой версии записи попадают в корзину (удалённое всегда и архивное).
+const deletedAt = row => (bool(row['Удален']) ? date(row['Дата удаления']) || new Date() : null);
+
+// Старые однострочные комментарии переносятся в ленту комментариев.
+async function importComment(tx, entityType, entityId, text, createdAt, authorName = 'Перенесено из старой версии') {
+  const body = textToRich(str(text));
+  if (!body) return;
+  await tx.query(
+    `INSERT INTO comments (entity_type, entity_id, author_name, body_html, created_at)
+     VALUES ($1, $2, $3, $4, COALESCE($5, now()))`,
+    [entityType, entityId, authorName, body, createdAt]
+  );
+}
+
 const httpUrl = value => (/^https?:\/\//i.test(str(value)) ? str(value) : '');
 
 // Смещение часового пояса приложения (мс) для момента instant.
@@ -180,7 +200,7 @@ function idMap() {
 
 // Новая нумерация продолжится после максимального импортированного номера.
 async function syncNumberSequences(tx) {
-  for (const table of ['vacancies', 'sources', 'responsibles', 'interview_templates', 'candidates']) {
+  for (const table of ['vacancies', 'sources', 'interview_templates', 'candidates']) {
     await tx.query(
       `SELECT setval(pg_get_serial_sequence('${table}', 'number'),
                      COALESCE((SELECT max(number) FROM ${table}), 0) + 1, false)`
@@ -215,7 +235,7 @@ async function main() {
     // Пользователи могли уже войти до импорта, поэтому проверяются только бизнес-данные.
     const { count } = await tx.one(
       `SELECT (SELECT count(*) FROM candidates) + (SELECT count(*) FROM vacancies)
-            + (SELECT count(*) FROM responsibles) + (SELECT count(*) FROM sources)
+            + (SELECT count(*) FROM sources)
             + (SELECT count(*) FROM interview_templates) AS count`
     );
     if (Number(count) > 0) {
@@ -232,15 +252,18 @@ async function main() {
         ids.users.alias(row['User ID'], existingUser.id);
         continue;
       }
+      const userName = nameParts(row, 'ФИО');
+      const isActive = str(row.IsActive) === '' ? true : bool(row.IsActive);
       await tx.query(
-        `INSERT INTO users (id, google_subject, email, full_name, avatar_url, is_active, created_at, last_login_at)
-         VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, now()), $8)`,
+        `INSERT INTO users (id, google_subject, email, full_name, last_name, first_name, middle_name,
+                            avatar_url, is_active, access_granted_at, created_at, last_login_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CASE WHEN $9 THEN COALESCE($10, now()) END,
+                 COALESCE($10, now()), $11)`,
         [
           ids.users.take(row['User ID']),
           subject && !subject.startsWith('email:') ? subject : null,
-          email, str(row['ФИО']), str(row['Avatar URL']),
-          str(row.IsActive) === '' ? true : bool(row.IsActive),
-          date(row['Дата создания']), date(row['Последний вход'])
+          email, str(row['ФИО']), userName.last, userName.first, userName.middle, str(row['Avatar URL']),
+          isActive, date(row['Дата создания']), date(row['Последний вход'])
         ]
       );
     }
@@ -250,44 +273,67 @@ async function main() {
     for (const row of data.vacancies) {
       const status = APP_CONFIG.VACANCY_STATUSES.includes(str(row['Статус'])) ? str(row['Статус']) : 'Закрыта';
       await tx.query(
-        `INSERT INTO vacancies (id, number, name, status, comment, created_at, updated_at, deleted_at)
-         VALUES ($1, $2, $3, $4, $5, COALESCE($6, now()), COALESCE($7, now()), $8)`,
+        `INSERT INTO vacancies (id, number, name, status, created_at, updated_at, archived_at, deleted_at)
+         VALUES ($1, $2, $3, $4, COALESCE($5, now()), COALESCE($6, now()), $7, $7)`,
         [
           ids.vacancies.take(row['Vacancy ID']), vacancyNumber(row), str(row['Вакансия']) || 'Без названия',
-          status, str(row['Комментарий']), date(row['Дата создания']), date(row['Дата изменения']),
-          bool(row['Удален']) ? date(row['Дата удаления']) || new Date() : null
+          status, date(row['Дата создания']), date(row['Дата изменения']), deletedAt(row)
         ]
       );
+      await importComment(tx, 'vacancy', ids.vacancies.get(row['Vacancy ID']), row['Комментарий'], date(row['Дата создания']));
     }
 
     const sourceNumber = numberer(data.sources);
     for (const row of data.sources) {
       await tx.query(
-        `INSERT INTO sources (id, number, name, created_at, updated_at, deleted_at)
-         VALUES ($1, $2, $3, COALESCE($4, now()), COALESCE($5, now()), $6)`,
+        `INSERT INTO sources (id, number, name, created_at, updated_at, archived_at, deleted_at)
+         VALUES ($1, $2, $3, COALESCE($4, now()), COALESCE($5, now()), $6, $6)`,
         [
           ids.sources.take(row['Source ID']), sourceNumber(row), str(row['Название']),
-          date(row['Дата создания']), date(row['Дата изменения']),
-          bool(row['Удален']) ? date(row['Дата удаления']) || new Date() : null
+          date(row['Дата создания']), date(row['Дата изменения']), deletedAt(row)
         ]
       );
     }
 
-    const responsibleNumber = numberer(data.responsibles);
+    // Ответственные теперь — пользователи с этапами. Привязанные к пользователю объединяются с ним,
+    // остальные становятся пользователями без доступа; без email — с временным адресом.
     for (const row of data.responsibles) {
       const name = nameParts(row, 'ФИО');
-      await tx.query(
-        `INSERT INTO responsibles (id, number, last_name, first_name, middle_name, email, user_id, stages,
-                                   created_at, updated_at, deleted_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, now()), COALESCE($10, now()), $11)`,
-        [
-          ids.responsibles.take(row['Responsible ID']), responsibleNumber(row), name.last || '—', name.first || '—',
-          name.middle, str(row.Email).toLowerCase(), ids.users.get(row['User ID']),
-          json(row['Доступные этапы'], []).filter(stage => APP_CONFIG.PIPELINE_STATUSES.includes(stage)),
-          date(row['Дата создания']), date(row['Дата изменения']),
-          bool(row['Удален']) ? date(row['Дата удаления']) || new Date() : null
-        ]
-      );
+      const stages = json(row['Доступные этапы'], []).map(stage).filter(item => APP_CONFIG.PIPELINE_STATUSES.includes(item));
+      const email = str(row.Email).toLowerCase();
+      let userId = ids.users.get(row['User ID']);
+
+      if (!userId && email) {
+        const byEmail = await tx.one('SELECT id FROM users WHERE lower(email) = $1', [email]);
+        userId = byEmail && byEmail.id;
+      }
+
+      if (userId) {
+        if (!bool(row['Удален'])) {
+          await tx.query(
+            `UPDATE users SET last_name = $2, first_name = $3, middle_name = $4,
+               stages = ARRAY(SELECT DISTINCT unnest(stages || $5::text[]))
+             WHERE id = $1`,
+            [userId, name.last, name.first, name.middle, stages]
+          );
+        }
+      } else {
+        const created = await tx.one(
+          `INSERT INTO users (email, full_name, last_name, first_name, middle_name, stages, is_active,
+                              created_at, archived_at, deleted_at)
+           VALUES ($1, $2, $3, $4, $5, $6, false, COALESCE($7, now()), $8, $8)
+           RETURNING id`,
+          [
+            email || `responsible-${num(row['№']) || randomUUID().slice(0, 8)}@no-email.invalid`,
+            [name.last, name.first, name.middle].filter(Boolean).join(' '),
+            name.last || '—', name.first || '—', name.middle, stages,
+            date(row['Дата создания']), deletedAt(row)
+          ]
+        );
+        userId = created.id;
+      }
+
+      ids.responsibles.alias(row['Responsible ID'], userId);
     }
 
     const templateNumber = numberer(data.templates);
@@ -296,13 +342,12 @@ async function main() {
       if (!vacancyId) continue;
       await tx.query(
         `INSERT INTO interview_templates (id, number, name, vacancy_id, stage, required, questions,
-                                          created_at, updated_at, deleted_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, now()), COALESCE($9, now()), $10)`,
+                                          created_at, updated_at, archived_at, deleted_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, now()), COALESCE($9, now()), $10, $10)`,
         [
           ids.templates.take(row['Template ID']), templateNumber(row), str(row['Название']), vacancyId,
-          str(row['Этап']), bool(row['Обязательный']), JSON.stringify(json(row['Вопросы'], [])),
-          date(row['Дата создания']), date(row['Дата изменения']),
-          bool(row['Удален']) ? date(row['Дата удаления']) || new Date() : null
+          stage(row['Этап']), bool(row['Обязательный']), JSON.stringify(normalizeTemplateQuestions(json(row['Вопросы'], []))),
+          date(row['Дата создания']), date(row['Дата изменения']), deletedAt(row)
         ]
       );
     }
@@ -315,8 +360,10 @@ async function main() {
 
     const fallbackResponsible = async () => {
       placeholderResponsible ||= (await tx.one(
-        `INSERT INTO responsibles (last_name, first_name, stages, deleted_at)
-         VALUES ('Импорт', 'Не назначен', $1, now()) RETURNING id`,
+        `INSERT INTO users (email, full_name, last_name, first_name, stages, is_active, archived_at)
+         VALUES ('import-unassigned@no-email.invalid', 'Импорт Не назначен', 'Импорт', 'Не назначен', $1, false, now())
+         ON CONFLICT ((lower(email))) DO UPDATE SET stages = EXCLUDED.stages
+         RETURNING id`,
         [APP_CONFIG.PIPELINE_STATUSES]
       )).id;
       return placeholderResponsible;
@@ -324,7 +371,7 @@ async function main() {
 
     const fallbackVacancy = async () => {
       placeholderVacancy ||= (await tx.one(
-        `INSERT INTO vacancies (name, status, deleted_at)
+        `INSERT INTO vacancies (name, status, archived_at)
          VALUES ('Без вакансии (импорт)', 'Закрыта', now()) RETURNING id`
       )).id;
       return placeholderVacancy;
@@ -351,25 +398,27 @@ async function main() {
            (id, number, last_name, first_name, middle_name, vacancy_id, status, phone, email,
             telegram, telegram_url, linkedin, github, source_id, salary_expectation,
             recruiter_id, hr_responsible_id, tech_interviewer_id, drive_folder_id,
-            comment, links, rejection_reason, created_at, updated_at, archived_at)
+            links, rejection_reason, created_at, updated_at, archived_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
-                 $20, $21, $22, COALESCE($23, now()), COALESCE($24, $23, now()), $25)`,
+                 $20, $21, COALESCE($22, now()), COALESCE($23, $22, now()), $24)`,
         [
           id, candidateNumber(row), name.last || '—', name.first || '—', name.middle,
           ids.vacancies.get(row['Vacancy ID']) || (await fallbackVacancy()),
-          str(row['Статус']) || 'Новый', str(row['Телефон']), str(row.Email).toLowerCase(),
+          stage(row['Статус']) || 'Новый', str(row['Телефон']), str(row.Email).toLowerCase(),
           str(row.Telegram), str(row['Telegram URL']), str(row.LinkedIn), str(row.GitHub),
           ids.sources.get(row['Source ID']),
           salary !== null && salary >= 0 && salary <= 10_000_000 ? salary : null,
           recruiterId,
           ids.responsibles.get(row['HR Responsible ID']) || recruiterId,
           ids.responsibles.get(row['Tech Interviewer ID']) || recruiterId,
-          driveId(row['Папка кандидата']) || null, str(row['Комментарий']),
+          driveId(row['Папка кандидата']) || null,
           JSON.stringify(json(row['Иные ссылки'], [])), str(row['Причина отказа']),
           date(row['Дата добавления']), date(row['Дата изменения']),
           archived || bool(row['Архивирован']) ? date(row['Дата архивации']) || new Date() : null
         ]
       );
+
+      await importComment(tx, 'candidate', id, row['Комментарий'], date(row['Дата добавления']));
 
       let versions = json(row['Версии резюме'], []);
       if (!versions.length && str(row['Резюме'])) {
@@ -408,24 +457,30 @@ async function main() {
       if (!candidateId) continue;
       const interviewer = nameParts(row, 'Интервьюер', 'Фамилия интервьюера', 'Имя интервьюера', 'Отчество интервьюера');
       const candidate = await tx.one('SELECT vacancy_id FROM candidates WHERE id = $1', [candidateId]);
-      await tx.query(
+      const interview = await tx.one(
         `INSERT INTO interviews
            (id, candidate_id, vacancy_id, stage, from_status, to_status, template_id, template_name,
             responsible_id, interviewer_last_name, interviewer_first_name, interviewer_middle_name,
-            answers, comment, result, created_at, updated_at, deleted_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-                 COALESCE($16, now()), COALESCE($17, $16, now()), $18)`,
+            answers, result, created_at, updated_at, archived_at, deleted_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+                 COALESCE($15, now()), COALESCE($16, $15, now()), $17, $17)
+         RETURNING id`,
         [
           isUuid(str(row['Interview ID'])) ? str(row['Interview ID']) : randomUUID(),
           candidateId, ids.vacancies.get(row['Vacancy ID']) || candidate.vacancy_id,
-          str(row['Этап']) || str(row['From Status']), str(row['From Status']) || str(row['Этап']),
-          str(row['To Status']), ids.templates.get(row['Template ID']), str(row['Шаблон']),
+          stage(row['Этап']) || stage(row['From Status']), stage(row['From Status']) || stage(row['Этап']),
+          stage(row['To Status']), ids.templates.get(row['Template ID']), str(row['Шаблон']),
           ids.responsibles.get(row['Responsible ID']), interviewer.last, interviewer.first, interviewer.middle,
-          JSON.stringify(json(row['Вопросы и ответы'], [])), str(row['Комментарий']), str(row['Результат']),
-          date(row['Дата']), date(row['Дата изменения']),
-          bool(row['Удален']) ? date(row['Дата удаления']) || new Date() : null
+          JSON.stringify(json(row['Вопросы и ответы'], []).map(item => ({
+            question: str(item && item.question),
+            answer: textToRich(item && item.answer)
+          }))),
+          textToRich(row['Результат']),
+          date(row['Дата']), date(row['Дата изменения']), deletedAt(row)
         ]
       );
+      await importComment(tx, 'interview', interview.id, row['Комментарий'], date(row['Дата']),
+        [interviewer.last, interviewer.first].filter(Boolean).join(' ') || undefined);
       interviews += 1;
     }
     stats.interviews = interviews;
@@ -440,7 +495,7 @@ async function main() {
             responsible_name, changed_by_user_id, changed_by_name, changed_by_email, comment, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE($12, now()))`,
         [
-          candidateId, num(row['№ кандидата']), str(row['ФИО']), str(row['From Status']), str(row['To Status']),
+          candidateId, num(row['№ кандидата']), str(row['ФИО']), stage(row['From Status']), stage(row['To Status']),
           ids.responsibles.get(row['Responsible ID']), str(row['Ответственный']),
           ids.users.get(row['Changed By User ID']), str(row['Changed By']), str(row['Changed By Email']),
           str(row['Комментарий']), date(row['Дата'])
@@ -451,9 +506,10 @@ async function main() {
     stats.transitionLog = logEntries;
 
     if (data.dicts.length) {
-      await tx.query('DELETE FROM dictionaries');
+      // Заменяются только категории из выгрузки: причины отказа и прочие новые списки остаются.
       for (const category of Object.keys(data.dicts[0])) {
-        const values = [...new Set(data.dicts.map(row => str(row[category])).filter(Boolean))];
+        await tx.query('DELETE FROM dictionaries WHERE category = $1', [category]);
+        const values = [...new Set(data.dicts.map(row => stage(row[category])).filter(Boolean))];
         for (const [index, value] of values.entries()) {
           await tx.query(
             'INSERT INTO dictionaries (category, value, position) VALUES ($1, $2, $3)',

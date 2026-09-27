@@ -63,6 +63,21 @@ export function validateEmail(value) {
   return email.toLowerCase();
 }
 
+// Только ник Telegram (без ссылок): '@user_name' → 'user_name', '' — не указан.
+export function normalizeTelegramUsername(value) {
+  const username = clean(value)
+    .replace(/^https?:\/\/(www\.)?t\.me\//i, '')
+    .replace(/^t\.me\//i, '')
+    .replace(/^@/, '')
+    .trim();
+
+  if (username && !/^[A-Za-z0-9_]{5,32}$/.test(username)) {
+    fail('Telegram: укажите ник вида @username (5–32 латинских букв, цифр или «_»).');
+  }
+
+  return username;
+}
+
 export function normalizeTelegram(value) {
   const raw = clean(value);
 

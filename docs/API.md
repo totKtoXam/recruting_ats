@@ -63,7 +63,9 @@ curl -s "$ATS_URL/intake?api=meta" -H "X-API-Key: $ATS_API_KEY"
 
 ### `GET /intake?api=references`
 
-Возвращает вакансии, источники и ответственных, чтобы подобрать `vacancyId`, `sourceId` и `responsibleId` для черновика. Удалённые записи не возвращаются.
+Возвращает вакансии, источники и ответственных, чтобы подобрать `vacancyId`, `sourceId` и `responsibleId` для черновика. Архивные и удалённые записи не возвращаются.
+
+Ответственные — это пользователи ATS, у которых в «Настройки → Пользователи» отмечен хотя бы один этап («Ответственный за этапы»); доступ в ATS им не обязателен. `id` ответственного — ID пользователя. Номера (`number`) у ответственных нет.
 
 ```bash
 curl -s "$ATS_URL/intake?api=references" -H "X-API-Key: $ATS_API_KEY"
@@ -91,7 +93,6 @@ curl -s "$ATS_URL/intake?api=references" -H "X-API-Key: $ATS_API_KEY"
   "responsibles": [
     {
       "id": "c9e7b1d2-4a6f-4e08-b3d5-7f1a2c8e9b44",
-      "number": 5,
       "lastName": "Иванова",
       "firstName": "Анна",
       "middleName": "",
@@ -123,8 +124,8 @@ curl -s "$ATS_URL/intake?api=references" -H "X-API-Key: $ATS_API_KEY"
 | `salary` | string / number | Зарплатные ожидания |
 | `vacancyId` | string | ID вакансии из `references` |
 | `sourceId` | string | ID источника из `references` |
-| `responsibleId` | string | ID ответственного (рекрутера) из `references` |
-| `comment` | string | Комментарий |
+| `responsibleId` | string | ID ответственного (рекрутера) из `references` — это ID пользователя |
+| `comment` | string | Комментарий: обычный текст; при сохранении кандидата становится первым комментарием в его ленте (текст экранируется и сохраняется как HTML) |
 | `links` | array | Дополнительные ссылки: `[{ "name": "...", "url": "..." }]` |
 | `resume` | object | Файл резюме: `{ "name": "cv.pdf", "mimeType": "application/pdf", "base64": "..." }` |
 
@@ -191,7 +192,7 @@ curl -s -X POST "$ATS_URL/intake?api=candidate-draft" \
 
 - Черновик живёт **7 дней** (`expiresAt`).
 - После успешного создания кандидата черновик помечается использованным; повторно открыть его нельзя.
-- Использованные и просроченные черновики удаляются, а их файлы переносятся в корзину Google Drive командой `npm run cleanup-drafts`, которую нужно запускать по расписанию (cron, Kubernetes CronJob).
+- Использованные и просроченные черновики удаляются, а их файлы переносятся в корзину Google Drive. Очистка запускается сервером автоматически при открытии приложения (не чаще раза в 12 часов), cron не нужен; вручную — `npm run cleanup-drafts`.
 
 ### Ошибки
 
@@ -225,7 +226,7 @@ curl -s -X POST "$ATS_URL/intake?api=candidate-draft" \
 
 ## Внутренний RPC
 
-Фронтенд (`web/Scripts.html`) вызывает серверные методы через один эндпоинт. Это замена `google.script.run` из версии на Apps Script: имена методов и формат ответов сохранены.
+Фронтенд (`web/Scripts.html`, `web/AdminScripts.html`, `web/Comments.html`) вызывает серверные методы через один эндпоинт. Это замена `google.script.run` из версии на Apps Script: формат вызова и ответов сохранён, набор методов с тех пор расширен (архив и корзина, комментарии, пользователи-ответственные).
 
 Этот API предназначен только для фронтенда ATS и не является стабильным внешним контрактом.
 
@@ -262,6 +263,7 @@ Cookie: ats.sid=...
 |---|---|
 | `400` | Ошибка валидации / бизнес-правила |
 | `401` | Нет сессии |
+| `403` | Недостаточно прав (действие только для администраторов, чужой комментарий) |
 | `404` | Неизвестный метод или запись не найдена |
 | `409` | Нарушение уникальности (например, источник с таким названием уже есть) |
 | `415` | Тело не `application/json` |
@@ -275,23 +277,27 @@ Cookie: ats.sid=...
 
 | Метод | Аргумент | Назначение |
 |---|---|---|
-| `getBootstrapData` | — | Стартовые данные: пользователь, справочники, активные кандидаты, статистика |
+| `getBootstrapData` | — | Стартовые данные: пользователь, справочники, активные кандидаты, статистика. Заодно запускает в фоне очистку черновиков и окончательное удаление из корзины (каждое не чаще раза в 12 часов) |
 | `getInitialData` | — | Алиас `getBootstrapData` |
-| `getReferenceData` | — | Вакансии, источники, ответственные, шаблоны, справочники |
+| `getReferenceData` | — | Активные вакансии, источники, ответственные (пользователи с этапами), шаблоны, справочники, переходы статусов вакансии (`vacancyStatusTransitions`), срок хранения в корзине (`trashRetentionDays`) |
 | `getCandidateData` | — | Активные кандидаты и статистика |
-| `getArchivedCandidateData` | — | Архивные кандидаты |
-| `getAdminUserData` | — | Список пользователей для админ-панели |
+| `getArchivedCandidateData` | — | Архивные кандидаты (`{ archivedCandidates }`) |
+| `getDeletedCandidateData` | — | Кандидаты в корзине (`{ deletedCandidates }`) |
+| `getAdminUserData` | — | Пользователи с доступом (не в архиве и не в корзине) |
 
 **Кандидаты**
 
 | Метод | Аргумент | Назначение |
 |---|---|---|
 | `getCandidateDetails` | id кандидата | Полная карточка кандидата |
-| `saveCandidate` | объект кандидата | Создание / изменение кандидата (в т.ч. из черновика) |
-| `archiveCandidate` | id кандидата | Перенос в архив |
+| `saveCandidate` | объект кандидата | Создание / изменение кандидата (в т.ч. из черновика). Рекрутер, HR и проф. интервьювер — ID пользователей-ответственных. `comment` при создании становится первым комментарием в ленте кандидата |
+| `archiveCandidate` | id кандидата | Перенос в архив (статус сохраняется) |
+| `unarchiveCandidate` | id кандидата | Возврат из архива |
 | `getAllowedTransitions` | id кандидата | Допустимые переходы статуса |
 | `getCandidateTransitionStatusLog` | id кандидата | Журнал переходов статусов |
 | `getCandidateDraft` | token черновика | Данные черновика из Resume Intake API |
+| `parseResume` | `{ name, mimeType, base64 }` — файл резюме, как в `saveCandidate` | Разбор резюме для автозаполнения формы, ничего не сохраняет. Ответ: `status` (`ok` \| `scan` \| `not_resume`; у последних двух — `message`), `format` (`hh` \| `enbek` \| `linkedin` \| `generic`), `fields` (значение, `confidence` `high`/`medium` и фрагмент-источник) для `lastName`, `firstName`, `middleName`, `phone`, `email`, `telegram`, `github`, `linkedin`, `salary`; `suggestions` (неуверенные варианты; у `name` значение — объект Ф/И/О), `warnings`, `links` (профили для «Иных ссылок»), `hints` (`vacancy`, `source`: id, `confidence`, причина), `duplicates` (кандидаты с тем же email, телефоном или Telegram, включая архив и корзину), `summary` (строки для комментария), `hh` (события отклика/отказа, комментарии рекрутера, сопроводительное письмо), `fileHash` |
+| `findSimilarCandidates` | `{ lastName, firstName, middleName, email, phone, telegram, excludeId? }` | До 5 похожих кандидатов (включая архив и корзину): `id`, `number`, `fullName`, `vacancy`, `status`, `state` (`active` \| `archived` \| `deleted`), `matchedBy` (`email`, `phone`, `telegram` — точно; `name` — ФИО по Дамерау — Левенштейну), `nameScore` 0..1 |
 
 **Интервью и переходы**
 
@@ -299,18 +305,67 @@ Cookie: ats.sid=...
 |---|---|---|
 | `getInterviews` | id кандидата | История результатов интервью |
 | `getInterviewContext` | объект | Шаблон и контекст для перехода |
-| `transitionCandidate` | объект | Переход статуса с результатом этапа |
-| `updateInterview` | объект | Редактирование результата интервью |
-| `deleteInterview` | id интервью | Удаление результата интервью |
+| `transitionCandidate` | объект | Переход статуса: `{ candidateId, toStatus, interview }` — результат этапа, на который переводят; `{ candidateId, toStatus: 'Отказано', rejection: { byType: 'candidate' \| 'responsible', responsibleId, reason, comment } }` — отказ; `{ candidateId, toStatus, comment }` — возврат из «Отказано» на этап отказа |
+| `updateInterview` | объект | Редактирование результата интервью (ответы и результат — HTML, санитизируется на сервере) |
+
+**Архив и корзина** (для `type`: `candidate`, `vacancy`, `source`, `template`, `interview`, `user`)
+
+| Метод | Аргумент | Назначение |
+|---|---|---|
+| `archiveEntity` / `unarchiveEntity` | `{ type, id }` | Архивировать / вернуть из архива |
+| `deleteEntity` | `{ type, id }` | Удалить в корзину. **Только администраторы** и только архивную запись. Через `trashRetentionDays` (30) дней запись удаляется из БД окончательно |
+| `restoreEntity` | `{ type, id }` | Вернуть из корзины в архив (пока не прошло 30 дней). **Только администраторы** |
+| `getDeletedCandidateData` | — | Кандидаты в корзине |
+
+**Комментарии** (`entityType`: `candidate`, `vacancy`, `interview`)
+
+| Метод | Аргумент | Назначение |
+|---|---|---|
+| `listComments` | `{ entityType, entityId }` | Комментарии с ответами (один уровень) и реакциями |
+| `addComment` | `{ entityType, entityId, bodyHtml, parentId? }` | Новый комментарий или ответ. Нельзя для записей в корзине |
+| `updateComment` | `{ id, bodyHtml }` | Правка (только автор) |
+| `deleteComment` | id | Удаление (автор или администратор) |
+| `toggleReaction` | `{ commentId, emoji }` | Поставить/снять реакцию: 👍 👎 ❤️ 😂 🎉 👀 |
+
+**Уведомления** (методы работают с уведомлениями текущего пользователя)
+
+| Метод | Аргумент | Назначение |
+|---|---|---|
+| `getNotificationFeed` | `{ view: 'recent' \| 'unread' \| 'important', limit?, before? }` | Лента колокольчика (только канал «В приложении»): `{ items, hasMore, unread }`. `before` — `createdAt` последнего элемента для подгрузки |
+| `getNotificationUnread` | — | `{ unread }` — число непрочитанных (также `notificationsUnread` в `getBootstrapData`) |
+| `getNotification` | id | Уведомление с актуальными статусами доставки (`channels: [{ channel, status, recipient, attempts, error, sentAt }]`) |
+| `markNotificationRead` | `{ id, read? }` | Отметить прочитанным (`read: false` — непрочитанным) |
+| `markAllNotificationsRead` | — | Отметить все прочитанными |
+| `setNotificationImportant` | `{ id, important }` | Отметка «Важное» |
+| `listNotificationLog` | как у `list*` | Журнал. Фильтры: `q`, `kind`, `read` (`read`/`unread`), `important` (`yes`/`no`), `delivery` (`sent`/`pending`/`failed`/`skipped`/`app`) |
+| `getNotificationSettings` | — | Виды, каналы (с доступностью и причиной), `preferences[kind][channel]`, email, состояние Telegram |
+| `setNotificationPreference` | `{ kind, channel, enabled }` | Включить или выключить вид по каналу |
+| `setNotificationPreferences` | `{ items: [{ kind, channel, enabled }] }` | То же пачкой |
+| `getCandidateWatch` / `setCandidateWatch` | id / `{ candidateId, watch }` | «Следить» за кандидатом: `{ watching, watchers }` |
+| `createTelegramLink` | — | Одноразовая ссылка привязки `{ url, expiresAt }` (15 минут) |
+| `unlinkTelegram` | — | Отвязать Telegram |
+
+**Интеграции** (только администраторы, иначе `403`; `group`: `auth` \| `smtp` \| `telegram`)
+
+| Метод | Аргумент | Назначение |
+|---|---|---|
+| `getIntegrationSettings` | — | Группы с полями: значение (у секретов — только `isSet` и `hintValue`), источник `db` / `env` / `default` / `none`; `info` — Redirect URI, JS origin, администраторы из `.env` |
+| `testIntegration` | `{ group, values }` | Проверка с учётом несохранённых значений: Google — Client ID/secret, SMTP — тестовое письмо текущему пользователю, Telegram — `getMe` |
+| `saveIntegration` | `{ group, values: { 'smtp.host': '…', … } }` | Сохранить изменённые поля (пустой секрет — не менять) и применить без перезапуска. Client ID/secret перед сохранением проверяются в Google |
+| `resetIntegration` | `{ group }` | Удалить значения группы, сохранённые в ATS, — действует `.env` |
 
 **Админ-панель**
 
 | Метод | Аргумент | Назначение |
 |---|---|---|
-| `saveVacancy` / `deleteVacancy` | объект / id | Вакансии |
-| `saveSource` / `deleteSource` | объект / id | Источники |
-| `saveResponsible` / `deleteResponsible` | объект / id | Ответственные |
-| `saveInterviewTemplate` / `deleteInterviewTemplate` | объект / id | Шаблоны интервью |
+| `listVacancies` / `listSources` / `listUsers` | `{ page, pageSize, sort: { key, dir }, filters }` | Страница таблицы: фильтры, сортировка и пагинация выполняются в БД. `filters.state`: `active` / `archived` / `deleted`. Ответ `{ items, total, page, pageSize, sort }`; `pageSize` до 100. `listUsers` — **только администраторы** |
+| `saveVacancy` | `{ id?, name }` | Вакансия (название уникально без учёта регистра, иначе `409`); новая создаётся со статусом «Открыта» |
+| `setVacancyStatus` | `{ id, status }` | Переход статуса вакансии; допустимые переходы — `vacancyStatusTransitions` в `getReferenceData` |
+| `listVacancyTemplates` | id вакансии | Все шаблоны вакансии, включая архивные |
+| `saveSource` | `{ id?, name }` | Источник |
+| `saveInterviewTemplate` | объект | Шаблон интервью; `questions` — массив `{ text, answers }` (answers — вероятные ответы) |
+| `saveUser` | `{ id?, email, lastName, firstName, middleName, stages, isActive, isAdmin, telegram? }` | Пользователь. Непустой `stages` делает его ответственным за этапы. `isActive` учитывается только при создании. **Только администраторы** |
+| `setUserAccess` | `{ id, isActive }` | Открыть/закрыть доступ в ATS. **Только администраторы**; нельзя себе и последнему администратору |
 
 Пример вызова из браузера (сессия уже есть):
 

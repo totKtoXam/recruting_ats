@@ -1,0 +1,756 @@
+<style>
+/* =====================================================================
+   CommentThread — comments with replies, reactions, rich text.
+   Only design tokens are used, so light/dark themes work.
+   ===================================================================== */
+.cmt{display:flex;flex-direction:column;font-size:14px;color:var(--text);min-width:0}
+.cmt-head{
+  display:flex;align-items:center;gap:6px;
+  min-height:32px;padding:0 0 2px;
+  border-bottom:1px solid var(--line)
+}
+.cmt-title{display:inline-flex;align-items:center;gap:6px;font-weight:600;color:var(--text)}
+.cmt-title .icon{width:14px;height:14px;color:var(--muted)}
+.cmt-count{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-width:18px;height:18px;padding:0 5px;
+  border-radius:9px;
+  background:var(--surface-3);color:var(--muted);
+  font-size:12px;font-weight:600;line-height:1
+}
+.cmt-count[hidden]{display:none}
+.cmt-spacer{flex:1 1 auto}
+.cmt-head .icon-btn{width:26px;height:26px}
+.cmt-head .icon-btn .icon{width:14px;height:14px}
+
+.cmt-list{display:flex;flex-direction:column}
+.cmt-thread{padding:8px 0;border-bottom:1px solid var(--line-soft)}
+.cmt-item{display:flex;gap:8px;min-width:0}
+.cmt-replies{
+  display:flex;flex-direction:column;gap:8px;
+  margin:8px 0 0 13px;padding-left:20px;
+  border-left:2px solid var(--line-soft)
+}
+.cmt-replies:empty{display:none}
+
+.cmt-ava{
+  position:relative;flex:0 0 26px;
+  width:26px;height:26px;border-radius:50%;
+  display:inline-flex;align-items:center;justify-content:center;
+  overflow:hidden;
+  background:var(--primary-tint-2);color:var(--primary);
+  font-size:12px;font-weight:700;letter-spacing:.02em;line-height:1;
+  text-transform:uppercase;user-select:none
+}
+.cmt-ava img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:var(--surface)}
+.cmt-ava .icon{width:14px;height:14px}
+.cmt-ava-legacy{background:var(--surface-3);color:var(--faint)}
+.cmt-item.cmt-reply .cmt-ava{flex-basis:22px;width:22px;height:22px;font-size:9px}
+.cmt-item.cmt-reply .cmt-ava .icon{width:12px;height:12px}
+
+.cmt-main{flex:1 1 auto;min-width:0}
+.cmt-meta{display:flex;align-items:center;flex-wrap:wrap;gap:0 6px;min-height:24px}
+.cmt-author{font-weight:600;color:var(--text);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cmt-item.cmt-legacy .cmt-author{font-weight:500;font-style:italic;color:var(--muted)}
+.cmt-you{font-weight:400;color:var(--faint)}
+.cmt-time,.cmt-edited{font-size:12px;color:var(--muted);white-space:nowrap}
+.cmt-edited{color:var(--faint)}
+.cmt-actions{
+  display:inline-flex;align-items:center;gap:1px;margin-left:auto;
+  opacity:0;transition:opacity .12s
+}
+.cmt-item:hover>.cmt-main>.cmt-meta>.cmt-actions,
+.cmt-item:focus-within>.cmt-main>.cmt-meta>.cmt-actions{opacity:1}
+@media (hover:none){.cmt-actions{opacity:1}}
+.cmt-actions .icon-btn{width:24px;height:24px}
+.cmt-actions .icon-btn .icon{width:14px;height:14px}
+.cmt-body{margin-top:1px}
+.cmt-body .rich-text{color:var(--text)}
+
+.cmt-reacts{position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:4px}
+.cmt-reacts:empty{display:none}
+.cmt-react{
+  display:inline-flex;align-items:center;gap:4px;
+  height:22px;padding:0 7px;margin:0;
+  border:1px solid var(--line);border-radius:11px;
+  background:var(--surface);color:var(--text-2);
+  font:inherit;font-size:12px;line-height:1;cursor:pointer;
+  transition:background-color .12s,border-color .12s
+}
+.cmt-react:hover:not(:disabled){border-color:var(--line-strong);background:var(--surface-2)}
+.cmt-react:focus{outline:none}
+.cmt-react:focus-visible{box-shadow:0 0 0 2px var(--primary-ring)}
+.cmt-react.mine{border-color:var(--primary-ring);background:var(--primary-tint-2);color:var(--primary);font-weight:600}
+.cmt-react:disabled{cursor:default;opacity:.85}
+.cmt-react-emoji{font-size:14px;line-height:1}
+.cmt-reacts .cmt-react-add{width:26px;height:22px;border-radius:11px;color:var(--faint)}
+.cmt-reacts .cmt-react-add .icon{width:14px;height:14px}
+.cmt-item.picker-open>.cmt-main>.cmt-meta>.cmt-actions{opacity:1}
+.cmt-main{position:relative}
+.cmt-reacts.no-reacts{position:static;margin:0;height:0;display:block}
+.cmt-reacts.no-reacts .cmt-picker{top:26px;left:auto;right:0}
+.cmt-reply-form{align-items:flex-start}
+.cmt-reply-form .cmt-ava{flex-basis:22px;width:22px;height:22px;font-size:9px;margin-top:4px}
+.cmt-composer>.cmt-ava{margin-top:6px}
+
+.cmt-picker{
+  position:absolute;z-index:40;top:calc(100% + 4px);left:0;
+  display:flex;gap:2px;padding:4px;
+  background:var(--surface);
+  border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow-pop,var(--shadow))
+}
+.cmt-reacts.no-reacts .cmt-picker{left:auto;right:0}
+.cmt-picker button{
+  width:30px;height:30px;padding:0;margin:0;
+  display:inline-flex;align-items:center;justify-content:center;
+  border:0;border-radius:var(--radius);background:transparent;
+  font-size:17px;line-height:1;cursor:pointer
+}
+.cmt-picker button:hover,.cmt-picker button:focus-visible{background:var(--surface-3);outline:none}
+.cmt-picker button.mine{background:var(--primary-tint-2)}
+
+.cmt-form{display:flex;align-items:flex-start;gap:8px;min-width:0}
+.cmt-form-editor{flex:1 1 auto;min-width:0}
+.cmt-form-actions{display:flex;flex-direction:column;gap:2px;align-self:flex-end}
+.cmt-composer{padding-top:10px}
+.cmt-composer[hidden]{display:none}
+.cmt-reply-form .cmt-form-actions .icon-btn,
+.cmt-edit .cmt-form-actions .icon-btn{width:26px;height:26px}
+.cmt-reply-form .icon-btn .icon,
+.cmt-edit .icon-btn .icon{width:14px;height:14px}
+.cmt-edit{margin-top:2px}
+
+.cmt-empty{padding:14px 0;color:var(--muted);text-align:center}
+.cmt-error{color:var(--danger);display:flex;align-items:center;justify-content:center;gap:6px}
+.cmt-loading{color:var(--faint)}
+</style>
+
+<script>
+/* =====================================================================
+   window.CommentThread
+     mount(container, { entityType, entityId, currentUser, readOnly, title, emptyText })
+       -> { reload(), destroy(), setEntity(entityType, entityId) }
+   Runtime deps (resolved lazily): rpc, escapeHtml, icon, showToast, showConfirm, RichEditor.
+   ===================================================================== */
+(function(){
+  'use strict';
+  if(window.CommentThread){return;}
+
+  var EMOJI=['👍','👎','❤️','😂','🎉','👀'];
+  var MONTHS=['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
+
+  function esc(v){
+    if(typeof window.escapeHtml==='function'){return window.escapeHtml(v);}
+    return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+  }
+  function ic(name,extra){
+    if(typeof window.icon==='function'){return window.icon(name,extra);}
+    return '<svg class="icon'+(extra?' '+extra:'')+'"><use href="#i-'+name+'"/></svg>';
+  }
+  function toast(msg,type){
+    if(typeof window.showToast==='function'){window.showToast(msg,type||'success');}
+    else if(type==='error'&&window.console){console.error(msg);}
+  }
+  function ask(msg,title){
+    if(typeof window.showConfirm==='function'){return window.showConfirm(msg,title);}
+    return Promise.resolve(window.confirm(msg));
+  }
+  function errMsg(e){return (e&&e.message)||String(e||'Ошибка');}
+  function btn(act,iconName,tip,cls,extra){
+    return '<button type="button" class="icon-btn'+(cls?' '+cls:'')+'" data-act="'+act+'" data-tip="'+esc(tip)+'" aria-label="'+esc(tip)+'"'+(extra||'')+'>'+ic(iconName)+'</button>';
+  }
+
+  /* ---------- time ---------- */
+  function pad(n){return (n<10?'0':'')+n;}
+  function parseDate(iso){
+    if(!iso){return null;}
+    var d=new Date(iso);
+    return isNaN(d.getTime())?null:d;
+  }
+  function relTime(iso){
+    var d=parseDate(iso);
+    if(!d){return '';}
+    var now=new Date();
+    var diff=(now.getTime()-d.getTime())/1000;
+    if(diff<45){return 'только что';}
+    if(diff<3600){return Math.max(1,Math.floor(diff/60))+' мин назад';}
+    var hm=pad(d.getHours())+':'+pad(d.getMinutes());
+    var today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+    var yesterday=new Date(now.getFullYear(),now.getMonth(),now.getDate()-1);
+    if(d>=today){return diff<4*3600?Math.floor(diff/3600)+' ч назад':'сегодня в '+hm;}
+    if(d>=yesterday){return 'вчера в '+hm;}
+    if(d.getFullYear()===now.getFullYear()){return d.getDate()+' '+MONTHS[d.getMonth()]+' в '+hm;}
+    return d.getDate()+' '+MONTHS[d.getMonth()]+' '+d.getFullYear();
+  }
+  function exactTime(iso){
+    var d=parseDate(iso);
+    if(!d){return '';}
+    try{
+      return d.toLocaleString('ru-RU',{day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'});
+    }catch(e){
+      return pad(d.getDate())+'.'+pad(d.getMonth()+1)+'.'+d.getFullYear()+', '+pad(d.getHours())+':'+pad(d.getMinutes());
+    }
+  }
+
+  /* ---------- avatars ---------- */
+  function initials(name){
+    var parts=String(name||'').replace(/[^\p{L}\p{N}\s-]/gu,' ').trim().split(/\s+/).filter(Boolean);
+    if(!parts.length){return '?';}
+    if(parts.length===1){return parts[0].slice(0,2);}
+    return parts[0].charAt(0)+parts[1].charAt(0);
+  }
+  function isLegacy(author){return !author||author.id===null||author.id===undefined||author.id==='';}
+  function avatar(author,legacy){
+    if(legacy){return '<span class="cmt-ava cmt-ava-legacy" aria-hidden="true">'+ic('user')+'</span>';}
+    var url=String((author&&author.avatarUrl)||'').trim();
+    var img=/^https:\/\//i.test(url)?'<img src="'+esc(url)+'" alt="" loading="lazy" referrerpolicy="no-referrer">':'';
+    return '<span class="cmt-ava" aria-hidden="true">'+esc(initials(author&&author.name))+img+'</span>';
+  }
+  function userAvatar(u){
+    if(!u){return '<span class="cmt-ava" aria-hidden="true">'+ic('user')+'</span>';}
+    return avatar({id:u['User ID']||'me',name:u['ФИО']||u['Email']||'',avatarUrl:u['Avatar URL']},false);
+  }
+
+  function reactTip(r){
+    var users=(r.users||[]).filter(Boolean);
+    if(!users.length){return r.emoji;}
+    var shown=users.slice(0,12).join(', ');
+    if(users.length>12){shown+=' и ещё '+(users.length-12);}
+    return r.emoji+' '+shown;
+  }
+
+  /* =====================================================================
+     mount
+     ===================================================================== */
+  function mount(container,opts){
+    opts=opts||{};
+    if(!container){throw new Error('CommentThread.mount: container is required');}
+    var st={
+      entityType:opts.entityType||'',
+      entityId:opts.entityId==null?'':String(opts.entityId),
+      user:opts.currentUser||null,
+      readOnly:!!opts.readOnly,
+      title:opts.title||'Комментарии',
+      emptyText:opts.emptyText||'Комментариев пока нет',
+      comments:[],
+      loading:false,
+      error:'',
+      loaded:false,
+      editingId:null,
+      replyTo:null,
+      pickerFor:null,
+      busy:{}
+    };
+    var token=0;
+    var destroyed=false;
+    var composer=null,replyEd=null,editEd=null;
+    var drafts={reply:'',edit:''};
+    var focusReply=false,focusEdit=false;
+
+    var root=document.createElement('section');
+    root.className='cmt';
+    root.setAttribute('aria-label',st.title);
+    root.innerHTML=
+      '<div class="cmt-head">'+
+        '<span class="cmt-title">'+ic('message')+'<span>'+esc(st.title)+'</span></span>'+
+        '<span class="cmt-count" hidden></span>'+
+        '<span class="cmt-spacer"></span>'+
+        btn('refresh','refresh','Обновить комментарии','icon-btn-sm')+
+      '</div>'+
+      '<div class="cmt-list" role="list" aria-live="polite"></div>'+
+      '<div class="cmt-composer cmt-form">'+
+        '<span class="cmt-me-ava"></span>'+
+        '<div class="cmt-form-editor"></div>'+
+        '<div class="cmt-form-actions">'+btn('send','send','Отправить (Ctrl+Enter)','icon-btn-primary',' disabled')+'</div>'+
+      '</div>';
+    container.appendChild(root);
+
+    var listEl=root.querySelector('.cmt-list');
+    var countEl=root.querySelector('.cmt-count');
+    var composerEl=root.querySelector('.cmt-composer');
+    var sendBtn=composerEl.querySelector('[data-act="send"]');
+    composerEl.querySelector('.cmt-me-ava').outerHTML=userAvatar(st.user);
+
+    function RE(){return window.RichEditor;}
+
+    /* ---------- composer ---------- */
+    function ensureComposer(){
+      if(composer||!RE()){return;}
+      composer=RE().mount(composerEl.querySelector('.cmt-form-editor'),{
+        placeholder:'Написать комментарий… Ctrl+Enter — отправить',
+        minHeight:60,
+        ariaLabel:'Новый комментарий',
+        onChange:updateSend,
+        onSubmit:function(){sendNew();}
+      });
+    }
+    function updateSend(){
+      sendBtn.disabled=!composer||composer.isEmpty()||!!st.busy.send;
+    }
+    function updateComposerVisibility(){
+      composerEl.hidden=st.readOnly||!st.entityId;
+    }
+
+    /* ---------- lookup ---------- */
+    function find(id){
+      for(var i=0;i<st.comments.length;i++){if(String(st.comments[i].id)===String(id)){return st.comments[i];}}
+      return null;
+    }
+    function rootIdOf(c){
+      if(c.parentId!=null&&c.parentId!==''&&find(c.parentId)){return rootIdOf(find(c.parentId));}
+      return c.id;
+    }
+
+    /* ---------- rendering ---------- */
+    function pickerBtn(c,cls){
+      var open=String(st.pickerFor)===String(c.id);
+      return '<button type="button" class="icon-btn '+cls+'" data-act="picker" data-k="picker:'+esc(c.id)+'" data-tip="Добавить реакцию" aria-label="Добавить реакцию" aria-haspopup="true" aria-expanded="'+(open?'true':'false')+'">'+ic('smile')+'</button>';
+    }
+    function hasReacts(c){return (c.reactions||[]).some(function(r){return r&&r.count>0;});}
+    function renderReacts(c){
+      var rs=(c.reactions||[]).filter(function(r){return r&&r.count>0;});
+      var dis=st.readOnly?' disabled':'';
+      var h=rs.map(function(r){
+        return '<button type="button" class="cmt-react'+(r.mine?' mine':'')+'" data-act="react" data-emoji="'+esc(r.emoji)+'"'+
+          ' data-k="react:'+esc(c.id)+':'+esc(r.emoji)+'" data-tip="'+esc(reactTip(r))+'"'+
+          ' aria-pressed="'+(r.mine?'true':'false')+'" aria-label="'+esc(r.emoji+' '+r.count)+'"'+dis+'>'+
+          '<span class="cmt-react-emoji">'+esc(r.emoji)+'</span><span>'+esc(r.count)+'</span></button>';
+      }).join('');
+      if(!st.readOnly){
+        var open=String(st.pickerFor)===String(c.id);
+        // without reactions the «add reaction» button lives in the hover actions of the meta row
+        if(rs.length){h+=pickerBtn(c,'cmt-react-add');}
+        if(open){
+          var mine={};
+          rs.forEach(function(r){if(r.mine){mine[r.emoji]=1;}});
+          h+='<div class="cmt-picker" role="menu" aria-label="Реакции">'+EMOJI.map(function(e){
+            return '<button type="button" role="menuitem" class="'+(mine[e]?'mine':'')+'" data-act="pick" data-emoji="'+esc(e)+'" aria-label="'+esc(e)+'">'+esc(e)+'</button>';
+          }).join('')+'</div>';
+        }
+      }
+      var cls='cmt-reacts'+(rs.length?'':' no-reacts')+(String(st.pickerFor)===String(c.id)?' picker-open':'');
+      return h?'<div class="'+cls+'">'+h+'</div>':'';
+    }
+
+    function renderItem(c,isReply){
+      var a=c.author||{};
+      var legacy=isLegacy(a);
+      var name=a.name||(legacy?'Перенесено из старой версии':'Без имени');
+      var me=!legacy&&st.user&&String(a.id)===String(st.user['User ID']);
+      var editing=String(st.editingId)===String(c.id);
+      var acts='';
+      if(!st.readOnly&&!editing){
+        if(!hasReacts(c)){acts+=pickerBtn(c,'icon-btn-sm');}
+        acts+=btn('reply','reply','Ответить','icon-btn-sm');
+        if(c.canEdit){acts+=btn('edit','edit','Изменить','icon-btn-sm');}
+      }
+      if(!st.readOnly&&c.canDelete&&!editing){acts+=btn('delete','trash','Удалить','icon-btn-sm icon-btn-danger');}
+      var editedTip=c.updatedAt?'Изменено '+exactTime(c.updatedAt):'Изменено';
+      var pOpen=String(st.pickerFor)===String(c.id);
+      return '<div class="cmt-item'+(isReply?' cmt-reply':'')+(legacy?' cmt-legacy':'')+(me?' cmt-mine':'')+(pOpen?' picker-open':'')+'" role="listitem" data-id="'+esc(c.id)+'">'+
+        avatar(a,legacy)+
+        '<div class="cmt-main">'+
+          '<div class="cmt-meta">'+
+            '<span class="cmt-author"'+(a.email&&!legacy?' data-tip="'+esc(a.email)+'"':'')+'>'+esc(name)+(me?' <span class="cmt-you">(вы)</span>':'')+'</span>'+
+            '<span class="cmt-time" data-time="'+esc(c.createdAt||'')+'" data-tip="'+esc(exactTime(c.createdAt))+'">'+esc(relTime(c.createdAt))+'</span>'+
+            (c.edited?'<span class="cmt-edited" data-tip="'+esc(editedTip)+'">(изменено)</span>':'')+
+            (acts?'<span class="cmt-actions">'+acts+'</span>':'')+
+          '</div>'+
+          (editing
+            ?'<div class="cmt-edit cmt-form"><div class="cmt-form-editor"></div><div class="cmt-form-actions">'+
+                btn('edit-save','check','Сохранить (Ctrl+Enter)','icon-btn-primary')+btn('edit-cancel','close','Отмена (Esc)','')+
+              '</div></div>'
+            :'<div class="cmt-body">'+(RE()?RE().renderHTML(c.bodyHtml||''):'<div class="rich-text">'+esc(c.bodyHtml||'')+'</div>')+'</div>'+renderReacts(c))+
+        '</div>'+
+      '</div>';
+    }
+
+    function threads(){
+      var roots=[],byRoot={};
+      st.comments.forEach(function(c){
+        var rid=rootIdOf(c);
+        if(String(rid)===String(c.id)){roots.push(c);byRoot[c.id]=byRoot[c.id]||[];}
+      });
+      st.comments.forEach(function(c){
+        var rid=rootIdOf(c);
+        if(String(rid)!==String(c.id)){(byRoot[rid]=byRoot[rid]||[]).push(c);}
+      });
+      return {roots:roots,byRoot:byRoot};
+    }
+
+    function captureDrafts(){
+      if(replyEd){drafts.reply=replyEd.getHTML();replyEd.destroy();replyEd=null;}
+      if(editEd){drafts.edit=editEd.getHTML();editEd.destroy();editEd=null;}
+    }
+
+    function render(){
+      if(destroyed){return;}
+      var focusKey=document.activeElement&&root.contains(document.activeElement)?document.activeElement.getAttribute('data-k'):null;
+      captureDrafts();
+      var total=st.comments.length;
+      countEl.hidden=!total;
+      countEl.textContent=total;
+      updateComposerVisibility();
+
+      var html='';
+      if(st.loading&&!st.loaded){
+        html='<div class="cmt-empty cmt-loading">Загрузка…</div>';
+      }else if(st.error&&!st.comments.length){
+        html='<div class="cmt-empty cmt-error"><span>'+esc(st.error)+'</span>'+btn('refresh','refresh','Повторить','icon-btn-sm')+'</div>';
+      }else if(!total){
+        html='<div class="cmt-empty">'+esc(st.emptyText)+'</div>';
+      }else{
+        var t=threads();
+        html=t.roots.map(function(c){
+          var replies=(t.byRoot[c.id]||[]).map(function(r){return renderItem(r,true);}).join('');
+          var replyForm=String(st.replyTo)===String(c.id)&&!st.readOnly
+            ?'<div class="cmt-reply-form cmt-form">'+userAvatar(st.user).replace('class="cmt-ava','class="cmt-ava cmt-ava-sm')+
+                '<div class="cmt-form-editor"></div><div class="cmt-form-actions">'+
+                btn('reply-send','send','Ответить (Ctrl+Enter)','icon-btn-primary')+btn('reply-cancel','close','Отмена (Esc)','')+
+              '</div></div>'
+            :'';
+          return '<div class="cmt-thread" data-root="'+esc(c.id)+'">'+renderItem(c,false)+
+            '<div class="cmt-replies">'+replies+replyForm+'</div></div>';
+        }).join('');
+      }
+      listEl.innerHTML=html;
+      mountInlineEditors();
+      if(focusKey){
+        var f=listEl.querySelector('[data-k="'+(window.CSS&&CSS.escape?CSS.escape(focusKey):focusKey)+'"]');
+        if(f){f.focus({preventScroll:true});}
+      }
+    }
+
+    function mountInlineEditors(){
+      if(!RE()){return;}
+      if(st.editingId!=null){
+        var item=listEl.querySelector('.cmt-item[data-id="'+cssId(st.editingId)+'"] .cmt-edit .cmt-form-editor');
+        var c=find(st.editingId);
+        if(item&&c){
+          editEd=RE().mount(item,{
+            html:drafts.edit||c.bodyHtml||'',
+            minHeight:48,
+            ariaLabel:'Редактирование комментария',
+            onSubmit:function(){saveEdit();}
+          });
+          if(focusEdit){focusEdit=false;editEd.focus();}
+        }else{st.editingId=null;}
+      }
+      if(st.replyTo!=null){
+        var host=listEl.querySelector('.cmt-thread[data-root="'+cssId(st.replyTo)+'"] .cmt-reply-form .cmt-form-editor');
+        if(host){
+          replyEd=RE().mount(host,{
+            html:drafts.reply||'',
+            minHeight:44,
+            placeholder:'Ответить… Ctrl+Enter — отправить',
+            ariaLabel:'Ответ на комментарий',
+            onSubmit:function(){sendReply();}
+          });
+          if(focusReply){focusReply=false;replyEd.focus();}
+        }else{st.replyTo=null;}
+      }
+    }
+    function cssId(id){
+      var s=String(id);
+      return window.CSS&&CSS.escape?CSS.escape(s):s.replace(/["\\]/g,'\\$&');
+    }
+
+    function refreshTimes(){
+      if(destroyed){return;}
+      Array.prototype.forEach.call(listEl.querySelectorAll('.cmt-time[data-time]'),function(e){
+        var t=relTime(e.getAttribute('data-time'));
+        if(e.textContent!==t){e.textContent=t;}
+      });
+    }
+    var timer=setInterval(refreshTimes,60000);
+
+    /* ---------- data ---------- */
+    function reload(){
+      var my=++token;
+      st.pickerFor=null;
+      if(!st.entityType||!st.entityId){
+        st.comments=[];st.loading=false;st.loaded=true;st.error='';
+        render();
+        return Promise.resolve([]);
+      }
+      st.loading=true;st.error='';
+      render();
+      return Promise.resolve().then(function(){
+        return window.rpc('listComments',{entityType:st.entityType,entityId:st.entityId});
+      }).then(function(list){
+        if(my!==token||destroyed){return st.comments;}
+        st.comments=Array.isArray(list)?list:[];
+        st.loading=false;st.loaded=true;
+        if(st.editingId!=null&&!find(st.editingId)){st.editingId=null;drafts.edit='';}
+        if(st.replyTo!=null&&!find(st.replyTo)){st.replyTo=null;drafts.reply='';}
+        render();
+        return st.comments;
+      },function(e){
+        if(my!==token||destroyed){return st.comments;}
+        st.loading=false;st.loaded=true;
+        st.error='Не удалось загрузить комментарии: '+errMsg(e);
+        render();
+        if(st.comments.length){toast(st.error,'error');}
+        return st.comments;
+      });
+    }
+
+    function setBusy(key,on,button){
+      st.busy[key]=on;
+      if(button){
+        button.disabled=on;
+        button.classList.toggle('is-loading',on);
+      }
+    }
+
+    function sendNew(){
+      if(st.readOnly||st.busy.send||!composer){return;}
+      if(composer.isEmpty()){toast('Комментарий пустой','error');composer.focus();return;}
+      var bodyHtml=composer.getHTML();
+      var type=st.entityType,id=st.entityId,my=token;
+      setBusy('send',true,sendBtn);
+      window.rpc('addComment',{entityType:type,entityId:id,bodyHtml:bodyHtml}).then(function(c){
+        setBusy('send',false,sendBtn);
+        if(destroyed||my!==token){return;}
+        composer.setHTML('');
+        if(c&&c.id!=null){st.comments.push(c);}
+        render();
+        updateSend();
+        var el=c&&listEl.querySelector('.cmt-item[data-id="'+cssId(c.id)+'"]');
+        if(el&&el.scrollIntoView){el.scrollIntoView({block:'nearest'});}
+      },function(e){
+        setBusy('send',false,sendBtn);
+        updateSend();
+        toast(errMsg(e),'error');
+      });
+    }
+
+    function sendReply(){
+      if(st.readOnly||st.busy.reply||!replyEd||st.replyTo==null){return;}
+      if(replyEd.isEmpty()){toast('Ответ пустой','error');replyEd.focus();return;}
+      var parentId=st.replyTo;
+      var b=listEl.querySelector('[data-act="reply-send"]');
+      var my=token;
+      setBusy('reply',true,b);
+      window.rpc('addComment',{entityType:st.entityType,entityId:st.entityId,bodyHtml:replyEd.getHTML(),parentId:parentId}).then(function(c){
+        setBusy('reply',false,b);
+        if(destroyed||my!==token){return;}
+        if(c&&c.id!=null){st.comments.push(c);}
+        st.replyTo=null;drafts.reply='';
+        if(replyEd){replyEd.destroy();replyEd=null;}
+        render();
+      },function(e){
+        setBusy('reply',false,b);
+        toast(errMsg(e),'error');
+      });
+    }
+
+    function saveEdit(){
+      if(st.busy.edit||!editEd||st.editingId==null){return;}
+      if(editEd.isEmpty()){toast('Комментарий не может быть пустым','error');editEd.focus();return;}
+      var id=st.editingId;
+      var b=listEl.querySelector('[data-act="edit-save"]');
+      var my=token;
+      setBusy('edit',true,b);
+      window.rpc('updateComment',{id:id,bodyHtml:editEd.getHTML()}).then(function(c){
+        setBusy('edit',false,b);
+        if(destroyed||my!==token){return;}
+        replaceComment(id,c);
+        st.editingId=null;drafts.edit='';
+        if(editEd){editEd.destroy();editEd=null;}
+        render();
+      },function(e){
+        setBusy('edit',false,b);
+        toast(errMsg(e),'error');
+      });
+    }
+
+    function replaceComment(id,c){
+      for(var i=0;i<st.comments.length;i++){
+        if(String(st.comments[i].id)===String(id)){
+          st.comments[i]=c&&c.id!=null?c:st.comments[i];
+          return;
+        }
+      }
+    }
+
+    function removeComment(id){
+      var c=find(id);
+      if(!c){return;}
+      ask('Удалить комментарий? Это действие нельзя отменить.','Удаление комментария').then(function(ok){
+        if(!ok||destroyed){return;}
+        var my=token;
+        window.rpc('deleteComment',id).then(function(){
+          if(destroyed||my!==token){return;}
+          var hadReplies=st.comments.some(function(x){return String(x.parentId)===String(id);});
+          st.comments=st.comments.filter(function(x){return String(x.id)!==String(id);});
+          if(String(st.editingId)===String(id)){st.editingId=null;drafts.edit='';}
+          if(String(st.replyTo)===String(id)){st.replyTo=null;drafts.reply='';}
+          if(hadReplies){reload();}else{render();}
+          toast('Комментарий удалён','success');
+        },function(e){toast(errMsg(e),'error');});
+      });
+    }
+
+    function toggleReaction(id,emoji,button){
+      if(st.readOnly){return;}
+      var key='react:'+id+':'+emoji;
+      if(st.busy[key]){return;}
+      var c=find(id);
+      if(!c){return;}
+      st.busy[key]=true;
+      if(button){button.disabled=true;}
+      var my=token;
+      window.rpc('toggleReaction',{commentId:id,emoji:emoji}).then(function(res){
+        st.busy[key]=false;
+        if(destroyed||my!==token){return;}
+        var cc=find(id);
+        if(cc&&res&&Array.isArray(res.reactions)){cc.reactions=res.reactions;}
+        render();
+      },function(e){
+        st.busy[key]=false;
+        if(button){button.disabled=false;}
+        toast(errMsg(e),'error');
+      });
+    }
+
+    /* ---------- events ---------- */
+    function onClick(e){
+      var b=e.target.closest('[data-act]');
+      if(!b||!root.contains(b)||b.disabled){return;}
+      var act=b.getAttribute('data-act');
+      var item=b.closest('.cmt-item');
+      var id=item?item.getAttribute('data-id'):null;
+      var c=id!=null?find(id):null;
+      switch(act){
+        case 'refresh':reload();break;
+        case 'send':sendNew();break;
+        case 'reply':
+          if(!c){return;}
+          var rid=rootIdOf(c);
+          if(String(st.replyTo)!==String(rid)){drafts.reply='';}
+          st.replyTo=rid;focusReply=true;st.pickerFor=null;
+          render();
+          break;
+        case 'reply-send':sendReply();break;
+        case 'reply-cancel':
+          st.replyTo=null;drafts.reply='';
+          if(replyEd){replyEd.destroy();replyEd=null;}
+          render();
+          break;
+        case 'edit':
+          if(!c){return;}
+          if(editEd){editEd.destroy();editEd=null;}
+          st.editingId=c.id;drafts.edit='';focusEdit=true;st.pickerFor=null;
+          render();
+          break;
+        case 'edit-save':saveEdit();break;
+        case 'edit-cancel':cancelEdit();break;
+        case 'delete':if(c){removeComment(c.id);}break;
+        case 'react':if(c){toggleReaction(c.id,b.getAttribute('data-emoji'),b);}break;
+        case 'picker':
+          if(!c){return;}
+          st.pickerFor=String(st.pickerFor)===String(c.id)?null:c.id;
+          render();
+          if(st.pickerFor!=null){
+            var first=listEl.querySelector('.cmt-picker button');
+            if(first){first.focus({preventScroll:true});}
+          }
+          break;
+        case 'pick':
+          if(!c){return;}
+          st.pickerFor=null;
+          toggleReaction(c.id,b.getAttribute('data-emoji'),null);
+          render();
+          break;
+      }
+    }
+    function cancelEdit(){
+      st.editingId=null;drafts.edit='';
+      if(editEd){editEd.destroy();editEd=null;}
+      render();
+    }
+    function onKeyDown(e){
+      if(e.key!=='Escape'){return;}
+      if(st.pickerFor!=null){
+        e.stopPropagation();
+        var id=st.pickerFor;
+        st.pickerFor=null;render();
+        var pb=listEl.querySelector('[data-k="picker:'+cssId(id)+'"]');
+        if(pb){pb.focus({preventScroll:true});}
+        return;
+      }
+      if(e.target.closest('.cmt-edit')){e.stopPropagation();cancelEdit();return;}
+      if(e.target.closest('.cmt-reply-form')){
+        e.stopPropagation();
+        st.replyTo=null;drafts.reply='';
+        if(replyEd){replyEd.destroy();replyEd=null;}
+        render();
+      }
+    }
+    function onDocDown(e){
+      if(st.pickerFor==null){return;}
+      if(e.target.closest&&(e.target.closest('.cmt-picker')||e.target.closest('.cmt-react-add'))&&root.contains(e.target)){return;}
+      st.pickerFor=null;
+      render();
+    }
+    function onImgError(e){
+      var t=e.target;
+      if(t&&t.tagName==='IMG'&&t.parentNode&&t.parentNode.classList&&t.parentNode.classList.contains('cmt-ava')){
+        t.parentNode.removeChild(t);
+      }
+    }
+    root.addEventListener('click',onClick);
+    root.addEventListener('keydown',onKeyDown);
+    root.addEventListener('error',onImgError,true);
+    document.addEventListener('mousedown',onDocDown,true);
+
+    ensureComposer();
+    if(composer&&st.readOnly){composer.setReadOnly(true);}
+    updateSend();
+    reload();
+
+    return {
+      reload:reload,
+      setEntity:function(entityType,entityId){
+        var changed=entityType!==st.entityType||String(entityId==null?'':entityId)!==st.entityId;
+        st.entityType=entityType||'';
+        st.entityId=entityId==null?'':String(entityId);
+        if(changed){
+          token++;
+          st.comments=[];st.loaded=false;st.editingId=null;st.replyTo=null;st.pickerFor=null;
+          drafts.reply='';drafts.edit='';
+          if(replyEd){replyEd.destroy();replyEd=null;}
+          if(editEd){editEd.destroy();editEd=null;}
+          if(composer){composer.setHTML('');updateSend();}
+        }
+        return reload();
+      },
+      setReadOnly:function(v){
+        st.readOnly=!!v;
+        if(st.readOnly){st.editingId=null;st.replyTo=null;st.pickerFor=null;}
+        if(composer){composer.setReadOnly(st.readOnly);}
+        render();
+      },
+      destroy:function(){
+        if(destroyed){return;}
+        destroyed=true;token++;
+        clearInterval(timer);
+        document.removeEventListener('mousedown',onDocDown,true);
+        if(replyEd){replyEd.destroy();}
+        if(editEd){editEd.destroy();}
+        if(composer){composer.destroy();}
+        replyEd=editEd=composer=null;
+        if(root.parentNode){root.parentNode.removeChild(root);}
+      }
+    };
+  }
+
+  window.CommentThread={
+    mount:mount,
+    relativeTime:relTime,
+    EMOJI:EMOJI.slice()
+  };
+})();
+</script>

@@ -21,7 +21,7 @@ services:
     environment:
       DATABASE_URL: postgres://ats:ats@postgres:5432/ats
     ports:
-      - "3000:3000"
+      - "3040:3040"
     depends_on:
       postgres:
         condition: service_healthy

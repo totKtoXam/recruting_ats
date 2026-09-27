@@ -10,47 +10,57 @@ function list(name) {
     .filter(Boolean);
 }
 
-export const APP_CONFIG = Object.freeze({
-  DEFAULT_STATUSES: Object.freeze([
-    'Новый',
-    'HR screening',
-    'Техническое интервью',
-    'Финальное интервью',
-    'Offer',
-    'Hired',
-    'Отказ'
-  ]),
+const PROF_INTERVIEW = 'Проф. интервью';
+const REJECTED = 'Отказано';
 
+export const APP_CONFIG = Object.freeze({
+  PROF_INTERVIEW_STATUS: PROF_INTERVIEW,
+
+  // Этапы воронки: доступы ответственных и шаблоны интервью привязываются к ним.
   PIPELINE_STATUSES: Object.freeze([
     'Новый',
     'HR screening',
-    'Техническое интервью',
+    PROF_INTERVIEW,
     'Финальное интервью',
     'Offer',
     'Hired'
   ]),
 
+  // В «Отказано» можно перевести с любого этапа воронки; вернуть — только
+  // на этап, с которого отказали (candidates.rejected_from_status).
+  REJECTED_STATUS: REJECTED,
+
   VACANCY_STATUSES: Object.freeze(['Открыта', 'На паузе', 'Закрыта']),
 
   TRANSITIONS: Object.freeze({
-    'Новый': ['HR screening'],
-    'HR screening': ['Новый', 'Техническое интервью'],
-    'Техническое интервью': ['HR screening', 'Финальное интервью'],
-    'Финальное интервью': ['Техническое интервью', 'Offer'],
-    'Offer': ['Финальное интервью', 'Hired'],
-    'Hired': ['Offer']
+    'Новый': ['HR screening', REJECTED],
+    'HR screening': ['Новый', PROF_INTERVIEW, REJECTED],
+    [PROF_INTERVIEW]: ['HR screening', 'Финальное интервью', REJECTED],
+    'Финальное интервью': [PROF_INTERVIEW, 'Offer', REJECTED],
+    'Offer': ['Финальное интервью', 'Hired', REJECTED],
+    'Hired': ['Offer', REJECTED]
   }),
+
+  REJECTED_BY_CANDIDATE: 'candidate',
+  REJECTED_BY_RESPONSIBLE: 'responsible',
+  REJECTION_REASON_CATEGORIES: Object.freeze({
+    candidate: 'Причины отказа: кандидат',
+    responsible: 'Причины отказа: компания'
+  }),
+  OTHER_REASON: 'Другое',
 
   MAX_RESUME_BYTES: 10 * 1024 * 1024,
   ALLOWED_RESUME_EXTENSIONS: Object.freeze(['pdf', 'doc', 'docx']),
   DRAFT_TTL_DAYS: 7,
-  LAST_LOGIN_THROTTLE_MINUTES: 30
+  LAST_LOGIN_THROTTLE_MINUTES: 30,
+  // Сколько дней удалённое лежит в корзине до окончательного удаления из БД.
+  TRASH_RETENTION_DAYS: 30
 });
 
 export const config = Object.freeze({
   env: env('NODE_ENV', 'development'),
-  port: Number(env('PORT', '3000')),
-  publicUrl: env('PUBLIC_URL', 'http://localhost:3000').replace(/\/$/, ''),
+  port: Number(env('PORT', '3040')),
+  publicUrl: env('PUBLIC_URL', 'http://localhost:3040').replace(/\/$/, ''),
   timeZone: env('APP_TIMEZONE', 'Asia/Almaty'),
   trustProxy: env('TRUST_PROXY', 'false') === 'true',
 
@@ -58,6 +68,9 @@ export const config = Object.freeze({
   databaseSsl: env('DATABASE_SSL', 'false') === 'true',
 
   sessionSecret: env('SESSION_SECRET'),
+  // Ключ шифрования секретов, которые администратор сохраняет в интерфейсе (SMTP, Telegram, Google).
+  // По умолчанию выводится из SESSION_SECRET; задайте отдельно, чтобы менять SESSION_SECRET без потери секретов.
+  settingsEncryptionKey: env('SETTINGS_ENCRYPTION_KEY'),
   sessionMaxAgeDays: Number(env('SESSION_MAX_AGE_DAYS', '14')),
 
   auth: Object.freeze({
@@ -65,6 +78,8 @@ export const config = Object.freeze({
     mode: env('AUTH_MODE', 'google'),
     googleClientId: env('GOOGLE_CLIENT_ID'),
     googleClientSecret: env('GOOGLE_CLIENT_SECRET'),
+    // Администраторы ATS: всегда имеют доступ и управляют доступом других пользователей.
+    adminEmails: list('AUTH_ADMIN_EMAILS'),
     allowedDomains: list('AUTH_ALLOWED_DOMAINS'),
     allowedEmails: list('AUTH_ALLOWED_EMAILS')
   }),
@@ -85,7 +100,34 @@ export const config = Object.freeze({
     apiUrl: env('GOOGLE_DRIVE_API_URL')
   }),
 
-  intakeApiKey: env('ATS_API_KEY')
+  intakeApiKey: env('ATS_API_KEY'),
+
+  // Email-уведомления через SMTP. Без SMTP_HOST канал «Эл. почта» считается не настроенным.
+  smtp: Object.freeze({
+    host: env('SMTP_HOST'),
+    port: Number(env('SMTP_PORT', '587')),
+    // true — TLS сразу (порт 465), false — STARTTLS (порт 587).
+    secure: env('SMTP_SECURE', env('SMTP_PORT') === '465' ? 'true' : 'false') === 'true',
+    user: env('SMTP_USER'),
+    pass: env('SMTP_PASS'),
+    from: env('MAIL_FROM', env('SMTP_USER'))
+  }),
+
+  // Telegram-бот: привязка аккаунтов по ссылке t.me/<бот>?start=<код> и отправка уведомлений.
+  telegram: Object.freeze({
+    botToken: env('TELEGRAM_BOT_TOKEN'),
+    // Получение обновлений long polling-ом: вебхук и публичный адрес не нужны.
+    // Выключите (false) на всех экземплярах, кроме одного, если их несколько.
+    polling: env('TELEGRAM_POLLING', 'true') === 'true',
+    // Только для тестов с эмулятором Bot API (в production запрещено).
+    apiUrl: env('TELEGRAM_API_URL', 'https://api.telegram.org').replace(/\/$/, '')
+  }),
+
+  // Публичная страница /privacy (требуется Google для публикации OAuth-приложения).
+  legal: Object.freeze({
+    operatorName: env('LEGAL_OPERATOR_NAME', 'компании'),
+    contactEmail: env('LEGAL_CONTACT_EMAIL')
+  })
 });
 
 export function assertProductionConfig() {
@@ -104,18 +146,19 @@ export function assertProductionConfig() {
   }
 
   if (
-    config.auth.mode === 'google' &&
-    (!config.auth.googleClientId || !config.auth.googleClientSecret)
+    !config.auth.adminEmails.length &&
+    !config.auth.allowedDomains.length &&
+    !config.auth.allowedEmails.length
   ) {
-    problems.push('Не заданы GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET.');
-  }
-
-  if (!config.auth.allowedDomains.length && !config.auth.allowedEmails.length) {
-    problems.push('Задайте AUTH_ALLOWED_DOMAINS и/или AUTH_ALLOWED_EMAILS: без allowlist войти смог бы любой Google Account.');
+    problems.push('Задайте AUTH_ADMIN_EMAILS: без администратора некому выдавать доступ пользователям.');
   }
 
   if (config.drive.apiUrl) {
     problems.push('GOOGLE_DRIVE_API_URL предназначен только для тестов.');
+  }
+
+  if (config.telegram.apiUrl !== 'https://api.telegram.org') {
+    problems.push('TELEGRAM_API_URL предназначен только для тестов.');
   }
 
   if (problems.length) {

@@ -22,6 +22,7 @@ let state={
 };
 
 let currentCandidate=null;
+let candidateCommentThread=null;
 let currentCandidateDraft=null;
 let draftLoadStarted=false;
 let pendingTransition=null;
@@ -34,12 +35,60 @@ let adminUsersLoadPromise=null;
 const interviewLoadPromises={};
 const candidateDetailsLoadPromises={};
 const loadedInterviewCandidateIds=new Set();
-const collapsedColumns=new Set();
+// Свёрнутые колонки доски запоминаются между сеансами.
+const COLLAPSED_COLUMNS_KEY='ats:collapsed-columns';
+const collapsedColumns=new Set((()=>{try{return JSON.parse(localStorage.getItem(COLLAPSED_COLUMNS_KEY)||'[]')}catch(error){return []}})());
+function saveCollapsedColumns(){try{localStorage.setItem(COLLAPSED_COLUMNS_KEY,JSON.stringify([...collapsedColumns]))}catch(error){}}
+// Фильтр по вакансиям — выбранные чипы (несколько сразу).
+const vacancyFilter=new Set();
+// Только что созданные кандидаты подсвечены, пока их не откроют.
+const freshCandidates=new Set();
 
 function el(id){return document.getElementById(id)}
 function value(id){return el(id).value}
 function escapeHtml(v){return String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&#039;")}
 function escJs(v){return String(v??'').replaceAll('\\','\\\\').replaceAll("'","\\'")}
+function icon(name,extra){return '<svg class="icon'+(extra?' '+extra:'')+'" aria-hidden="true" focusable="false"><use href="#i-'+name+'"/></svg>'}
+// Кнопка с подписью — для главного действия экрана/формы (Сохранить, Отказать…):
+// иконка без текста для основного действия плохо считывается.
+function textBtn(name,label,onclick,variant='button-primary'){return '<button type="button" class="button '+variant+'" onclick="'+onclick+'">'+icon(name)+'<span>'+escapeHtml(label)+'</span></button>'}
+// Иконка «откроется в новой вкладке» + пояснение для скринридера.
+function externalMark(){return icon('external','icon-sm external-mark')+'<span class="sr-only"> (откроется в новой вкладке)</span>'}
+function iconBtn(name,tip,onclick,variant){return '<button type="button" class="icon-btn'+(variant?' '+variant:'')+'" data-tip="'+escapeHtml(tip)+'" aria-label="'+escapeHtml(tip)+'" onclick="'+onclick+'">'+icon(name,variant&&variant.includes('icon-btn-sm')?'icon-sm':'')+'</button>'}
+// Текст без разметки. DOMParser создаёт инертный документ — скрипты и картинки из HTML не выполняются.
+function richText(html){return new DOMParser().parseFromString(String(html||''),'text/html').body.textContent.trim()}
+// HTML из БД уже очищен сервером (белый список тегов).
+function richHtml(html){
+  if(!html)return '—';
+  return window.RichEditor&&RichEditor.renderHTML?RichEditor.renderHTML(html):'<div class="rich-text">'+html+'</div>';
+}
+function mountRich(root){if(window.RichEditor)RichEditor.mountAll(root||document)}
+function setRich(id,html){
+  const textarea=typeof id==='string'?el(id):id;
+  textarea.value=html||'';
+  if(window.RichEditor&&RichEditor.get(textarea))RichEditor.sync(textarea);
+}
+// Даты с сервера приходят строкой «YYYY-MM-DD[ HH:MM[:SS]]» (часовой пояс приложения).
+// Показываем по-человечески: «сегодня, 16:25», «вчера, 09:10», «27 сен, 16:25», «27 сен 2025».
+const MONTHS_SHORT=['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
+function fmtDate(value){
+  const text=String(value||'').trim();
+  const m=text.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
+  if(!m)return text;
+  const [,y,mo,d,hh,mm]=m;
+  const time=hh?hh+':'+mm:'';
+  const now=new Date();
+  const key=(date)=>date.getFullYear()+'-'+String(date.getMonth()+1).padStart(2,'0')+'-'+String(date.getDate()).padStart(2,'0');
+  const yesterday=new Date(now);yesterday.setDate(now.getDate()-1);
+  const day=y+'-'+mo+'-'+d;
+  let label;
+  if(day===key(now))label='сегодня';
+  else if(day===key(yesterday))label='вчера';
+  else label=Number(d)+' '+MONTHS_SHORT[Number(mo)-1]+(Number(y)!==now.getFullYear()?' '+y:'');
+  return time?label+', '+time:label;
+}
+
+function textToRichHtml(text){return text?'<p>'+escapeHtml(text).replace(/\n/g,'<br>')+'</p>':''}
 function option(v,label,selected){return '<option value="'+escapeHtml(v)+'"'+(selected?' selected':'')+'>'+escapeHtml(label)+'</option>'}
 
 async function rpc(name,args){
@@ -65,19 +114,77 @@ async function rpc(name,args){
   return data.result;
 }
 
+// Тост закрывается кликом по нему (или по ×), сам скрывается по таймеру;
+// при наведении таймер ставится на паузу. Ошибки висят дольше.
 function showToast(message,type='success'){
   const toast=el('toast');
-  toast.textContent=message;
-  toast.className='toast active '+(type==='error'?'toast-error':'toast-success');
-  clearTimeout(showToast.timer);
-  showToast.timer=setTimeout(()=>toast.className='toast',3200);
+  if(!toast)return;
+  const isError=type==='error';
+  if(!toast.dataset.bound){
+    toast.dataset.bound='1';
+    toast.addEventListener('click',hideToast);
+    toast.addEventListener('mouseenter',()=>clearTimeout(showToast.timer));
+    toast.addEventListener('mouseleave',()=>{
+      if(toast.classList.contains('active'))scheduleToastHide(1500);
+    });
+  }
+  toast.replaceChildren();
+  const icon=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  icon.setAttribute('class','icon toast-icon');
+  const use=document.createElementNS('http://www.w3.org/2000/svg','use');
+  use.setAttribute('href',isError?'#i-alert':'#i-check');
+  icon.appendChild(use);
+  const text=document.createElement('span');
+  text.className='toast-text';
+  text.textContent=message;
+  const close=document.createElement('button');
+  close.type='button';
+  close.className='toast-close';
+  close.setAttribute('aria-label','Закрыть');
+  close.innerHTML='<svg class="icon"><use href="#i-close"/></svg>';
+  toast.append(icon,text,close);
+  toast.setAttribute('role',isError?'alert':'status');
+  toast.title='Нажмите, чтобы закрыть';
+  toast.className='toast active '+(isError?'toast-error':'toast-success');
+  scheduleToastHide(isError?7000:3500);
 }
 
-function showConfirm(message,title='Подтверждение'){
+function scheduleToastHide(delay){
+  clearTimeout(showToast.timer);
+  showToast.timer=setTimeout(hideToast,delay);
+}
+
+function hideToast(){
+  clearTimeout(showToast.timer);
+  const toast=el('toast');
+  if(toast)toast.className='toast';
+}
+
+// options: {confirmLabel, danger=true}. Кнопка действия подписана, фокус — на «Отмена».
+function showConfirm(message,title='Подтверждение',options={}){
+  const danger=options.danger!==false;
   el('confirmTitle').textContent=title;
   el('confirmMessage').textContent=message;
+  el('confirmIcon').className='confirm-icon'+(danger?'':' confirm-icon-info');
+  el('confirmIcon').innerHTML=icon(danger?'alert':'info');
+  const action=el('confirmActionButton');
+  action.className='button '+(danger?'button-danger':'button-primary');
+  action.querySelector('span').textContent=options.confirmLabel||confirmLabelFor(title,danger);
+  if(confirmResolver){confirmResolver(false);confirmResolver=null}
   el('confirmModal').classList.add('open');
   return new Promise(resolve=>confirmResolver=resolve);
+}
+
+// Подпись кнопки по заголовку диалога: «Удаление…» -> «Удалить» и т.п.
+function confirmLabelFor(title,danger){
+  const t=String(title||'').toLowerCase();
+  if(t.startsWith('удален'))return 'Удалить';
+  if(t.startsWith('архив'))return 'В архив';
+  if(t.startsWith('закрытие доступа'))return 'Закрыть доступ';
+  if(t.startsWith('отвязать'))return 'Отвязать';
+  if(t.startsWith('сбросить'))return 'Сбросить';
+  if(t.startsWith('несохран'))return 'Закрыть без сохранения';
+  return danger?'Подтвердить':'Продолжить';
 }
 
 function closeConfirm(result){
@@ -94,10 +201,15 @@ function setButtonLoading(button,busy,label='Загрузка…'){
     if(!button.dataset.originalHtml)button.dataset.originalHtml=button.innerHTML;
     button.disabled=true;
     button.classList.add('is-loading');
-    button.innerHTML='<span class="spinner"></span><span>'+escapeHtml(label)+'</span>';
+    button.setAttribute('aria-busy','true');
+    // Иконочная кнопка квадратная: вместо подписи — только спиннер.
+    button.innerHTML=button.classList.contains('icon-btn')
+      ? '<span class="spinner"></span>'
+      : '<span class="spinner"></span><span>'+escapeHtml(label)+'</span>';
   }else{
     button.disabled=false;
     button.classList.remove('is-loading');
+    button.removeAttribute('aria-busy');
     if(button.dataset.originalHtml){
       button.innerHTML=button.dataset.originalHtml;
       delete button.dataset.originalHtml;
@@ -145,10 +257,12 @@ function statusKey(status){
   const map={
     'Новый':'new',
     'HR screening':'hr',
+    'Проф. интервью':'tech',
     'Техническое интервью':'tech',
     'Финальное интервью':'final',
     'Offer':'offer',
     'Hired':'hired',
+    'Отказано':'rejected',
     'Отказ':'rejected'
   };
   return map[status]||'neutral';
@@ -168,84 +282,332 @@ function vacancyStatusChip(status){
 }
 
 function syncIcon(sync){
-  if(sync==='pending')return '<span class="sync-cell pending" title="Синхронизация"><span class="spinner spinner-dark"></span></span>';
-  if(sync==='success')return '<span class="sync-cell success" title="Сохранено">✓</span>';
-  if(sync==='error')return '<span class="sync-cell error" title="Ошибка">!</span>';
-  return '<span class="sync-cell idle">•</span>';
+  if(sync==='pending')return '<span class="sync-cell pending" role="img" aria-label="Синхронизация" data-tip="Синхронизация"><span class="spinner spinner-dark"></span></span>';
+  if(sync==='success')return '<span class="sync-cell success" role="img" aria-label="Сохранено" data-tip="Сохранено">'+icon('check')+'</span>';
+  if(sync==='error')return '<span class="sync-cell error" role="img" aria-label="Ошибка синхронизации" data-tip="Ошибка синхронизации">'+icon('alert')+'</span>';
+  return '';
 }
 
 function fullNameOf(item){
   return [item['Фамилия'],item['Имя'],item['Отчество']].filter(Boolean).join(' ')||item['ФИО']||'';
 }
 
-function sourceBrand(name){
-  const value=String(name||'').toLowerCase();
-  if(value.includes('linkedin'))return {key:'linkedin',text:'in'};
-  if(value.includes('github'))return {key:'github',text:'GH'};
-  if(value.includes('telegram'))return {key:'telegram',text:'✈'};
-  if(value.includes('hh')||value.includes('headhunter'))return {key:'hh',text:'hh'};
-  if(value.includes('рекоменд')||value.includes('referr'))return {key:'referral',text:'★'};
-  if(value.includes('внутрен')||value.includes('internal'))return {key:'internal',text:'⌂'};
-  return {key:'generic',text:'•'};
+// ---------- История изменений ----------
+
+function openHistory(type,id,title){
+  if(!window.HistoryPanel||!id)return;
+  HistoryPanel.open({entityType:type,entityId:id,title,onReverted:()=>afterHistoryRevert(type,id)});
 }
 
-function sourceIconHtml(name){
-  const brand=sourceBrand(name);
-  return '<span class="brand-icon brand-'+brand.key+'">'+escapeHtml(brand.text)+'</span>';
+// После «Вернуть» перечитываем запись и обновляем открытую карточку/форму.
+async function afterHistoryRevert(type,id){
+  if(type==='candidate'){
+    const fresh=await loadCandidateDetails(id,true);
+    render();
+    if(currentCandidate&&String(currentCandidate.ID)===String(id))openCandidate(fresh);
+    return;
+  }
+  if(type==='interview'){
+    if(currentCandidate)await loadCandidateInterviews(currentCandidate.ID,true);
+    return;
+  }
+  if(type==='vacancy'){
+    await refreshReferences();
+    await loadServerTable('vacancies');
+    if(Drawer.isOpen('vacancyDrawer')&&String(value('vacancyId'))===String(id))await reopenVacancy(id);
+    return;
+  }
+  if(type==='source'){
+    await refreshReferences();
+    await loadServerTable('sources');
+    if(Drawer.isOpen('sourceDrawer')&&String(value('sourceId'))===String(id))reopenSource(id);
+    return;
+  }
+  if(type==='user'){
+    await afterUserChange({'User ID':id});
+    return;
+  }
+  if(type==='template'){
+    await refreshReferences();
+    await loadVacancyTemplates();
+    if(el('templateModal').classList.contains('open')&&String(value('templateId'))===String(id))openTemplateModal(id);
+  }
 }
 
+// ---------- Площадки: иконки источников и публикаций вакансий ----------
+// Пресеты (ключи совпадают с SOURCE_ICON_KEYS на сервере) и автоопределение по названию/URL.
+const BRANDS={
+  linkedin:{label:'LinkedIn',icon:'linkedin'},
+  hh:{label:'hh.kz / HeadHunter',text:'hh'},
+  telegram:{label:'Telegram',icon:'send'},
+  instagram:{label:'Instagram',icon:'instagram'},
+  facebook:{label:'Facebook',icon:'facebook'},
+  whatsapp:{label:'WhatsApp',icon:'message-circle'},
+  github:{label:'GitHub',icon:'github'},
+  habr:{label:'Habr Career',text:'H'},
+  djinni:{label:'Djinni',text:'D'},
+  enbek:{label:'Enbek.kz',text:'E'},
+  olx:{label:'OLX',text:'OLX'},
+  indeed:{label:'Indeed',text:'i'},
+  glassdoor:{label:'Glassdoor',text:'G'},
+  superjob:{label:'SuperJob',text:'SJ'},
+  jooble:{label:'Jooble',text:'J'},
+  vk:{label:'VK',text:'VK'},
+  youtube:{label:'YouTube',icon:'youtube'},
+  x:{label:'X (Twitter)',icon:'x-brand'},
+  website:{label:'Сайт компании',icon:'globe'},
+  referral:{label:'Рекомендация',icon:'user-plus'},
+  direct:{label:'Прямое обращение',icon:'mail'},
+  internal:{label:'Внутренний перевод',icon:'house'},
+  agency:{label:'Кадровое агентство',icon:'briefcase'},
+  event:{label:'Мероприятие, ярмарка',icon:'calendar'},
+  other:{label:'Другое',icon:'link'}
+};
+// Порядок важен: сначала конкретные площадки, затем общие категории.
+const BRAND_RULES=[
+  ['linkedin',/linkedin|lnkd\.in|линкедин/],
+  ['hh',/(^|[^a-z])hh([^a-z]|$)|headhunter|хедхантер|хэдхантер/],
+  ['telegram',/telegram|телеграм|(^|\/\/|\.)t\.me\b|(^|\s)tg(\s|$)/],
+  ['instagram',/instagram|instagr\.am|инстаграм|инста/],
+  ['facebook',/facebook|fb\.com|fb\.me|фейсбук/],
+  ['whatsapp',/whatsapp|wa\.me|ватсап|вотсап|вацап/],
+  ['github',/github|гитхаб/],
+  ['habr',/habr|хабр/],
+  ['djinni',/djinni|джинни/],
+  ['enbek',/enbek|энбек|енбек/],
+  ['olx',/olx/],
+  ['indeed',/indeed/],
+  ['glassdoor',/glassdoor/],
+  ['superjob',/superjob|суперджоб/],
+  ['jooble',/jooble|джубл/],
+  ['vk',/vk\.com|vkontakte|вконтакте|(^|[^a-z])vk([^a-z]|$)/],
+  ['youtube',/youtube|youtu\.be|ютуб/],
+  ['x',/twitter|твиттер|(^|\/\/)(www\.)?x\.com/],
+  ['referral',/рекоменд|referr|реферал|по знакомству/],
+  ['internal',/внутрен|internal|ротаци/],
+  ['agency',/агентств|agency|кадров|рекрутингов/],
+  ['event',/ярмарк|конференц|митап|meetup|хакатон|hackathon|выставк|университет|event/],
+  ['direct',/прям|direct|самостоят|входящ|почт|e-?mail|отклик на сайте/],
+  ['website',/сайт|website|career|карьер|https?:\/\//]
+];
+
+function detectBrandKey(text){
+  const value=String(text||'').toLowerCase();
+  const hit=BRAND_RULES.find(([,re])=>re.test(value));
+  return hit?hit[0]:'other';
+}
+
+function brandInnerHtml(brand){return brand.icon?icon(brand.icon):escapeHtml(brand.text||'')}
+
+function brandIconHtml(key,extraClass){
+  const safe=BRANDS[key]?key:'other';
+  return '<span class="brand-icon brand-'+safe+(extraClass?' '+extraClass:'')+'" aria-hidden="true">'+brandInnerHtml(BRANDS[safe])+'</span>';
+}
+
+// Совместимость: {key, icon|text} по названию.
+function sourceBrand(name){const key=detectBrandKey(name);return {key,...BRANDS[key]}}
+
+function sourceByName(name){
+  const target=String(name||'').trim().toLowerCase();
+  return target?(state.sources||[]).find(s=>String(s['Название']||'').trim().toLowerCase()===target)||null:null;
+}
+
+// Своя картинка важнее пресета; пустой пресет — определить по названию.
+function sourceIconKey(source,name){return source&&source.iconKey?source.iconKey:detectBrandKey(source?source['Название']:name)}
+
+function sourceIconHtml(src){
+  const source=src&&typeof src==='object'?src:sourceByName(src);
+  if(source&&source.iconUrl){
+    return '<span class="brand-icon brand-custom" aria-hidden="true"><img src="'+escapeHtml(source.iconUrl)+'" alt="" loading="lazy" decoding="async"></span>';
+  }
+  return brandIconHtml(sourceIconKey(source,src));
+}
+
+// Перерисовать существующий <span class="brand-icon"> под источник.
+function paintSourceIcon(node,src){
+  if(!node)return;
+  const wrap=document.createElement('span');
+  wrap.innerHTML=sourceIconHtml(src);
+  const fresh=wrap.firstChild;
+  node.className=fresh.className;
+  node.innerHTML=fresh.innerHTML;
+}
+
+// В <option> нельзя вставить SVG — только название.
 function sourceOptionLabel(source){
-  const brand=sourceBrand(source['Название']);
-  return brand.text+'  '+source['Название'];
+  return source['Название'];
 }
 
 function init(){
+  mountRich(document);
+  initSidebar();
   initRouter();
   renderInitialShell();
   preloadAllData();
 }
 
+// ---------- Боковое меню ----------
+
+const SIDEBAR_STORAGE_KEY='ats:sidebar-collapsed';
+
+function initSidebar(){
+  let collapsed=false;
+  try{collapsed=localStorage.getItem(SIDEBAR_STORAGE_KEY)==='1'}catch(error){}
+  applySidebarState(collapsed);
+  NARROW_SCREEN.addEventListener('change',()=>applySidebarState(document.body.classList.contains('sidebar-collapsed')));
+}
+
+const SIDEBAR_GROUPS_KEY='ats:sidebar-groups';
+
+function sidebarGroupsState(){
+  try{return JSON.parse(localStorage.getItem(SIDEBAR_GROUPS_KEY)||'{}')||{}}catch(error){return {}}
+}
+
+function toggleSidebarGroup(key){
+  const groups=sidebarGroupsState();
+  groups[key]=!(groups[key]===false?false:true);
+  try{localStorage.setItem(SIDEBAR_GROUPS_KEY,JSON.stringify(groups))}catch(error){}
+  applySidebarGroups();
+}
+
+// Свёрнутые группы-аккордеоны; в режиме «только иконки» видны все пункты,
+// а группа с активным пунктом всегда раскрыта.
+function applySidebarGroups(){
+  const groups=sidebarGroupsState();
+  const iconsOnly=document.body.classList.contains('sidebar-collapsed')||NARROW_SCREEN.matches;
+  document.querySelectorAll('.sidebar-group').forEach(group=>{
+    const key=group.dataset.group;
+    const hasActive=!!group.querySelector('.sidebar-link.active');
+    const expanded=iconsOnly||hasActive||groups[key]!==false;
+    group.querySelector('.sidebar-group-toggle').setAttribute('aria-expanded',String(expanded));
+    group.querySelector('.sidebar-group-items').hidden=!expanded;
+    group.classList.toggle('expanded',expanded);
+  });
+}
+
+function toggleSidebar(){
+  const collapsed=!document.body.classList.contains('sidebar-collapsed');
+  applySidebarState(collapsed);
+  try{localStorage.setItem(SIDEBAR_STORAGE_KEY,collapsed?'1':'0')}catch(error){}
+}
+
+const NARROW_SCREEN=window.matchMedia('(max-width:900px)');
+
+function applySidebarState(collapsed){
+  document.body.classList.toggle('sidebar-collapsed',collapsed);
+  // Подсказки у пунктов нужны только когда видны одни иконки.
+  const iconsOnly=collapsed||NARROW_SCREEN.matches;
+  document.querySelectorAll('.sidebar-link').forEach(link=>{
+    // Полное название — доступное имя (на телефоне видна короткая подпись data-short).
+    link.setAttribute('aria-label',link.textContent.trim());
+    if(iconsOnly)link.dataset.tip=link.textContent.trim();
+    else delete link.dataset.tip;
+  });
+  applySidebarGroups();
+  const toggle=el('sidebarToggle');
+  if(!toggle)return;
+  const tip=collapsed?'Развернуть меню':'Свернуть меню';
+  toggle.dataset.tip=tip;
+  toggle.setAttribute('aria-label',tip);
+  toggle.querySelector('use').setAttribute('href','#i-'+(collapsed?'chevrons-right':'chevrons-left'));
+}
+
+// ---------- Маршруты ----------
+// #/candidates, #/candidate/<id> — доска; остальные пункты меню — разделы админки.
+
+const ADMIN_ROUTES={
+  'vacancies':{section:'vacancies',title:'Вакансии',description:'Вакансии и шаблоны интервью по этапам.'},
+  // «Настройки» — одна страница с вкладками; у каждой вкладки свой адрес (tab — ключ вкладки).
+  'settings/sources':{section:'sources',tab:'sources',title:'Настройки',description:'Источники вакансий: откуда приходят кандидаты.'},
+  'settings/users':{section:'users',tab:'users',title:'Настройки',description:'Войти может любой Google Account, работать в ATS — только тот, кому открыт доступ.',adminOnly:true},
+  'settings/integrations/auth':{section:'integrations',tab:'integrations',group:'auth',title:'Настройки',description:'Вход через Google, отправка почты и Telegram-бот. Значения здесь важнее .env и применяются без перезапуска.',adminOnly:true},
+  'settings/integrations/smtp':{section:'integrations',tab:'integrations',group:'smtp',title:'Настройки',description:'Вход через Google, отправка почты и Telegram-бот. Значения здесь важнее .env и применяются без перезапуска.',adminOnly:true},
+  'settings/integrations/telegram':{section:'integrations',tab:'integrations',group:'telegram',title:'Настройки',description:'Вход через Google, отправка почты и Telegram-бот. Значения здесь важнее .env и применяются без перезапуска.',adminOnly:true}
+};
+
+function isAdminUser(){return !!(state.currentUser&&state.currentUser.isAdmin)}
+
 function initRouter(){
   window.addEventListener('hashchange',applyRoute);
-  if(!location.hash){
-    history.replaceState(null,'','#/'+(window.__INITIAL_ROUTE__==='admin'?'admin':'candidates'));
+  const raw=location.hash.replace(/^#\//,'');
+  // Прежняя ссылка на админ-панель ведёт в «Вакансии».
+  if(!raw||raw==='admin'){
+    const start=raw==='admin'||window.__INITIAL_ROUTE__==='admin'?'vacancies':'candidates';
+    history.replaceState(null,'','#/'+start);
   }
   applyRoute();
 }
 
+// Прежние адреса настроек уведомлений (в том числе из писем) ведут в профиль.
+const LEGACY_ROUTES={'settings/notifications':'profile/notifications','settings/notifications/log':'profile/log','settings/integrations':'settings/integrations/auth','settings':'settings/sources'};
+
 function getRoute(){
-  const raw=location.hash.replace(/^#\//,'');
-  if(raw.startsWith('candidate/')){
-    return {page:'candidates',candidateId:decodeURIComponent(raw.slice('candidate/'.length))};
+  let raw=location.hash.replace(/^#\//,'');
+  if(LEGACY_ROUTES[raw]){
+    raw=LEGACY_ROUTES[raw];
+    history.replaceState(null,'','#/'+raw);
   }
-  return {page:raw==='admin'?'admin':'candidates',candidateId:''};
+  if(raw==='profile'||raw.startsWith('profile/')){
+    return {page:'profile',path:raw,tab:raw.split('/')[1]||'',candidateId:''};
+  }
+  if(raw.startsWith('candidate/')){
+    return {page:'candidates',path:'candidates',candidateId:decodeURIComponent(raw.slice('candidate/'.length))};
+  }
+  const path=raw==='admin'?'vacancies':raw;
+  // Раздел только для администраторов; до загрузки профиля решение откладывается.
+  if(ADMIN_ROUTES[path]&&ADMIN_ROUTES[path].adminOnly&&state.currentUser&&!isAdminUser()){
+    return {page:'candidates',path:'candidates',candidateId:''};
+  }
+  if(ADMIN_ROUTES[path]){
+    return {page:'admin',path,section:ADMIN_ROUTES[path].section,candidateId:''};
+  }
+  return {page:'candidates',path:'candidates',candidateId:''};
 }
 
 function navigateTo(route){
-  location.hash='#/'+(route==='admin'?'admin':'candidates');
+  location.hash='#/'+(route==='admin'?'vacancies':route);
 }
+
+let routeApplied=false;
 
 function applyRoute(){
   const route=getRoute();
+  const adminRoute=ADMIN_ROUTES[route.path]||{};
+  const tabLabel=adminRoute.tab&&typeof SETTINGS_TABS!=='undefined'?(SETTINGS_TABS.find(tab=>tab.key===adminRoute.tab)||{}).label:'';
+  const pageTitle=route.page==='profile'?'Профиль':route.page==='admin'?[tabLabel,adminRoute.title].filter(Boolean).join(' · '):'Кандидаты';
+  document.title=(pageTitle?pageTitle+' · ':'')+'Recruiting ATS';
   el('viewCandidates').hidden=route.page!=='candidates';
   el('viewAdmin').hidden=route.page!=='admin';
-  el('navCandidates').classList.toggle('nav-active',route.page==='candidates');
-  el('navAdmin').classList.toggle('nav-active',route.page==='admin');
+  el('viewProfile').hidden=route.page!=='profile';
+  if(route.page==='profile'&&typeof showProfile==='function')showProfile(route.tab);
+  document.querySelectorAll('.sidebar-link').forEach(link=>{
+    const active=link.dataset.route===route.path||route.path.startsWith(link.dataset.route+'/');
+    link.classList.toggle('active',active);
+    if(active)link.setAttribute('aria-current','page');
+    else link.removeAttribute('aria-current');
+  });
+  applySidebarGroups();
 
   if(route.page==='admin'){
+    if(typeof showAdminSection==='function')showAdminSection(route.path);
     if(typeof renderAdminAll==='function')renderAdminAll();
+    if(route.section==='integrations'&&typeof showIntegrations==='function')showIntegrations(ADMIN_ROUTES[route.path].group);
     if(state.loaded.references){
       ensureAdminUsersLoaded().catch(()=>{});
     }
   }
 
   maybeOpenCandidateFromRoute();
+  // Для скринридера и клавиатуры: после перехода фокус — на заголовке раздела.
+  if(routeApplied&&!route.candidateId&&!UiKit.isModalOpen())UiKit.focusMain();
+  routeApplied=true;
 }
 
 function candidateById(id){
   return [
     ...state.candidates,
-    ...state.archivedCandidates
+    ...state.archivedCandidates,
+    ...(state.deletedCandidates||[])
   ].find(candidate=>
     String(candidate.ID)===
     String(id)
@@ -303,6 +665,16 @@ async function maybeOpenCandidateFromRoute(){
 }
 
 function renderCurrentUser(){
+  const usersLink=el('sidebarUsersLink');
+  if(usersLink)usersLink.hidden=!isAdminUser();
+  document.querySelectorAll('[data-admin-only]').forEach(link=>link.hidden=!isAdminUser());
+  // Вкладки «Пользователи» и «Интеграции» появляются, когда стало известно, что это администратор.
+  const adminRoute=ADMIN_ROUTES[getRoute().path];
+  if(adminRoute&&typeof renderSettingsTabs==='function')renderSettingsTabs(adminRoute);
+  if(state.currentUser&&!isAdminUser()&&location.hash==='#/settings/users'){
+    history.replaceState(null,'','#/candidates');
+    applyRoute();
+  }
   const user=state.currentUser;
   const badge=el('currentUserBadge');
   if(!badge)return;
@@ -324,15 +696,27 @@ function renderCurrentUser(){
       avatar.hidden=true;
     }
   }
+  const initials=el('currentUserInitials');
+  if(initials&&typeof userInitials==='function'){
+    initials.textContent=userInitials(user);
+    initials.hidden=!!user['Avatar URL'];
+  }
 
-  if(name)name.textContent=user['ФИО']||user.Email||'Пользователь';
-  if(email)email.textContent=user.Email||'';
+  // Без ФИО показываем email одной строкой, а не дважды.
+  const hasName=!!(user['ФИО']&&user['ФИО']!==user.Email);
+  if(name)name.textContent=hasName?user['ФИО']:(user.Email||'Пользователь');
+  if(email){email.textContent=hasName?(user.Email||''):'';email.hidden=!hasName}
   badge.hidden=false;
+  // Профиль, открытый по прямой ссылке, ждал пользователя — дорисовываем.
+  if(el('viewProfile')&&!el('viewProfile').hidden&&typeof renderProfileMain==='function')renderProfileMain();
 }
 
 function renderInitialShell(){
   el('stats').innerHTML='<div class="stat skeleton-card"><span>Загрузка</span><b>…</b></div>';
-  el('board').innerHTML='<div class="board-placeholder">Кандидаты загружаются в фоне…</div>';
+  // Скелетон доски вместо текста: сохраняет раскладку, пока данные грузятся.
+  const skeletonColumn=cards=>'<div class="skeleton-column" aria-hidden="true"><div class="skeleton skeleton-title"></div>'+
+    '<div class="skeleton skeleton-candidate"></div>'.repeat(cards)+'</div>';
+  el('board').innerHTML='<span class="sr-only" role="status">Кандидаты загружаются…</span>'+[2,1,1,0,0].map(skeletonColumn).join('');
   updateSyncStatus();
 }
 
@@ -347,7 +731,14 @@ function applyBootstrapData(data){
     interviewTemplates:data.interviewTemplates||[],
     dictionaries:data.dictionaries||{},
     transitions:data.transitions||{},
-    pipelineStatuses:data.pipelineStatuses||[]
+    pipelineStatuses:data.pipelineStatuses||[],
+    rejectedStatus:data.rejectedStatus||'Отказано',
+    profInterviewStatus:data.profInterviewStatus||'Проф. интервью',
+    rejectionReasons:data.rejectionReasons||{candidate:[],responsible:[]},
+    otherReason:data.otherReason||'Другое',
+    vacancyStatusTransitions:data.vacancyStatusTransitions||{},
+    sourceIconKeys:data.sourceIconKeys||[],
+    trashRetentionDays:data.trashRetentionDays||30
   });
 
   state.loaded.references=true;
@@ -362,6 +753,7 @@ function applyBootstrapData(data){
   }
 
   updateSyncStatus();
+  if(typeof setNotifyUnread==='function')setNotifyUnread(data.notificationsUnread||0);
   maybeOpenCandidateFromRoute();
   maybeLoadInitialDraft();
 
@@ -452,6 +844,31 @@ async function ensureArchivedCandidatesLoaded(force=false){
   return archivedCandidatesLoadPromise;
 }
 
+
+// Доска: активные кандидаты, архив или корзина (удалённые, 30 дней до окончательного удаления).
+function boardState(){return state.boardState||'active'}
+
+async function ensureDeletedCandidatesLoaded(force=false){
+  if(state.loaded.deletedCandidates&&!force)return state.deletedCandidates;
+  const data=await rpc('getDeletedCandidateData');
+  state.deletedCandidates=data.deletedCandidates||[];
+  state.loaded.deletedCandidates=true;
+  return state.deletedCandidates;
+}
+
+async function setBoardState(nextState){
+  state.boardState=nextState;
+  el('filterArchived').checked=nextState!=='active';
+  document.querySelectorAll('input[name="boardState"]').forEach(input=>input.checked=input.value===nextState);
+  try{
+    if(nextState==='archived'||nextState==='all')await ensureArchivedCandidatesLoaded(true);
+    if(nextState==='deleted'||(nextState==='all'&&isAdminUser()))await ensureDeletedCandidatesLoaded(true);
+  }catch(error){
+    showToast(error&&error.message?error.message:String(error),'error');
+    return setBoardState('active');
+  }
+  renderBoard();
+}
 
 async function toggleArchivedFilter(){
   if(el('filterArchived').checked){
@@ -565,8 +982,8 @@ function applyCandidateDraft(draft){
       data.salary||''
     );
 
-  el('candidateComment').value=
-    data.comment||'';
+  // Комментарий из Intake API — обычный текст; станет первым комментарием кандидата.
+  setRich('candidateComment',textToRichHtml(data.comment||''));
 
   if(
     data.vacancyId &&
@@ -654,6 +1071,7 @@ function updateSyncStatus(){
     state.loaded.candidates;
 
   const node=el('dataSyncStatus');
+  if(!node)return;
   node.textContent=
     ready
       ? 'Данные синхронизированы'
@@ -673,6 +1091,13 @@ async function refreshReferences(){
   state.dictionaries=data.dictionaries||{};
   state.transitions=data.transitions||{};
   state.pipelineStatuses=data.pipelineStatuses||[];
+  state.rejectedStatus=data.rejectedStatus||'Отказано';
+  state.profInterviewStatus=data.profInterviewStatus||'Проф. интервью';
+  state.rejectionReasons=data.rejectionReasons||{candidate:[],responsible:[]};
+  state.otherReason=data.otherReason||'Другое';
+  state.vacancyStatusTransitions=data.vacancyStatusTransitions||{};
+  state.sourceIconKeys=data.sourceIconKeys||[];
+  state.trashRetentionDays=data.trashRetentionDays||30;
   state.loaded.references=true;
   populateGlobalFilters();
   renderBoard();
@@ -767,6 +1192,7 @@ function recalculateStatsLocal(archivedDelta=0){
   });
 
   state.stats={
+    ...state.stats,
     total:state.candidates.length,
     archived:Math.max(
       0,
@@ -780,6 +1206,18 @@ function recalculateStatsLocal(archivedDelta=0){
 
 
 function getStatuses(){return state.pipelineStatuses||[]}
+// Колонки доски: этапы воронки и «Отказано».
+function boardStatuses(){return [...getStatuses(),state.rejectedStatus||'Отказано']}
+function isRejected(candidate){return !!candidate&&candidate['Статус']===(state.rejectedStatus||'Отказано')}
+// Из «Отказано» можно вернуться только на этап, с которого отказали.
+function allowedTransitionsFor(candidate){
+  if(!candidate)return [];
+  if(isRejected(candidate)){
+    const from=candidate.rejection&&candidate.rejection.fromStatus;
+    return from?[from]:[];
+  }
+  return state.transitions[candidate['Статус']]||[];
+}
 function activeVacancies(){return state.vacancies.filter(v=>v['Статус']==='Открыта')}
 function responsiblesFor(stage){return state.responsibles.filter(r=>(r.stages||[]).includes(stage))}
 function recruiters(){return state.responsibles.filter(r=>(state.pipelineStatuses||[]).every(stage=>(r.stages||[]).includes(stage)))}
@@ -787,17 +1225,25 @@ function candidateAssignedResponsible(candidate,stage){
   if(!candidate)return null;
   let id='';
   if(stage==='HR screening')id=candidate['HR Responsible ID']||'';
-  else if(stage==='Техническое интервью')id=candidate['Tech Interviewer ID']||'';
+  else if(stage===state.profInterviewStatus)id=candidate['Tech Interviewer ID']||'';
   else id=candidate['Responsible ID']||'';
   return state.responsibles.find(r=>String(r['Responsible ID'])===String(id))||null;
 }
 
+function selectedValues(id){
+  const node=el(id);
+  return node?[...node.selectedOptions].map(item=>item.value).filter(Boolean):[];
+}
+
+// Рекрутер и источник — множественный выбор; вакансии фильтруются чипами над доской.
 function populateGlobalFilters(){
-  if(!el('filterVacancy'))return;
-  const old={v:value('filterVacancy'),r:value('filterResponsible'),s:value('filterSource')};
-  el('filterVacancy').innerHTML=option('','Все вакансии')+state.vacancies.map(v=>option(v['Vacancy ID'],'№'+(v['№']||'—')+' · '+v['Вакансия'],v['Vacancy ID']===old.v)).join('');
-  el('filterResponsible').innerHTML=option('','Все рекрутеры')+recruiters().map(r=>option(r['Responsible ID'],fullNameOf(r),r['Responsible ID']===old.r)).join('');
-  el('filterSource').innerHTML=option('','Все источники')+state.sources.map(s=>option(s['Source ID'],sourceOptionLabel(s),s['Source ID']===old.s)).join('');
+  if(!el('filterResponsible'))return;
+  const recruitersSelected=new Set(selectedValues('filterResponsible'));
+  const sourcesSelected=new Set(selectedValues('filterSource'));
+  el('filterResponsible').innerHTML=recruiters().map(r=>option(r['Responsible ID'],fullNameOf(r),recruitersSelected.has(String(r['Responsible ID'])))).join('');
+  el('filterSource').innerHTML=state.sources.map(s=>option(s['Source ID'],sourceOptionLabel(s),sourcesSelected.has(String(s['Source ID'])))).join('');
+  // Удалённые вакансии не остаются в фильтре.
+  [...vacancyFilter].forEach(id=>{if(!state.vacancies.some(v=>String(v['Vacancy ID'])===id))vacancyFilter.delete(id)});
 }
 
 function render(){
@@ -837,18 +1283,18 @@ function renderVacancyStats(){
 
   root.innerHTML=
     vacancies.length
-      ? '<div class="vacancy-stats-label">Кандидатов по вакансиям</div>'+
-        '<div class="vacancy-stat-list">'+
+      ? '<div class="vacancy-stats-label" id="vacancyStatsLabel">По вакансиям</div>'+
+        '<div class="vacancy-stat-list" role="group" aria-labelledby="vacancyStatsLabel">'+
         vacancies.map(vacancy=>{
           const count=
             counts[
               vacancy['Vacancy ID']
             ]||0;
+          const active=vacancyFilter.has(String(vacancy['Vacancy ID']));
 
-          return '<button class="vacancy-stat-chip" onclick="filterByVacancy(\''+
-            escJs(
-              vacancy['Vacancy ID']
-            )+
+          // Чипы работают как переключатели: можно выбрать несколько вакансий.
+          return '<button type="button" class="vacancy-stat-chip'+(active?' active':'')+'" aria-pressed="'+active+'" onclick="filterByVacancy(\''+
+            escJs(vacancy['Vacancy ID'])+
             '\')">'+
             '<span>№'+
             escapeHtml(
@@ -862,19 +1308,37 @@ function renderVacancyStats(){
             '<b>'+count+'</b>'+
           '</button>';
         }).join('')+
+        (vacancyFilter.size
+          ? '<button type="button" class="vacancy-stat-reset" onclick="filterByVacancy(\'\')">'+icon('close','icon-sm')+'<span>Сбросить'+(vacancyFilter.size>1?' ('+vacancyFilter.size+')':'')+'</span></button>'
+          : '')+
         '</div>'
       : '';
 }
 
+// '' — сбросить выбор; иначе переключить вакансию.
 function filterByVacancy(vacancyId){
-  el('filterVacancy').value=
-    vacancyId||'';
+  const id=String(vacancyId||'');
+  if(!id)vacancyFilter.clear();
+  else if(vacancyFilter.has(id))vacancyFilter.delete(id);
+  else vacancyFilter.add(id);
   renderBoard();
+  renderVacancyStats();
 }
 
 function renderStats(){
   if(!state.loaded.candidates)return;
   const s=state.stats||{};
+  // Счётчики — прямо на переключателе «Активные / Архив»; по этапам — в шапках колонок.
+  const deleted=isAdminUser()?Number(s.deleted||0):0;
+  [['active',s.total||0],['archived',s.archived||0],['deleted',deleted],['all',(s.total||0)+(s.archived||0)+deleted]].forEach(([key,count])=>{
+    const input=document.querySelector('input[name="boardState"][value="'+key+'"]');
+    const label=input&&input.nextElementSibling;
+    if(!label)return;
+    let badge=label.querySelector('.seg-count');
+    if(!badge){badge=document.createElement('span');badge.className='seg-count';label.appendChild(badge)}
+    badge.textContent=String(count);
+    badge.classList.toggle('is-zero',!count);
+  });
   el('stats').innerHTML=
     '<div class="stat stat-main"><span>Активные</span><b>'+(s.total||0)+'</b></div>'+
     '<div class="stat"><span>Архив</span><b>'+(s.archived||0)+'</b></div>'+
@@ -889,37 +1353,32 @@ function filteredCandidates(){
       .trim()
       .toLowerCase();
 
-  const vacancy=
-    value('filterVacancy');
-
-  const responsible=
-    value('filterResponsible');
-
-  const source=
-    value('filterSource');
-
-  const archived=
-    el('filterArchived').checked;
+  const responsibles=new Set(selectedValues('filterResponsible'));
+  const sources=new Set(selectedValues('filterSource'));
 
   const collection=
-    archived
-      ? state.archivedCandidates
-      : state.candidates;
+    boardState()==='deleted'
+      ? state.deletedCandidates||[]
+      : boardState()==='archived'
+        ? state.archivedCandidates
+        : boardState()==='all'
+          ? [...state.candidates,...state.archivedCandidates,...(isAdminUser()?state.deletedCandidates||[]:[])]
+          : state.candidates;
 
   return collection.filter(c=>{
     if(
-      vacancy &&
-      c['Vacancy ID']!==vacancy
+      vacancyFilter.size &&
+      !vacancyFilter.has(String(c['Vacancy ID']))
     )return false;
 
     if(
-      responsible &&
-      c['Responsible ID']!==responsible
+      responsibles.size &&
+      !responsibles.has(String(c['Responsible ID']))
     )return false;
 
     if(
-      source &&
-      c['Source ID']!==source
+      sources.size &&
+      !sources.has(String(c['Source ID']))
     )return false;
 
     if(q){
@@ -933,7 +1392,7 @@ function filteredCandidates(){
         c['Вакансия'],
         c['Ответственный'],
         c['Ответственный HR'],
-        c['Ответственный тех. интервьювер']
+        c['Ответственный проф. интервьювер']
       ]
         .filter(Boolean)
         .join(' ')
@@ -948,14 +1407,35 @@ function filteredCandidates(){
   });
 }
 
+// Телефон: поиск виден всегда, остальные фильтры раскрываются кнопкой.
+function toggleCandidateFilters(force){
+  const root=el('candidateFilters');
+  const open=typeof force==='boolean'?force:!root.classList.contains('filters-open');
+  root.classList.toggle('filters-open',open);
+  el('filtersToggle').setAttribute('aria-expanded',String(open));
+}
+
+function updateFiltersBadge(){
+  const badge=el('filtersBadge');
+  if(!badge)return;
+  const active=selectedValues('filterResponsible').length+selectedValues('filterSource').length+
+    (boardState()!=='active'?1:0);
+  badge.hidden=!active;
+  badge.textContent=String(active);
+  const label=active?'Фильтры: активных '+active:'Фильтры';
+  el('filtersToggle').setAttribute('aria-label',label);
+  el('filtersToggle').dataset.tip=label;
+}
+
 function renderBoard(){
+  updateFiltersBadge();
   if(
     !state.loaded.candidates ||
     !state.loaded.references
   )return;
 
   const archived=
-    el('filterArchived').checked;
+    ['archived','deleted'].includes(boardState());
 
   const candidates=
     filteredCandidates();
@@ -963,10 +1443,7 @@ function renderBoard(){
   let statuses;
 
   if(archived){
-    const order=[
-      ...getStatuses(),
-      'Отказ'
-    ];
+    const order=boardStatuses();
 
     const existing=[
       ...new Set(
@@ -987,7 +1464,7 @@ function renderBoard(){
       )
     ];
   }else{
-    statuses=getStatuses();
+    statuses=boardStatuses();
   }
 
   if(
@@ -995,7 +1472,7 @@ function renderBoard(){
     !statuses.length
   ){
     el('board').innerHTML=
-      '<div class="board-placeholder">Архив пуст.</div>';
+      '<div class="board-placeholder">'+(boardState()==='deleted'?'Корзина пуста.':'Архив пуст.')+'</div>';
     return;
   }
 
@@ -1017,23 +1494,30 @@ function renderBoard(){
         '" ondragover="dragOver(event)" '+
         'ondragleave="dragLeave(event)" '+
         'ondrop="dropCandidate(event)">'+
-        '<div class="column-title"><div>'+
-        statusChip(status,true)+
-        '<span class="column-count">'+
-        list.length+
-        '</span></div>'+
-        '<button class="column-toggle-button" '+
-        'onclick="event.stopPropagation();toggleColumn(\''+
-        escJs(status)+
-        '\')">'+
         (collapsed
-          ? '<span>›</span><span>Показать</span>'
-          : '<span>‹</span><span>Скрыть</span>')+
-        '</button></div>'+
-        '<div class="cards">'+
-        list.map(renderCard).join('')+
-        '</div></section>';
+          // Свёрнутая колонка — одна большая кнопка: счётчик и вертикальное название этапа.
+          ? '<button type="button" class="column-expand" aria-expanded="false" '+
+            'aria-label="Развернуть колонку «'+escapeHtml(status)+'», кандидатов: '+list.length+'" '+
+            'data-tip="Развернуть «'+escapeHtml(status)+'»" onclick="toggleColumn(\''+escJs(status)+'\')">'+
+              icon('chevron-right','icon-sm')+
+              '<span class="column-expand-count">'+list.length+'</span>'+
+              '<span class="column-expand-label">'+escapeHtml(status)+'</span>'+
+            '</button>'
+          : '<div class="column-title"><div>'+
+            statusChip(status,true)+
+            '<span class="column-count">'+
+            list.length+
+            '</span></div>'+
+            '<button type="button" class="icon-btn icon-btn-sm column-toggle-button" aria-expanded="true" '+
+            'data-tip="Свернуть колонку" aria-label="Свернуть колонку «'+escapeHtml(status)+'»" '+
+            'onclick="event.stopPropagation();toggleColumn(\''+escJs(status)+'\')">'+icon('chevron-left','icon-sm')+'</button>'+
+            '</div>'+
+            '<div class="cards">'+
+            list.map(renderCard).join('')+
+            '</div>')+
+        '</section>';
     }).join('');
+  updateFoldToggle();
 }
 
 function renderResumeHistoryPopover(candidate){
@@ -1045,7 +1529,7 @@ function renderResumeHistoryPopover(candidate){
   }
 
   return '<details class="card-resume-history" onclick="event.stopPropagation()">'+
-    '<summary title="История резюме">◷</summary>'+
+    '<summary data-tip="История резюме" aria-label="История резюме">'+icon('history','icon-sm')+'</summary>'+
     '<div class="card-resume-history-popover">'+
       '<div class="card-resume-history-title">Версии резюме</div>'+
       versions.map((version,index)=>
@@ -1064,7 +1548,7 @@ function renderResumeHistoryPopover(candidate){
             '</strong>'+
             '<small>'+
             escapeHtml(
-              version.uploadedAt||
+              fmtDate(version.uploadedAt)||
               'Дата не указана'
             )+
             '</small>'+
@@ -1096,7 +1580,7 @@ function renderCard(c){
         escapeHtml(latest.url)+
         '" target="_blank" rel="noopener" '+
         'onclick="event.stopPropagation()">'+
-        'Последнее резюме ↗</a>'+
+        icon('file','icon-sm')+'<span>Последнее резюме</span>'+externalMark()+'</a>'+
         renderResumeHistoryPopover(c)+
         '</div>'
       : '<span class="muted">'+
@@ -1107,11 +1591,19 @@ function renderCard(c){
         )+
         '</span>';
 
+  const fresh=freshCandidates.has(String(c.ID));
+  const stateBadgeHtml=c.state==='deleted'
+    ? '<span class="state-badge state-deleted">В корзине</span>'
+    : (c.archived||c.state==='archived')&&boardState()==='all'
+      ? '<span class="state-badge state-archived">В архиве</span>'
+      : '';
+
   return '<article class="candidate-card card-'+
     statusKey(c['Статус'])+' '+
     (pending?'candidate-pending':'')+
+    (fresh?' card-fresh':'')+
     '" draggable="'+
-    (!c.archived&&!pending)+
+    (c.state==='active'&&!c.archived&&!pending)+
     '" data-id="'+
     escapeHtml(c.ID)+
     '" ondragstart="dragStart(event)" '+
@@ -1125,41 +1617,43 @@ function renderCard(c){
     '">'+
 
     '<div class="candidate-card-top">'+
-      '<div>'+
+      '<div class="candidate-card-heading">'+
         '<div class="candidate-number">№'+
         escapeHtml(c['№']||'—')+
         ' '+syncIcon(c._sync)+
+        (fresh?'<span class="fresh-badge">Новый</span>':'')+
+        stateBadgeHtml+
         '</div>'+
-        '<div class="candidate-name">'+
+        '<button type="button" class="candidate-name"'+(pending?' disabled':'')+
+        ' aria-label="Открыть карточку: '+escapeHtml(fullNameOf(c))+'">'+
         escapeHtml(fullNameOf(c))+
-        '</div>'+
+        '</button>'+
       '</div>'+
-      statusChip(c['Статус'],true)+
     '</div>'+
 
-    '<div class="candidate-meta-row"><span>☎</span><span>'+
+    '<div class="candidate-meta-row">'+icon('phone','icon-sm')+'<span class="tabular">'+
     escapeHtml(c['Телефон']||'—')+
     '</span></div>'+
 
-    '<div class="candidate-meta-row"><span>◫</span><span>'+
+    '<div class="candidate-meta-row">'+icon('briefcase','icon-sm')+'<span>'+
     escapeHtml(c['Вакансия']||'—')+
     '</span></div>'+
 
-    '<div class="candidate-meta-row"><span>●</span><span><strong>Рекрутер:</strong> '+
+    '<div class="candidate-meta-row">'+icon('user-search','icon-sm')+'<span><strong>Рекрутер:</strong> '+
     escapeHtml(c['Ответственный']||'—')+
     '</span></div>'+
-    '<div class="candidate-meta-row"><span>H</span><span><strong>HR:</strong> '+
+    '<div class="candidate-meta-row">'+icon('handshake','icon-sm')+'<span><strong>HR:</strong> '+
     escapeHtml(c['Ответственный HR']||'—')+
     '</span></div>'+
-    '<div class="candidate-meta-row"><span>T</span><span><strong>Тех. интервью:</strong> '+
-    escapeHtml(c['Ответственный тех. интервьювер']||'—')+
+    '<div class="candidate-meta-row">'+icon('laptop','icon-sm')+'<span><strong>Проф. интервью:</strong> '+
+    escapeHtml(c['Ответственный проф. интервьювер']||'—')+
     '</span></div>'+
 
     (
       c['Источник']
-        ? '<div class="candidate-meta-row"><span>'+
+        ? '<div class="candidate-meta-row">'+
           sourceIconHtml(c['Источник'])+
-          '</span><span>'+
+          '<span>'+
           escapeHtml(c['Источник'])+
           '</span></div>'
         : ''
@@ -1169,23 +1663,78 @@ function renderCard(c){
       resumeHtml+
     '</div>'+
 
+    (
+      isRejected(c)
+        ? '<div class="card-rejection">'+icon('reject','icon-sm')+'<span>'+
+          escapeHtml([c['Кем отказано'],c['Причина отказа']].filter(Boolean).join(': '))+
+          '</span></div>'
+        : ''
+    )+
+
     '<div class="card-actions">'+
-      '<button class="button button-ghost button-small" '+
-      'onclick="event.stopPropagation();copyCandidatePreview(\''+
-      escJs(c.ID)+
-      '\',this)">⧉ Скопировать</button>'+
-      (
-        !c.archived&&!pending
-          ? '<button class="button button-ghost button-small danger-text" '+
-            'onclick="event.stopPropagation();archiveById(\''+
-            escJs(c.ID)+
-            '\',this)">Архив</button>'
-          : ''
-      )+
+      iconBtn('copy','Скопировать данные','event.stopPropagation();copyCandidatePreview(\''+escJs(c.ID)+'\',this)','icon-btn-sm')+
+      (pending?'':candidateLifecycleButtons(c,true))+
     '</div>'+
   '</article>';
 }
 
+
+// Действия жизненного цикла кандидата: архив → корзина (только администраторы) → восстановление.
+function candidateLifecycleButtons(c,small){
+  const size=small?'icon-btn-sm':'';
+  const call=action=>'event.stopPropagation();candidateLifecycle(\''+escJs(c.ID)+'\',\''+action+'\',this)';
+  const admin=isAdminUser();
+  if(c.state==='deleted'){
+    return admin?iconBtn('restore','Восстановить из корзины',call('restore'),size):'';
+  }
+  if(c.archived||c.state==='archived'){
+    return iconBtn('unarchive','Вернуть из архива',call('unarchive'),size)+
+      (admin?iconBtn('trash','Удалить (корзина, 30 дней)',call('delete'),(size+' icon-btn-danger').trim()):'');
+  }
+  // Архив обратим — нейтральная кнопка; красным помечено только удаление.
+  return iconBtn('archive','В архив',call('archive'),size);
+}
+
+async function candidateLifecycle(id,action,button){
+  if(action==='archive')return archiveById(id,button);
+  if(action==='delete'){
+    const ok=await showConfirm('Удалить кандидата? Он будет в корзине 30 дней — за это время его можно восстановить. Потом кандидат, его интервью, комментарии и журнал удалятся из базы окончательно, а папка — в корзину Google Drive.','Удаление кандидата');
+    if(!ok)return;
+  }
+  const rpcName={unarchive:'unarchiveCandidate',delete:'deleteEntity',restore:'restoreEntity'}[action];
+  const args=action==='unarchive'?id:{type:'candidate',id};
+  const messages={unarchive:'Кандидат возвращён из архива.',delete:'Кандидат перемещён в корзину.',restore:'Кандидат восстановлен (в архив).'};
+  await runUiTask({button,label:'…'},async()=>{
+    await rpc(rpcName,args);
+    await Promise.all([
+      refreshCandidates(),
+      ensureArchivedCandidatesLoaded(true),
+      state.loaded.deletedCandidates||boardState()==='deleted'?ensureDeletedCandidatesLoaded(true):null
+    ]);
+    render();
+    if(currentCandidate&&String(currentCandidate.ID)===String(id)){
+      const fresh=candidateById(id);
+      if(fresh&&action!=='delete')openCandidateById(id,false);
+      else closeCandidate();
+    }
+    showToast(messages[action]);
+  }).catch(()=>{});
+}
+
+// Существующий кандидат: лента комментариев; новый: поле первого комментария.
+function renderCandidateComments(candidate){
+  el('candidateFirstCommentField').hidden=!!candidate;
+  if(candidateCommentThread){candidateCommentThread.destroy();candidateCommentThread=null}
+  el('candidateComments').innerHTML='';
+  if(candidate&&window.CommentThread){
+    candidateCommentThread=CommentThread.mount(el('candidateComments'),{
+      entityType:'candidate',
+      entityId:candidate.ID,
+      currentUser:state.currentUser,
+      readOnly:candidate.state==='deleted'
+    });
+  }
+}
 
 function candidateCardUrl(candidateId){
   return location.origin+
@@ -1251,8 +1800,8 @@ async function copyCandidatePreview(id,button){
       (candidate['Ответственный']||'—'),
     'Ответственный HR: '+
       (candidate['Ответственный HR']||'—'),
-    'Ответственный тех. интервьювер: '+
-      (candidate['Ответственный тех. интервьювер']||'—')
+    'Проф. интервьювер: '+
+      (candidate['Ответственный проф. интервьювер']||'—')
   ];
 
   if(candidate['Источник']){
@@ -1301,7 +1850,31 @@ async function copyCandidatePreview(id,button){
   }
 }
 
-function toggleColumn(status){collapsedColumns.has(status)?collapsedColumns.delete(status):collapsedColumns.add(status);renderBoard()}
+function toggleColumn(status){
+  collapsedColumns.has(status)?collapsedColumns.delete(status):collapsedColumns.add(status);
+  saveCollapsedColumns();
+  renderBoard();
+}
+
+// «Свернуть все» / «Развернуть все»: если свёрнуты все видимые колонки — разворачиваем.
+function toggleAllColumns(){
+  const statuses=[...document.querySelectorAll('#board .column')].map(column=>column.dataset.status);
+  const allCollapsed=statuses.length&&statuses.every(status=>collapsedColumns.has(status));
+  statuses.forEach(status=>allCollapsed?collapsedColumns.delete(status):collapsedColumns.add(status));
+  saveCollapsedColumns();
+  renderBoard();
+}
+
+function updateFoldToggle(){
+  const button=el('boardFoldToggle');
+  if(!button)return;
+  const statuses=[...document.querySelectorAll('#board .column')].map(column=>column.dataset.status);
+  const allCollapsed=statuses.length>0&&statuses.every(status=>collapsedColumns.has(status));
+  const tip=allCollapsed?'Развернуть все колонки':'Свернуть все колонки';
+  button.dataset.tip=tip;
+  button.setAttribute('aria-label',tip);
+  button.querySelector('use').setAttribute('href','#i-'+(allCollapsed?'unfold-horizontal':'fold-horizontal'));
+}
 function dragStart(e){e.dataTransfer.setData('text/plain',e.currentTarget.dataset.id);e.currentTarget.classList.add('dragging')}
 function dragEnd(e){e.currentTarget.classList.remove('dragging');document.querySelectorAll('.column').forEach(x=>x.classList.remove('drag-over'))}
 function dragOver(e){e.preventDefault();e.currentTarget.classList.add('drag-over')}
@@ -1385,10 +1958,7 @@ function setPreview(id,url){
 
 function renderCandidateSourceIcon(){
   const source=state.sources.find(s=>s['Source ID']===value('candidateSource'));
-  const node=el('candidateSourceIcon');
-  const brand=sourceBrand(source?source['Название']:'');
-  node.className='brand-icon brand-'+brand.key;
-  node.textContent=brand.text;
+  paintSourceIcon(el('candidateSourceIcon'),source||'');
 }
 
 async function loadCandidateDetails(
@@ -1458,6 +2028,8 @@ async function openCandidateById(
 
   if(!summary)return;
 
+  if(freshCandidates.delete(String(id)))renderBoard();
+
   if(setHash){
     history.pushState(
       null,
@@ -1516,7 +2088,8 @@ function openCandidate(candidate){
   el('candidateGithub').value=candidate?candidate['GitHub']||'':'';
   el('candidateLinkedin').value=candidate?candidate['LinkedIn']||'':'';
   el('candidateSalary').value=candidate?formatMoney(candidate['Зарплатные ожидания']):'';
-  el('candidateComment').value=candidate?candidate['Комментарий']||'':'';
+  if(!currentCandidateDraft)setRich('candidateComment','');
+  renderCandidateComments(candidate);
   el('candidateTitle').textContent=isNew?'Новый кандидат':fullNameOf(candidate);
   el('candidateNumberLabel').textContent=isNew?'':'№'+(candidate['№']||'—');
 
@@ -1536,20 +2109,29 @@ function openCandidate(candidate){
   el('candidateHrResponsible').innerHTML=option('','Выберите HR')+responsiblesFor('HR screening').map(r=>option(r['Responsible ID'],fullNameOf(r),candidate&&r['Responsible ID']===candidate['HR Responsible ID'])).join('');
   if(candidate&&candidate['HR Responsible ID'])ensureCurrentOption(el('candidateHrResponsible'),candidate['HR Responsible ID'],candidate['Ответственный HR']);
 
-  el('candidateTechInterviewer').innerHTML=option('','Выберите тех. интервьювера')+responsiblesFor('Техническое интервью').map(r=>option(r['Responsible ID'],fullNameOf(r),candidate&&r['Responsible ID']===candidate['Tech Interviewer ID'])).join('');
-  if(candidate&&candidate['Tech Interviewer ID'])ensureCurrentOption(el('candidateTechInterviewer'),candidate['Tech Interviewer ID'],candidate['Ответственный тех. интервьювер']);
+  el('candidateTechInterviewer').innerHTML=option('','Выберите проф. интервьювера')+responsiblesFor(state.profInterviewStatus).map(r=>option(r['Responsible ID'],fullNameOf(r),candidate&&r['Responsible ID']===candidate['Tech Interviewer ID'])).join('');
+  if(candidate&&candidate['Tech Interviewer ID'])ensureCurrentOption(el('candidateTechInterviewer'),candidate['Tech Interviewer ID'],candidate['Ответственный проф. интервьювер']);
 
   el('candidateResumeFile').value='';
   renderSelectedResumeFile();
+  if(typeof resetResumeAutofill==='function')resetResumeAutofill(isNew&&!readOnlyDraft(candidate));
   renderResumeVersions(candidate?candidate.resumeVersions||[]:[]);
-  setLink('candidateFolderLink',candidate&&candidate['Папка кандидата'],'Открыть папку кандидата ↗');
+  setLink('candidateFolderLink',candidate&&candidate['Папка кандидата'],'Открыть папку кандидата');
   renderCandidateLinks(candidate?candidate.links||[]:[]);
   renderSocialPreviews();
   renderCandidateSourceIcon();
   renderTransitions();
+  renderCandidateRejectedInfo(candidate);
 
   el('shareCandidateButton').hidden=isNew;
-  el('archiveCandidateButton').hidden=isNew||candidate.archived;
+  el('historyCandidateButton').hidden=isNew;
+  if(typeof refreshCandidateWatch==='function')refreshCandidateWatch(isNew?null:candidate);
+  el('candidateLifecycleActions').innerHTML=isNew?'':candidateLifecycleButtons(candidate,false);
+  // Кандидата в корзине нельзя изменить — только восстановить.
+  const readOnly=!!(candidate&&candidate.state==='deleted');
+  el('candidateModal').classList.toggle('is-readonly',readOnly);
+  document.querySelectorAll('#candidateModal .candidate-header-actions :is(.icon-btn-primary,.button-primary)').forEach(button=>button.hidden=readOnly);
+  UiKit.clearFieldErrors('candidateWorkspace');
 
   if(candidate){
     setCurrentInterviews(candidate.ID);
@@ -1569,6 +2151,9 @@ function openCandidate(candidate){
 
   el('candidateModal').classList.add('open');
 }
+
+// Черновик из API уже содержит резюме — автозаполнение по нему не предлагаем.
+function readOnlyDraft(candidate){return !candidate&&!!currentCandidateDraft}
 
 function closeCandidate(){
   el('candidateModal')
@@ -1597,7 +2182,7 @@ function closeCandidate(){
 function setLink(id,url,label){
   const a=el(id);
   a.href=url||'';
-  a.textContent=url?label:'';
+  a.innerHTML=url?icon('folder','icon-sm')+'<span>'+escapeHtml(label)+'</span>'+externalMark():'';
 }
 
 function renderTransitions(){
@@ -1606,14 +2191,37 @@ function renderTransitions(){
     root.innerHTML='';
     return;
   }
-  const allowed=state.transitions[currentCandidate['Статус']]||[];
-  root.innerHTML=allowed.map(status=>
-    '<button class="transition-pill status-'+statusKey(status)+'" onclick="startTransition(\''+escJs(currentCandidate.ID)+'\',\''+escJs(status)+'\')">'+escapeHtml(status)+'</button>'
-  ).join('');
+  const restoring=isRejected(currentCandidate);
+  root.innerHTML=allowedTransitionsFor(currentCandidate).map(status=>{
+    const tip=restoring?'Вернуть на этап «'+status+'»':'Перевести на этап «'+status+'»';
+    return '<button type="button" class="transition-pill status-'+statusKey(status)+'" data-tip="'+escapeHtml(tip)+'" aria-label="'+escapeHtml(tip)+'" onclick="startTransition(\''+escJs(currentCandidate.ID)+'\',\''+escJs(status)+'\')">'+
+      icon(restoring?'restore':(status===state.rejectedStatus?'reject':'arrow-right'),'icon-sm')+
+      '<span>'+escapeHtml(status)+'</span></button>';
+  }).join('');
+}
+
+function renderCandidateRejectedInfo(candidate){
+  const root=el('candidateRejectedInfo');
+  if(!root)return;
+  if(!candidate||!isRejected(candidate)||!candidate.rejection){
+    root.hidden=true;
+    root.innerHTML='';
+    return;
+  }
+  const rows=[
+    ['Кем отказано',candidate['Кем отказано']],
+    ['Причина',candidate['Причина отказа']],
+    ['Комментарий',candidate['Комментарий к отказу'],true],
+    ['Этап отказа',candidate.rejection.fromStatus],
+    ['Дата',fmtDate(candidate['Дата отказа'])]
+  ].filter(([,text])=>text);
+  root.innerHTML='<div class="rejected-info-title">'+icon('reject','icon-sm')+'<strong>Отказано</strong></div>'+
+    rows.map(([label,text,rich])=>'<div class="rejected-info-row"><span>'+escapeHtml(label)+'</span><span>'+(rich?richHtml(text):escapeHtml(text))+'</span></div>').join('');
+  root.hidden=false;
 }
 
 function renderCandidateLinks(links){el('candidateLinks').innerHTML=(links||[]).map(l=>linkRow(l.name,l.url)).join('')}
-function linkRow(name='',url=''){return '<div class="link-item"><input class="other-link-name" placeholder="Название" value="'+escapeHtml(name)+'"><input class="other-link-url" placeholder="https://..." value="'+escapeHtml(url)+'"><button class="button button-ghost button-small danger-text" type="button" onclick="this.parentElement.remove()">×</button></div>'}
+function linkRow(name='',url=''){return '<div class="link-item"><input class="other-link-name" placeholder="Название" value="'+escapeHtml(name)+'"><input class="other-link-url" placeholder="https://..." value="'+escapeHtml(url)+'">'+iconBtn('trash','Удалить ссылку','this.parentElement.remove()','icon-btn-sm icon-btn-danger')+'</div>'}
 function addCandidateLink(){el('candidateLinks').insertAdjacentHTML('beforeend',linkRow())}
 function collectLinks(){return [...document.querySelectorAll('#candidateLinks .link-item')].map(row=>({name:row.querySelector('.other-link-name').value,url:row.querySelector('.other-link-url').value}))}
 
@@ -1639,7 +2247,7 @@ function renderSelectedResumeFile(
           draftResume.url||'#'
         )+
         '" target="_blank" rel="noopener">'+
-          '<span class="resume-ok">✓</span>'+
+          '<span class="resume-ok">'+icon('check')+'</span>'+
           '<div>'+
             '<strong>'+
             escapeHtml(
@@ -1649,7 +2257,7 @@ function renderSelectedResumeFile(
             '</strong>'+
             '<small>Из API · будет добавлено при сохранении кандидата</small>'+
           '</div>'+
-          '<span class="resume-open">↗</span>'+
+          '<span class="resume-open">'+externalMark()+'</span>'+
         '</a>';
 
       return;
@@ -1664,7 +2272,7 @@ function renderSelectedResumeFile(
       (
         uploading
           ? '<span class="spinner spinner-dark"></span>'
-          : '<span class="resume-ok">✓</span>'
+          : '<span class="resume-ok">'+icon('check')+'</span>'
       )+
       '<div><strong>'+
         escapeHtml(file.name)+
@@ -1694,9 +2302,9 @@ function renderResumeVersions(versions){
   root.innerHTML='<div class="resume-versions-title">История версий</div>'+
     versions.map((v,index)=>
       '<a class="resume-version" href="'+escapeHtml(v.url||'#')+'" target="_blank" rel="noopener">'+
-        '<span class="resume-version-index">'+(index===0?'NEW':String(versions.length-index))+'</span>'+
-        '<div><strong>'+escapeHtml(v.name||'Резюме')+'</strong><small>'+escapeHtml(v.uploadedAt||'Дата не указана')+'</small></div>'+
-        '<span class="resume-open">↗</span>'+
+        '<span class="resume-version-index'+(index===0?' is-current':'')+'">v'+String(versions.length-index)+'</span>'+
+        '<div><strong>'+escapeHtml(v.name||'Резюме')+'</strong><small>'+(index===0?'Текущая · ':'')+escapeHtml(fmtDate(v.uploadedAt)||'Дата не указана')+'</small></div>'+
+        '<span class="resume-open">'+externalMark()+'</span>'+
       '</a>'
     ).join('');
 }
@@ -1770,7 +2378,7 @@ function buildOptimisticCandidate(payload,resumeFile,existing,tempId){
     'HR Responsible ID':payload.hrResponsibleId,
     'Ответственный HR':hrResponsible?fullNameOf(hrResponsible):'',
     'Tech Interviewer ID':payload.techInterviewerId,
-    'Ответственный тех. интервьювер':techInterviewer?fullNameOf(techInterviewer):'',
+    'Ответственный проф. интервьювер':techInterviewer?fullNameOf(techInterviewer):'',
     'Комментарий':payload.comment,
     links:payload.links||[],
     resumeVersions:versions,
@@ -1787,7 +2395,7 @@ async function saveCandidateForm(button){
 
   const salary=Number(String(value('candidateSalary')).replace(/\D/g,''))||0;
   if(salary>10000000){
-    showToast('ЗП ожидания не может превышать 10 000 000.','error');
+    UiKit.showFieldErrors([{field:'candidateSalary',message:'Не больше 10 000 000.'}]);
     return;
   }
 
@@ -1855,16 +2463,19 @@ async function saveCandidateForm(button){
       resumeFile
     };
 
-    if(
-      !payload.lastName||
-      !payload.firstName||
-      !payload.vacancyId||
-      !payload.phone||
-      !payload.recruiterId||
-      !payload.hrResponsibleId||
-      !payload.techInterviewerId
-    ){
-      showToast('Заполните обязательные поля, включая рекрутера, HR и тех. интервьювера.','error');
+    // Ошибки показываются под полями; фокус — на первом незаполненном.
+    const phoneDigits=String(payload.phone||'').replace(/\D/g,'');
+    const missing=[
+      [!payload.lastName,'candidateLastName','Укажите фамилию.'],
+      [!payload.firstName,'candidateFirstName','Укажите имя.'],
+      [!payload.vacancyId,'candidateVacancy','Выберите вакансию.'],
+      [!payload.recruiterId,'candidateRecruiter','Выберите рекрутера.'],
+      [!payload.hrResponsibleId,'candidateHrResponsible','Выберите ответственного HR.'],
+      [!payload.techInterviewerId,'candidateTechInterviewer','Выберите проф. интервьювера.'],
+      [phoneDigits.length<=1,'candidatePhone','Укажите телефон в формате +7 7XX XXX XX XX.']
+    ].filter(([bad])=>bad).map(([,field,message])=>({field,message}));
+    if(!UiKit.showFieldErrors(missing)){
+      showToast(missing.length===1?missing[0].message:'Заполните обязательные поля: '+missing.length+'.','error');
       return;
     }
 
@@ -1955,11 +2566,18 @@ async function saveCandidateForm(button){
       resumeUploading=false;
       el('candidateResumeFile').value='';
       renderSelectedResumeFile();
+      if(typeof resetResumeAutofill==='function')resetResumeAutofill(false);
       renderResumeVersions(saved.resumeVersions||[]);
-      setLink('candidateFolderLink',saved['Папка кандидата'],'Открыть папку кандидата ↗');
+      setLink('candidateFolderLink',saved['Папка кандидата'],'Открыть папку кандидата');
       el('candidateNumberLabel').textContent='№'+(saved['№']||'—');
       el('shareCandidateButton').hidden=false;
-      el('archiveCandidateButton').hidden=!!saved.archived;
+      if(typeof refreshCandidateWatch==='function')refreshCandidateWatch(saved);
+      el('candidateLifecycleActions').innerHTML=candidateLifecycleButtons(saved,false);
+      // Первый комментарий уже в ленте: показываем её вместо поля ввода.
+      if(!candidateCommentThread||!el('candidateFirstCommentField').hidden){
+        setRich('candidateComment','');
+        renderCandidateComments(saved);
+      }
       history.replaceState(
         null,
         '',
@@ -1967,7 +2585,18 @@ async function saveCandidateForm(button){
         '#/candidate/'+
         encodeURIComponent(saved.ID)
       );
-      showToast(existing?'Карточка обновлена.':'Кандидат создан.');
+      showToast(existing?'Карточка обновлена.':'Кандидат '+fullNameOf(saved)+' создан.');
+
+      // Новая карточка: форма закрывается, карточка подсвечена на доске, пока её не откроют.
+      if(!existing){
+        freshCandidates.add(String(saved.ID));
+        closeCandidate();
+        renderBoard();
+        requestAnimationFrame(()=>{
+          const card=document.querySelector('.candidate-card[data-id="'+CSS.escape(String(saved.ID))+'"]');
+          if(card)card.scrollIntoView({block:'nearest',inline:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
+        });
+      }
 
       setTimeout(()=>{
         const item=
@@ -1997,7 +2626,7 @@ function archiveCurrentCandidate(button){if(currentCandidate)archiveById(current
 async function archiveById(id,button){
   const ok=
     await showConfirm(
-      'Архивировать кандидата? Текущий статус будет сохранён, а запись будет перенесена в лист «Архив кандидатов».',
+      'Архивировать кандидата? Текущий статус будет сохранён, кандидат пропадёт с доски и будет доступен в фильтре «Архив».',
       'Архивация кандидата'
     );
 
@@ -2111,22 +2740,37 @@ function startTransition(id,toStatus){
   const candidate=state.candidates.find(c=>String(c.ID)===String(id));
   if(!candidate||candidate.archived||candidate['Статус']===toStatus)return;
 
-  const allowed=state.transitions[candidate['Статус']]||[];
-  if(!allowed.includes(toStatus)){
-    showToast('Такой переход не разрешён.','error');
+  if(!allowedTransitionsFor(candidate).includes(toStatus)){
+    showToast(
+      isRejected(candidate)
+        ? 'Кандидата можно вернуть только на этап, с которого ему отказали.'
+        : 'Такой переход не разрешён.',
+      'error'
+    );
     return;
   }
 
+  if(toStatus===state.rejectedStatus){
+    openRejection(candidate);
+    return;
+  }
+
+  if(isRejected(candidate)){
+    openRestore(candidate,toStatus);
+    return;
+  }
+
+  // Вопросы шаблона относятся к этапу, НА который переводят кандидата.
   const templates=state.interviewTemplates.filter(t=>
     String(t['Vacancy ID'])===String(candidate['Vacancy ID']) &&
-    t['Этап']===candidate['Статус']
+    t['Этап']===toStatus
   );
 
   const requiredTemplate=templates.find(t=>t.required)||null;
   const nextResponsible=candidateAssignedResponsible(candidate,toStatus);
 
   if(!nextResponsible){
-    showToast('Для следующего этапа не назначен ответственный. Заполните карточку кандидата.','error');
+    showToast('Для этапа не назначен ответственный. Заполните карточку кандидата.','error');
     return;
   }
 
@@ -2139,7 +2783,7 @@ function startTransition(id,toStatus){
     nextResponsible
   };
 
-  el('transitionTitle').innerHTML=statusChip(candidate['Статус'],true)+' <span class="transition-arrow">→</span> '+statusChip(toStatus,true);
+  el('transitionTitle').innerHTML=statusChip(candidate['Статус'],true)+' <span class="transition-arrow">'+icon('arrow-right','icon-sm')+'</span> '+statusChip(toStatus,true);
 
   const templateSelect=el('transitionTemplate');
   templateSelect.disabled=!!requiredTemplate;
@@ -2152,10 +2796,141 @@ function startTransition(id,toStatus){
     : option('','Без шаблона')+templates.map((t,i)=>option(t['Template ID'],'№'+(t['№']||'—')+' · '+t['Название'],i===0)).join('');
 
   el('transitionResponsibleDisplay').value=fullNameOf(nextResponsible);
-  el('transitionComment').value='';
-  el('transitionResult').value='';
+  setRich('transitionComment','');
+  setRich('transitionResult','');
   renderTransitionQuestions();
   el('transitionModal').classList.add('open');
+}
+
+// ---------- Отказ ----------
+
+let pendingRejection=null;
+
+function openRejection(candidate){
+  pendingRejection={candidate};
+  el('rejectionTitle').textContent=fullNameOf(candidate);
+  el('rejectionSubtitle').innerHTML=statusChip(candidate['Статус'],true)+' <span class="transition-arrow">'+icon('arrow-right','icon-sm')+'</span> '+statusChip(state.rejectedStatus,true);
+
+  // «Кем отказано» — только назначенные кандидату ответственные.
+  const assigned=[
+    ['Responsible ID','Рекрутер'],
+    ['HR Responsible ID','HR'],
+    ['Tech Interviewer ID','Проф. интервьювер']
+  ].map(([key,role])=>{
+    const responsible=state.responsibles.find(r=>String(r['Responsible ID'])===String(candidate[key]||''));
+    return responsible?{id:responsible['Responsible ID'],label:fullNameOf(responsible)+' · '+role}:null;
+  }).filter(Boolean);
+
+  el('rejectionResponsible').innerHTML=option('','Выберите ответственного')+
+    assigned.map(item=>option(item.id,item.label)).join('');
+
+  document.querySelector('input[name="rejectionByType"][value="responsible"]').checked=true;
+  setRich('rejectionComment','');
+  renderRejectionForm();
+  el('rejectionModal').classList.add('open');
+}
+
+function rejectionByType(){
+  const checked=document.querySelector('input[name="rejectionByType"]:checked');
+  return checked?checked.value:'responsible';
+}
+
+function renderRejectionForm(){
+  const byType=rejectionByType();
+  el('rejectionResponsibleField').hidden=byType!=='responsible';
+  const reasons=(state.rejectionReasons&&state.rejectionReasons[byType])||[];
+  el('rejectionReason').innerHTML=option('','Выберите причину')+reasons.map(reason=>option(reason,reason)).join('');
+  renderRejectionCommentHint();
+}
+
+function renderRejectionCommentHint(){
+  const other=value('rejectionReason')===state.otherReason;
+  el('rejectionCommentLabel').textContent=other?'Опишите причину *':'Комментарий';
+  el('rejectionComment').placeholder=other?'Причина отказа своими словами':'Необязательно';
+  el('rejectionCommentHint').hidden=true;
+  el('rejectionComment').classList.remove('input-error');
+}
+
+function closeRejection(){
+  el('rejectionModal').classList.remove('open');
+  pendingRejection=null;
+}
+
+async function submitRejection(button){
+  if(!pendingRejection)return;
+  const byType=rejectionByType();
+  const rejection={
+    byType,
+    responsibleId:byType==='responsible'?value('rejectionResponsible'):'',
+    reason:value('rejectionReason'),
+    comment:richText(value('rejectionComment'))?value('rejectionComment'):''
+  };
+
+  const rejectionErrors=[
+    [byType==='responsible'&&!rejection.responsibleId,'rejectionResponsible','Выберите, кем отказано.'],
+    [!rejection.reason,'rejectionReason','Выберите причину отказа.']
+  ].filter(([bad])=>bad).map(([,field,message])=>({field,message}));
+  if(!UiKit.showFieldErrors(rejectionErrors))return;
+  if(rejection.reason===state.otherReason&&!rejection.comment){
+    el('rejectionCommentHint').hidden=false;
+    el('rejectionComment').classList.add('input-error');
+    const rejectionEditor=window.RichEditor&&RichEditor.get(el('rejectionComment'));
+    if(rejectionEditor)rejectionEditor.focus();
+    return;
+  }
+
+  const candidateId=pendingRejection.candidate.ID;
+  await runUiTask({button,formId:'rejectionForm',label:'Сохранение…'},async()=>{
+    const response=await rpc('transitionCandidate',{candidateId,toStatus:state.rejectedStatus,rejection});
+    applyTransitionResponse(candidateId,response);
+    closeRejection();
+    showToast('Кандидат переведён в «'+state.rejectedStatus+'».');
+  }).catch(()=>{});
+}
+
+// ---------- Возврат из «Отказано» ----------
+
+let pendingRestore=null;
+
+function openRestore(candidate,toStatus){
+  pendingRestore={candidate,toStatus};
+  el('restoreTitle').textContent=fullNameOf(candidate);
+  el('restoreSubtitle').innerHTML=statusChip(candidate['Статус'],true)+' <span class="transition-arrow">'+icon('arrow-right','icon-sm')+'</span> '+statusChip(toStatus,true);
+  setRich('restoreComment','');
+  el('restoreModal').classList.add('open');
+}
+
+function closeRestore(){
+  el('restoreModal').classList.remove('open');
+  pendingRestore=null;
+}
+
+async function submitRestore(button){
+  if(!pendingRestore)return;
+  const {candidate,toStatus}=pendingRestore;
+  await runUiTask({button,formId:'restoreForm',label:'Сохранение…'},async()=>{
+    const response=await rpc('transitionCandidate',{candidateId:candidate.ID,toStatus,comment:value('restoreComment')});
+    applyTransitionResponse(candidate.ID,response);
+    closeRestore();
+    showToast('Кандидат возвращён на этап «'+toStatus+'».');
+  }).catch(()=>{});
+}
+
+// Обновляет доску и открытую карточку после любого перехода.
+function applyTransitionResponse(candidateId,response,openCard){
+  const idx=state.candidates.findIndex(x=>String(x.ID)===String(candidateId));
+  if(idx>=0)state.candidates[idx]={...state.candidates[idx],...response.candidate};
+
+  if(response.interview&&loadedInterviewCandidateIds.has(String(candidateId))){
+    state.interviews.push(response.interview);
+  }
+
+  recalculateStatsLocal();
+  render();
+
+  if(openCard||(currentCandidate&&String(currentCandidate.ID)===String(candidateId))){
+    openCandidateById(candidateId,false);
+  }
 }
 
 function closeTransition(){
@@ -2170,10 +2945,40 @@ function renderTransitionQuestions(){
   const questions=template?(template.questions||[]):[];
 
   el('transitionQuestions').innerHTML=questions.length
-    ?'<label>'+(template&&template.required?'Вопросы и ответы *':'Вопросы и ответы')+'</label>'+questions.map((q,index)=>
-      '<div class="qa interview-question"><div class="question-number">'+(index+1)+'</div><div><strong>'+escapeHtml(q)+'</strong><textarea class="transition-answer" data-question="'+escapeHtml(q)+'" placeholder="Ответ кандидата"></textarea></div></div>'
-    ).join('')
+    ?'<label>'+(template&&template.required?'Вопросы и ответы *':'Вопросы и ответы')+'</label>'+questions.map((q,index)=>{
+      const text=typeof q==='string'?q:q.text;
+      const answers=typeof q==='string'?[]:(q.answers||[]);
+      return '<div class="qa interview-question"><div class="question-number">'+(index+1)+'</div><div>'+
+        '<strong>'+escapeHtml(text)+'</strong>'+
+        (answers.length
+          ? '<div class="answer-suggestions">'+answers.map(answer=>
+              '<button type="button" class="suggestion-chip" data-tip="Подставить ответ" onclick="applySuggestedAnswer(this)" data-answer="'+escapeHtml(answer)+'">'+escapeHtml(answer)+'</button>'
+            ).join('')+'</div>'
+          : '')+
+        '<textarea class="transition-answer" data-rich data-question="'+escapeHtml(text)+'" placeholder="Ответ кандидата"></textarea>'+
+      '</div></div>';
+    }).join('')
     :'<div class="empty-state compact">Для этого этапа шаблон вопросов не выбран.</div>';
+  mountRich(el('transitionQuestions'));
+  el('transitionQuestions').querySelectorAll('.transition-answer').forEach(textarea=>{
+    const editor=window.RichEditor&&RichEditor.get(textarea);
+    if(editor&&editor.el)editor.el.addEventListener('input',()=>syncSuggestionState(textarea));
+  });
+}
+
+function applySuggestedAnswer(chip){
+  const textarea=chip.closest('.interview-question').querySelector('.transition-answer');
+  setRich(textarea,textToRichHtml(chip.dataset.answer));
+  syncSuggestionState(textarea);
+  const editor=window.RichEditor&&RichEditor.get(textarea);
+  if(editor)editor.focus();
+}
+
+function syncSuggestionState(textarea){
+  const current=richText(textarea.value);
+  textarea.closest('.interview-question').querySelectorAll('.suggestion-chip').forEach(chip=>{
+    chip.classList.toggle('active',chip.dataset.answer===current);
+  });
 }
 
 async function submitTransition(button){
@@ -2185,11 +2990,11 @@ async function submitTransition(button){
       answer:x.value.trim()
     }));
 
-    const result=value('transitionResult').trim();
+    const result=richText(value('transitionResult'))?value('transitionResult'):'';
     const selectedTemplate=selectedTransitionTemplate();
 
     if(!result){
-      showToast('Укажите результат интервью/этапа.','error');
+      UiKit.showFieldErrors([{field:'transitionResult',message:'Опишите итог этапа.'}]);
       return;
     }
 
@@ -2203,11 +3008,10 @@ async function submitTransition(button){
         return;
       }
 
-      const missing=answers.filter(item=>!item.answer);
-      if(missing.length){
-        showToast('Заполните все вопросы обязательного шаблона.','error');
-        return;
-      }
+      const missingAnswers=[...document.querySelectorAll('.transition-answer')]
+        .filter(node=>!richText(node.value.trim()))
+        .map(node=>({field:node,message:'Ответ обязателен для этого шаблона.'}));
+      if(!UiKit.showFieldErrors(missingAnswers))return;
     }
 
     const payload={
@@ -2222,25 +3026,8 @@ async function submitTransition(button){
     };
 
     const response=await rpc('transitionCandidate',payload);
-    const idx=state.candidates.findIndex(x=>x.ID===payload.candidateId);
-    if(idx>=0)state.candidates[idx]={...state.candidates[idx],...response.candidate};
-    const interviewKey=
-      String(payload.candidateId);
-
-    if(
-      loadedInterviewCandidateIds.has(
-        interviewKey
-      )
-    ){
-      state.interviews.push(
-        response.interview
-      );
-    }
-
-    recalculateStatsLocal();
     closeTransition();
-    render();
-    openCandidateById(payload.candidateId,false);
+    applyTransitionResponse(payload.candidateId,response,true);
     showToast('Этап кандидата обновлён.');
   }).catch(()=>{});
 }
@@ -2329,25 +3116,72 @@ async function loadCandidateInterviews(
   return interviewLoadPromises[key];
 }
 
+const interviewThreads={};
+
+function interviewLifecycleButtons(i){
+  const id=escJs(i['Interview ID']);
+  const call=action=>'interviewLifecycle(\''+id+'\',\''+action+'\',this)';
+  if(i.state==='archived'){
+    return iconBtn('unarchive','Вернуть из архива',call('unarchive'),'icon-btn-sm')+
+      (isAdminUser()?iconBtn('trash','Удалить (корзина, 30 дней)',call('delete'),'icon-btn-sm icon-btn-danger'):'');
+  }
+  return iconBtn('archive','В архив',call('archive'),'icon-btn-sm');
+}
+
 function renderInterviewHistory(){
+  Object.values(interviewThreads).forEach(thread=>thread.destroy());
+  Object.keys(interviewThreads).forEach(key=>delete interviewThreads[key]);
+
   el('interviewHistory').innerHTML=currentInterviews.length?currentInterviews.map(i=>
-    '<article class="history-card">'+
-      '<div class="history-title"><div>'+statusChip(i['Этап']||'—',true)+' <span class="transition-arrow">→</span> '+statusChip(i['To Status']||'—',true)+'</div>'+
-      '<button class="button button-ghost button-small" onclick="editInterview(\''+escJs(i['Interview ID'])+'\')">Редактировать</button></div>'+
-      '<div class="muted history-meta">'+escapeHtml(i['Дата']||'')+' · '+escapeHtml(i['Шаблон']||'Без шаблона')+'</div>'+
-      (i.answers||[]).map((a,index)=>'<div class="qa"><strong>'+(index+1)+'. '+escapeHtml(a.question)+'</strong><div>'+escapeHtml(a.answer||'—')+'</div></div>').join('')+
-      '<div class="qa"><strong>Комментарий</strong><div>'+escapeHtml(i['Комментарий']||'—')+'</div></div>'+
-      '<div class="qa"><strong>Результат</strong><div>'+escapeHtml(i['Результат']||'—')+'</div></div>'+
+    '<article class="history-card'+(i.state==='archived'?' is-archived':'')+'">'+
+      '<div class="history-title"><div>'+statusChip(i['From Status']||i['Этап']||'—',true)+' <span class="transition-arrow">'+icon('arrow-right','icon-sm')+'</span> '+statusChip(i['To Status']||'—',true)+
+        (i.state==='archived'?' <span class="state-badge state-archived">В архиве</span>':'')+'</div>'+
+        '<div class="header-actions">'+
+          (i.state==='active'?iconBtn('edit','Редактировать результат','editInterview(\''+escJs(i['Interview ID'])+'\')','icon-btn-sm'):'')+
+          iconBtn('message','Комментарии','toggleInterviewComments(\''+escJs(i['Interview ID'])+'\')','icon-btn-sm')+
+          iconBtn('history','История изменений','openHistory(\'interview\',\''+escJs(i['Interview ID'])+'\',\''+escJs('Результат этапа «'+(i['To Status']||'')+'»')+'\')','icon-btn-sm')+
+          interviewLifecycleButtons(i)+
+        '</div></div>'+
+      '<div class="muted history-meta">'+escapeHtml(fmtDate(i['Дата']))+' · '+escapeHtml(i['Интервьюер']||'—')+' · '+escapeHtml(i['Шаблон']||'Без шаблона')+'</div>'+
+      (i.answers||[]).map((a,index)=>'<div class="qa"><strong>'+(index+1)+'. '+escapeHtml(a.question)+'</strong>'+richHtml(a.answer)+'</div>').join('')+
+      '<div class="qa"><strong>Результат</strong>'+richHtml(i['Результат'])+'</div>'+
+      '<div class="history-comments" id="interviewComments-'+escapeHtml(i['Interview ID'])+'" hidden></div>'+
     '</article>'
   ).join(''):'<div class="empty-state compact">Результатов интервью пока нет.</div>';
+}
+
+function toggleInterviewComments(id){
+  const container=el('interviewComments-'+id);
+  if(!container)return;
+  container.hidden=!container.hidden;
+  if(!container.hidden&&!interviewThreads[id]&&window.CommentThread){
+    const readOnly=!!(currentCandidate&&currentCandidate.state==='deleted');
+    interviewThreads[id]=CommentThread.mount(container,{entityType:'interview',entityId:id,currentUser:state.currentUser,readOnly,title:'Комментарии к результату'});
+  }
+}
+
+async function interviewLifecycle(id,action,button){
+  if(action==='delete'){
+    const ok=await showConfirm('Удалить результат интервью? Он будет в корзине 30 дней, потом удалится окончательно.','Удаление результата');
+    if(!ok)return;
+  }
+  const rpcName={archive:'archiveEntity',unarchive:'unarchiveEntity',delete:'deleteEntity'}[action];
+  await runUiTask({button,label:'…'},async()=>{
+    await rpc(rpcName,{type:'interview',id});
+    await loadCandidateInterviews(currentCandidate.ID,true);
+    showToast({archive:'Результат отправлен в архив.',unarchive:'Результат возвращён из архива.',delete:'Результат перемещён в корзину.'}[action]);
+  }).catch(()=>{});
 }
 
 function editInterview(id){
   editingInterview=currentInterviews.find(i=>i['Interview ID']===id);
   if(!editingInterview)return;
-  el('editInterviewQuestions').innerHTML=(editingInterview.answers||[]).map((a,index)=>'<div class="qa"><strong>'+(index+1)+'. '+escapeHtml(a.question)+'</strong><textarea class="edit-answer" data-question="'+escapeHtml(a.question)+'">'+escapeHtml(a.answer)+'</textarea></div>').join('');
-  el('editInterviewComment').value=editingInterview['Комментарий']||'';
-  el('editInterviewResult').value=editingInterview['Результат']||'';
+  el('editInterviewQuestions').innerHTML=(editingInterview.answers||[]).map((a,index)=>
+    '<div class="qa"><strong>'+(index+1)+'. '+escapeHtml(a.question)+'</strong><textarea class="edit-answer" data-rich data-question="'+escapeHtml(a.question)+'"></textarea></div>'
+  ).join('');
+  mountRich(el('editInterviewQuestions'));
+  el('editInterviewQuestions').querySelectorAll('.edit-answer').forEach((textarea,index)=>setRich(textarea,editingInterview.answers[index].answer||''));
+  setRich('editInterviewResult',editingInterview['Результат']||'');
   el('interviewEditModal').classList.add('open');
 }
 
@@ -2355,11 +3189,11 @@ function closeInterviewEdit(){el('interviewEditModal').classList.remove('open');
 
 async function saveInterviewEdit(button){
   if(!editingInterview)return;
+  if(!richText(value('editInterviewResult'))){UiKit.showFieldErrors([{field:'editInterviewResult',message:'Опишите итог этапа.'}]);return}
   await runUiTask({button,formId:'interviewEditForm',label:'Сохранение…'},async()=>{
     const payload={
       id:editingInterview['Interview ID'],
       answers:[...document.querySelectorAll('.edit-answer')].map(x=>({question:x.dataset.question,answer:x.value})),
-      comment:value('editInterviewComment'),
       result:value('editInterviewResult')
     };
     const res=await rpc('updateInterview',payload);
@@ -2371,20 +3205,8 @@ async function saveInterviewEdit(button){
   }).catch(()=>{});
 }
 
-async function softDeleteInterview(button){
-  if(!editingInterview)return;
-  const id=editingInterview['Interview ID'];
-  const ok=await showConfirm('Удалить результат интервью? Запись останется в базе как soft deleted.','Удаление интервью');
-  if(!ok)return;
-
-  await runUiTask({button,formId:'interviewEditForm',label:'Удаление…'},async()=>{
-    await rpc('deleteInterview',id);
-    state.interviews=state.interviews.filter(i=>i['Interview ID']!==id);
-    closeInterviewEdit();
-    setCurrentInterviews(currentCandidate.ID);
-    showToast('Интервью удалено.');
-  }).catch(()=>{});
-}
-
-init();
+// После разбора всего документа: скрипты админки и уведомлений подключаются ниже этого файла,
+// а маршрут (например, прямая ссылка на раздел настроек) нужно применить уже с ними.
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);
+else init();
 </script>

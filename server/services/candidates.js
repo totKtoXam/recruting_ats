@@ -25,6 +25,9 @@ import {
   uploadCandidateResume
 } from './files.js';
 import { lockActiveDraft, markDraftUsed, tryLockActiveDraft } from './drafts.js';
+import { insertComment } from './comments.js';
+import { diffCandidate, notifyCandidateEvent } from './notifications.js';
+import { recordChanges, recordEvent } from './audit.js';
 
 const personName = alias =>
   `concat_ws(' ', NULLIF(${alias}.last_name, ''), NULLIF(${alias}.first_name, ''), NULLIF(${alias}.middle_name, ''))`;
@@ -37,14 +40,16 @@ export const CANDIDATE_SELECT = `
          ${personName('rec')} AS recruiter_name,
          ${personName('hr')}  AS hr_responsible_name,
          ${personName('ti')}  AS tech_interviewer_name,
+         ${personName('rb')}  AS rejected_by_responsible_name,
          lr.file_id      AS latest_resume_file_id,
          lr.external_url AS latest_resume_external_url
   FROM candidates c
   JOIN vacancies v ON v.id = c.vacancy_id
   LEFT JOIN sources s ON s.id = c.source_id
-  LEFT JOIN responsibles rec ON rec.id = c.recruiter_id
-  LEFT JOIN responsibles hr  ON hr.id  = c.hr_responsible_id
-  LEFT JOIN responsibles ti  ON ti.id  = c.tech_interviewer_id
+  LEFT JOIN users rec ON rec.id = c.recruiter_id
+  LEFT JOIN users hr  ON hr.id  = c.hr_responsible_id
+  LEFT JOIN users ti  ON ti.id  = c.tech_interviewer_id
+  LEFT JOIN users rb  ON rb.id  = c.rejected_by_responsible_id
   LEFT JOIN LATERAL (
     SELECT cr.file_id, f.external_url
     FROM candidate_resumes cr
@@ -59,21 +64,34 @@ export const CANDIDATE_SELECT = `
 
 export async function getCandidateSummaries() {
   const rows = await db.many(
-    CANDIDATE_SELECT + ' WHERE c.archived_at IS NULL ORDER BY c.number'
+    CANDIDATE_SELECT + ' WHERE c.archived_at IS NULL AND c.deleted_at IS NULL ORDER BY c.number'
   );
   return rows.map(row => toCandidate(row));
 }
 
 export async function getArchivedCandidateSummaries() {
   const rows = await db.many(
-    CANDIDATE_SELECT + ' WHERE c.archived_at IS NOT NULL ORDER BY c.number'
+    CANDIDATE_SELECT + ' WHERE c.archived_at IS NOT NULL AND c.deleted_at IS NULL ORDER BY c.number'
   );
   return rows.map(row => toCandidate(row));
 }
 
+// Корзина: удалённые кандидаты, которых ещё можно восстановить (30 дней).
+export async function getDeletedCandidateSummaries() {
+  const rows = await db.many(
+    CANDIDATE_SELECT + ' WHERE c.deleted_at IS NOT NULL ORDER BY c.deleted_at DESC'
+  );
+  return rows.map(row => toCandidate(row));
+}
+
+export async function getDeletedCandidateCount() {
+  const { count } = await db.one('SELECT count(*)::int AS count FROM candidates WHERE deleted_at IS NOT NULL');
+  return count;
+}
+
 export async function getArchivedCandidateCount() {
   const { count } = await db.one(
-    'SELECT count(*)::int AS count FROM candidates WHERE archived_at IS NOT NULL'
+    'SELECT count(*)::int AS count FROM candidates WHERE archived_at IS NOT NULL AND deleted_at IS NULL'
   );
   return count;
 }
@@ -136,7 +154,7 @@ export async function resolveResponsible(executor, responsibleId, label, require
 
   const responsible = isUuid(id)
     ? await executor.one(
-        'SELECT * FROM responsibles WHERE id = $1 AND deleted_at IS NULL',
+        'SELECT * FROM users WHERE id = $1 AND archived_at IS NULL AND deleted_at IS NULL',
         [id]
       )
     : null;
@@ -164,12 +182,12 @@ export function getStageResponsible(executor, candidateRow, stage) {
     );
   }
 
-  if (stage === 'Техническое интервью') {
+  if (stage === APP_CONFIG.PROF_INTERVIEW_STATUS) {
     return resolveResponsible(
       executor,
       candidateRow.tech_interviewer_id,
-      'Ответственный тех. интервьювер',
-      ['Техническое интервью']
+      'Ответственный проф. интервьювер',
+      [APP_CONFIG.PROF_INTERVIEW_STATUS]
     );
   }
 
@@ -183,13 +201,16 @@ export function getStageResponsible(executor, candidateRow, stage) {
 
 // ---------- Журнал переходов ----------
 
-export async function appendTransitionLog(executor, { candidate, fromStatus, toStatus, responsible, changedBy, comment }) {
+export async function appendTransitionLog(
+  executor,
+  { candidate, fromStatus, toStatus, responsible, changedBy, comment, details }
+) {
   await executor.query(
     `INSERT INTO candidate_status_log
        (candidate_id, candidate_number, candidate_full_name, from_status, to_status,
         responsible_id, responsible_name, changed_by_user_id, changed_by_name,
-        changed_by_email, comment)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        changed_by_email, comment, details)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
     [
       candidate.id,
       candidate.number ?? null,
@@ -203,7 +224,8 @@ export async function appendTransitionLog(executor, { candidate, fromStatus, toS
       changedBy ? changedBy.id : null,
       changedBy ? changedBy.full_name : '',
       changedBy ? changedBy.email : '',
-      clean(comment)
+      clean(comment),
+      details ? JSON.stringify(details) : null
     ]
   );
 }
@@ -230,7 +252,7 @@ function validateCandidatePayload(payload) {
   if (!payload.phone) fail('Телефон обязателен.');
   if (!payload.recruiterId && !payload.responsibleId) fail('Рекрутер обязателен.');
   if (!payload.hrResponsibleId) fail('Ответственный HR обязателен.');
-  if (!payload.techInterviewerId) fail('Ответственный тех. интервьювер обязателен.');
+  if (!payload.techInterviewerId) fail('Ответственный проф. интервьювер обязателен.');
 }
 
 // Значение из payload, если поле передано, иначе текущее значение кандидата.
@@ -316,6 +338,10 @@ export async function saveCandidate(payload, changedBy) {
         if (!existing) {
           fail('Кандидат не найден.', 404);
         }
+
+        if (existing.deleted_at) {
+          fail('Кандидат в корзине — сначала восстановите его.');
+        }
       }
 
       const vacancyId = clean(payload.vacancyId || existing.vacancy_id);
@@ -348,8 +374,8 @@ export async function saveCandidate(payload, changedBy) {
       const techInterviewer = await resolveResponsible(
         tx,
         payload.techInterviewerId || existing.tech_interviewer_id,
-        'Ответственный тех. интервьювер',
-        ['Техническое интервью']
+        'Ответственный проф. интервьювер',
+        [APP_CONFIG.PROF_INTERVIEW_STATUS]
       );
 
       const sourceId = clean(pick(payload, 'sourceId', existing.source_id));
@@ -385,7 +411,6 @@ export async function saveCandidate(payload, changedBy) {
 
       const phone = normalizeKzPhone(pick(payload, 'phone', existing.phone));
       const email = validateEmail(pick(payload, 'email', existing.email));
-      const comment = clean(pick(payload, 'comment', existing.comment));
 
       // Как в исходной версии: черновик обязан быть активным, только если из него берётся резюме.
       // При собственном файле неактивный черновик просто игнорируется.
@@ -404,7 +429,7 @@ export async function saveCandidate(payload, changedBy) {
       const values = [
         candidateId, lastName, firstName, middleName, vacancyId, phone, email,
         telegram.display, telegram.url, linkedin, github, source ? source.id : null, salary,
-        recruiter.id, hrResponsible.id, techInterviewer.id, folderId, comment,
+        recruiter.id, hrResponsible.id, techInterviewer.id, folderId,
         JSON.stringify(links)
       ];
 
@@ -413,9 +438,9 @@ export async function saveCandidate(payload, changedBy) {
             `INSERT INTO candidates
                (id, last_name, first_name, middle_name, vacancy_id, phone, email,
                 telegram, telegram_url, linkedin, github, source_id, salary_expectation,
-                recruiter_id, hr_responsible_id, tech_interviewer_id, drive_folder_id, comment,
+                recruiter_id, hr_responsible_id, tech_interviewer_id, drive_folder_id,
                 links, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, 'Новый')
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, 'Новый')
              RETURNING *`,
             values
           )
@@ -426,11 +451,21 @@ export async function saveCandidate(payload, changedBy) {
                source_id = $12, salary_expectation = $13, recruiter_id = $14,
                hr_responsible_id = $15, tech_interviewer_id = $16,
                drive_folder_id = COALESCE($17, drive_folder_id),
-               comment = $18, links = $19, updated_at = now()
+               links = $18, updated_at = now()
              WHERE id = $1
              RETURNING *`,
             values
           );
+
+      // Журнал изменений: создание или изменённые поля.
+      if (isNew) {
+        await recordEvent(tx, {
+          entityType: 'candidate', entityId: candidateId, action: 'create',
+          newDisplay: fullName, actor: changedBy
+        });
+      } else {
+        await recordChanges(tx, 'candidate', existing, saved, changedBy);
+      }
 
       if (uploaded) {
         const resumeFile = await insertFile(tx, uploaded);
@@ -438,6 +473,19 @@ export async function saveCandidate(payload, changedBy) {
         await tx.query(
           'INSERT INTO candidate_resumes (candidate_id, file_id) VALUES ($1, $2)',
           [candidateId, resumeFile.id]
+        );
+
+        await recordEvent(tx, {
+          entityType: 'candidate', entityId: candidateId, action: 'update',
+          field: 'resume', fieldLabel: 'Резюме', newDisplay: resumeFile.original_name, actor: changedBy
+        });
+      }
+
+      if (isNew && payload.comment) {
+        await insertComment(
+          tx,
+          { entityType: 'candidate', entityId: candidateId, bodyHtml: payload.comment },
+          changedBy
         );
       }
 
@@ -456,6 +504,16 @@ export async function saveCandidate(payload, changedBy) {
         await markDraftUsed(tx, draft.id, candidateId);
       }
 
+      if (isNew) {
+        await notifyCandidateEvent(tx, candidateId, changedBy, { type: 'created' });
+      } else {
+        const changes = diffCandidate(existing, saved);
+        if (uploaded) changes.push('Резюме');
+        if (changes.length) {
+          await notifyCandidateEvent(tx, candidateId, changedBy, { type: 'updated', changes, previous: existing });
+        }
+      }
+
       return {
         ok: true,
         candidate: await loadCandidateDto(candidateId, tx)
@@ -469,17 +527,23 @@ export async function saveCandidate(payload, changedBy) {
 
 // ---------- Архивация ----------
 
-export async function archiveCandidate(candidateId) {
+export async function archiveCandidate(candidateId, actor) {
   if (!isUuid(candidateId)) {
     fail('Кандидат не найден.', 404);
   }
 
   // Текущий статус сохраняется, кандидат лишь получает отметку архивации.
-  await db.query(
-    `UPDATE candidates SET archived_at = now(), updated_at = now()
-     WHERE id = $1 AND archived_at IS NULL`,
-    [candidateId]
-  );
+  await transaction(async tx => {
+    const result = await tx.query(
+      `UPDATE candidates SET archived_at = now(), updated_at = now()
+       WHERE id = $1 AND archived_at IS NULL AND deleted_at IS NULL`,
+      [candidateId]
+    );
+    if (result.rowCount) {
+      await notifyCandidateEvent(tx, candidateId, actor, { type: 'changed', text: 'Кандидат отправлен в архив.' });
+      await recordEvent(tx, { entityType: 'candidate', entityId: candidateId, action: 'archive', actor });
+    }
+  });
 
   const candidate = await loadCandidateDto(candidateId);
 
@@ -490,13 +554,47 @@ export async function archiveCandidate(candidateId) {
   return { ok: true, candidate };
 }
 
+export async function unarchiveCandidate(candidateId, actor) {
+  if (!isUuid(candidateId)) {
+    fail('Кандидат не найден.', 404);
+  }
+
+  await transaction(async tx => {
+    const row = await tx.one(
+      `UPDATE candidates SET archived_at = NULL, updated_at = now()
+       WHERE id = $1 AND deleted_at IS NULL RETURNING id`,
+      [candidateId]
+    );
+
+    if (!row) {
+      fail('Кандидат не найден или находится в корзине.', 404);
+    }
+
+    await notifyCandidateEvent(tx, candidateId, actor, { type: 'changed', text: 'Кандидат возвращён из архива.' });
+    await recordEvent(tx, { entityType: 'candidate', entityId: candidateId, action: 'unarchive', actor });
+  });
+
+  return { ok: true, candidate: await loadCandidateDto(candidateId) };
+}
+
 export async function getAllowedTransitions(candidateId) {
   const id = optionalUuid(candidateId, 'Кандидат не найден.');
   const row = id
-    ? await db.one('SELECT status FROM candidates WHERE id = $1 AND archived_at IS NULL', [id])
+    ? await db.one(
+        'SELECT status, rejected_from_status FROM candidates WHERE id = $1 AND archived_at IS NULL',
+        [id]
+      )
     : null;
 
-  return row ? APP_CONFIG.TRANSITIONS[row.status] || [] : [];
+  if (!row) {
+    return [];
+  }
+
+  if (row.status === APP_CONFIG.REJECTED_STATUS) {
+    return row.rejected_from_status ? [row.rejected_from_status] : [];
+  }
+
+  return APP_CONFIG.TRANSITIONS[row.status] || [];
 }
 
 export { loadCandidateDto };
