@@ -1,6 +1,7 @@
 // Реестр RPC-методов, которые раньше вызывались через google.script.run.
 // Имена и формат ответов сохранены, поэтому фронтенд работает без изменений.
 import * as candidates from './services/candidates.js';
+import * as audit from './services/audit.js';
 import * as comments from './services/comments.js';
 import * as drafts from './services/drafts.js';
 import * as interviews from './services/interviews.js';
@@ -13,14 +14,15 @@ import * as telegram from './services/telegram.js';
 import * as users from './services/users.js';
 
 async function getCandidateData() {
-  const [active, archivedCount] = await Promise.all([
+  const [active, archivedCount, deletedCount] = await Promise.all([
     candidates.getCandidateSummaries(),
-    candidates.getArchivedCandidateCount()
+    candidates.getArchivedCandidateCount(),
+    candidates.getDeletedCandidateCount()
   ]);
 
   return {
     candidates: active,
-    stats: candidates.calculateStats(active, archivedCount)
+    stats: { ...candidates.calculateStats(active, archivedCount), deleted: deletedCount }
   };
 }
 
@@ -110,17 +112,27 @@ export const rpcHandlers = {
   resetIntegration: (input, { user }) => settings.resetIntegration(input, user),
 
   // Серверные таблицы: фильтры, сортировка и пагинация в БД.
-  listVacancies: input => lists.listVacancies(input),
-  listSources: input => lists.listSources(input),
-  listUsers: adminOnly(input => lists.listUsers(input)),
+  listVacancies: (input, { user }) => lists.listVacancies(input, user),
+  listSources: (input, { user }) => lists.listSources(input, user),
+  listUsers: adminOnly((input, { user }) => lists.listUsers(input, user)),
+
+  // Журнал изменений любой записи и откат значения поля.
+  getHistory: (input, { user }) => audit.getHistory(input, user),
+  revertChange: (input, { user }) =>
+    audit.revertChange(input, user, {
+      afterRevert: (tx, entityType, before, _after, actor, label) =>
+        entityType === 'candidate'
+          ? notifications.notifyCandidateEvent(tx, before.id, actor, { type: 'updated', changes: [label], previous: before })
+          : null
+    }),
 
   // Пользователи (они же ответственные) — только администраторы.
   saveUser: (input, { user }) => users.saveUser(input, user),
   setUserAccess: (input, { user }) => users.setUserAccess(input, user),
 
-  saveVacancy: input => references.saveVacancy(input),
-  setVacancyStatus: input => references.setVacancyStatus(input),
+  saveVacancy: (input, { user }) => references.saveVacancy(input, user),
+  setVacancyStatus: (input, { user }) => references.setVacancyStatus(input, user),
   listVacancyTemplates: vacancyId => references.listVacancyTemplates(vacancyId),
-  saveSource: input => references.saveSource(input),
-  saveInterviewTemplate: input => references.saveInterviewTemplate(input)
+  saveSource: (input, { user }) => references.saveSource(input, user),
+  saveInterviewTemplate: (input, { user }) => references.saveInterviewTemplate(input, user)
 };

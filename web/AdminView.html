@@ -9,6 +9,9 @@
   </div>
 </div>
 
+<!-- Вкладки страницы «Настройки» (рисует renderSettingsTabs). -->
+<nav id="settingsTabs" class="tabs settings-tabs" aria-label="Разделы настроек" hidden></nav>
+
 <!-- ===================== Вакансии ===================== -->
 <section id="admin-vacancies" class="admin-page-section active">
   <div class="directory-layout directory-single">
@@ -55,6 +58,17 @@
               <span id="vacancyStatusActions" class="status-actions"></span>
             </div>
           </div>
+        </section>
+
+        <section class="drawer-section">
+          <div class="drawer-section-head">
+            <h4>Публикации</h4>
+            <div class="header-actions">
+              <button id="vacancyLinkAdd" type="button" class="button button-secondary button-small" onclick="addVacancyLink()"><svg class="icon"><use href="#i-plus"/></svg><span>Ссылка</span></button>
+            </div>
+          </div>
+          <div id="vacancyLinks" class="vacancy-links"></div>
+          <div id="vacancyLinksEmpty" class="empty-state compact">Добавьте ссылки на вакансию на hh, в Telegram-канале, LinkedIn — площадка определится автоматически.</div>
         </section>
 
         <section class="drawer-section" data-drawer-ignore>
@@ -118,6 +132,12 @@
             <span id="sourceFormIcon" class="brand-icon brand-generic" aria-hidden="true"><svg class="icon"><use href="#i-globe"/></svg></span>
             <input id="sourceName" placeholder="Например, LinkedIn" oninput="renderSourceFormIcon()">
           </div>
+        </div>
+
+        <div class="field">
+          <span class="field-label" id="sourceIconLabel">Иконка</span>
+          <div id="sourceIconPicker" class="icon-picker" role="group" aria-labelledby="sourceIconLabel"></div>
+          <small class="field-hint">«Авто» подбирает значок по названию. Можно выбрать готовый или загрузить свою картинку и подогнать её по размеру.</small>
         </div>
       </div>
     </aside>

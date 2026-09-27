@@ -13,13 +13,24 @@ const MAX_PAGE_SIZE = 100;
 
 const like = value => '%' + value.replace(/[\\%_]/g, char => '\\' + char) + '%';
 
-// Состояние записи: активные (по умолчанию), архив или корзина.
-const STATES = ['active', 'archived', 'deleted'];
+// Состояние записи: активные (по умолчанию), архив, корзина или все.
+// Корзину видят только администраторы, поэтому для остальных «все» — без корзины.
+const STATES = ['active', 'archived', 'deleted', 'all'];
 
-function stateClause(alias, state) {
+function stateClause(alias, state, isAdmin) {
   if (state === 'archived') return `${alias}.archived_at IS NOT NULL AND ${alias}.deleted_at IS NULL`;
   if (state === 'deleted') return `${alias}.deleted_at IS NOT NULL`;
+  if (state === 'all') return isAdmin ? 'TRUE' : `${alias}.deleted_at IS NULL`;
   return `${alias}.archived_at IS NULL AND ${alias}.deleted_at IS NULL`;
+}
+
+// Количество записей в каждом состоянии с учётом остальных фильтров (для переключателя).
+function stateCountsSql(alias, isAdmin) {
+  const a = alias;
+  return `count(*) FILTER (WHERE ${a}.archived_at IS NULL AND ${a}.deleted_at IS NULL)::int AS active,
+          count(*) FILTER (WHERE ${a}.archived_at IS NOT NULL AND ${a}.deleted_at IS NULL)::int AS archived,
+          count(*) FILTER (WHERE ${a}.deleted_at IS NOT NULL)::int AS deleted,
+          count(*) FILTER (WHERE ${isAdmin ? 'TRUE' : `${a}.deleted_at IS NULL`})::int AS "all"`;
 }
 
 // Типы фильтров: text — подстрока без учёта регистра, eq — точное совпадение,
@@ -41,7 +52,8 @@ function filterClause(filter, value, param) {
   }
 }
 
-async function queryList(definition, input = {}) {
+async function queryList(definition, input = {}, user = null) {
+  const isAdmin = Boolean(user && user.is_admin);
   const pageSize = Math.min(
     Math.max(Number.parseInt(input.pageSize, 10) || DEFAULT_PAGE_SIZE, 1),
     MAX_PAGE_SIZE
@@ -51,10 +63,11 @@ async function queryList(definition, input = {}) {
   // Параметры, на которые ссылается definition.where ($1, $2, …).
   const params = [...(definition.params || [])];
   const param = () => `$${params.length + 1}`;
-  const where = [...(definition.where || [])];
+  const baseWhere = [...(definition.where || [])];
+  const where = [];
   const filters = input.filters || {};
-  const state = STATES.includes(filters.state) ? filters.state : 'active';
-  if (!definition.stateless) where.push(stateClause(definition.alias, state));
+  let state = STATES.includes(filters.state) ? filters.state : 'active';
+  if (state === 'deleted' && !isAdmin) state = 'active';
 
   for (const [key, rawValue] of Object.entries(filters)) {
     const filter = definition.filters[key];
@@ -82,7 +95,18 @@ async function queryList(definition, input = {}) {
       ? input.sort.dir === 'desc' ? 'DESC' : 'ASC'
       : definition.defaultSort.dir;
 
-  const whereSql = where.length ? ' WHERE ' + where.join(' AND ') : '';
+  // Счётчики по состояниям — с теми же фильтрами, но без условия состояния.
+  const filterWhere = [...baseWhere, ...where];
+  let counts = null;
+  if (!definition.stateless) {
+    const countsWhere = filterWhere.length ? ' WHERE ' + filterWhere.join(' AND ') : '';
+    counts = await db.one(`SELECT ${stateCountsSql(definition.alias, isAdmin)} FROM ${definition.from}${countsWhere}`, params);
+    if (!isAdmin) delete counts.deleted;
+    where.push(stateClause(definition.alias, state, isAdmin));
+  }
+
+  const allWhere = [...baseWhere, ...where];
+  const whereSql = allWhere.length ? ' WHERE ' + allWhere.join(' AND ') : '';
 
   const { total } = await db.one(
     `SELECT count(*)::int AS total FROM ${definition.from}${whereSql}`,
@@ -103,6 +127,7 @@ async function queryList(definition, input = {}) {
   return {
     items: rows.map(definition.map),
     state,
+    counts,
     total,
     page,
     pageSize,
@@ -202,9 +227,9 @@ const USERS = {
   map: toPublicUser
 };
 
-export const listVacancies = input => queryList(VACANCIES, input);
-export const listUsers = input => queryList(USERS, input);
-export const listSources = input => queryList(SOURCES, input);
+export const listVacancies = (input, user) => queryList(VACANCIES, input, user);
+export const listUsers = (input, user) => queryList(USERS, input, user);
+export const listSources = (input, user) => queryList(SOURCES, input, user);
 
 // Журнал уведомлений: только свои.
 export const listNotificationLog = (input, user) =>

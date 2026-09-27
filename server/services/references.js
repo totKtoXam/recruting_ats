@@ -1,9 +1,10 @@
 import { APP_CONFIG } from '../config.js';
-import { db } from '../db/pool.js';
+import { db, transaction } from '../db/pool.js';
 import { fail } from '../lib/errors.js';
-import { clean, optionalUuid, toBoolean } from '../lib/validation.js';
+import { clean, optionalUuid, toBoolean, validateHttpUrl } from '../lib/validation.js';
 import { normalizeTemplateQuestions, toSource, toTemplate, toVacancy } from './mappers.js';
 import { getResponsibles } from './users.js';
+import { recordChanges, recordEvent } from './audit.js';
 
 const TEMPLATE_SELECT = `
   SELECT t.*, v.name AS vacancy_name
@@ -28,45 +29,74 @@ export const VACANCY_STATUS_TRANSITIONS = Object.freeze({
   'Закрыта': ['Открыта']
 });
 
-// Карточка вакансии: только название. Новая вакансия создаётся открытой,
+// Публикации вакансии: [{ url, name }] — ссылки на hh, Telegram, LinkedIn и т.д.
+const MAX_VACANCY_LINKS = 20;
+
+function normalizeVacancyLinks(links) {
+  const seen = new Set();
+  const result = [];
+  for (const link of Array.isArray(links) ? links : []) {
+    const url = validateHttpUrl(link && link.url);
+    if (!url || seen.has(url.toLowerCase())) continue;
+    seen.add(url.toLowerCase());
+    result.push({ url, name: clean(link && link.name).slice(0, 120) });
+  }
+  if (result.length > MAX_VACANCY_LINKS) {
+    fail(`Не больше ${MAX_VACANCY_LINKS} ссылок на публикации.`);
+  }
+  return result;
+}
+
+// Карточка вакансии: название и ссылки на публикации. Новая вакансия создаётся открытой,
 // статус меняется кнопками перехода (setVacancyStatus).
-export async function saveVacancy(input = {}) {
+export async function saveVacancy(input = {}, actor) {
   const name = clean(input.name);
   const id = optionalUuid(input.id, 'Вакансия не найдена.');
+  const links = input.links === undefined ? undefined : normalizeVacancyLinks(input.links);
 
   if (!name) {
     fail('Название вакансии обязательно.');
   }
 
-  // Дополнительно гарантируется уникальным индексом vacancies_name_active_uq.
-  const duplicate = await db.one(
-    `SELECT number FROM vacancies
-     WHERE lower(btrim(name)) = lower($1) AND deleted_at IS NULL AND id IS DISTINCT FROM $2`,
-    [name, id]
-  );
+  return transaction(async tx => {
+    // Дополнительно гарантируется уникальным индексом vacancies_name_active_uq.
+    const duplicate = await tx.one(
+      `SELECT number FROM vacancies
+       WHERE lower(btrim(name)) = lower($1) AND deleted_at IS NULL AND id IS DISTINCT FROM $2`,
+      [name, id]
+    );
 
-  if (duplicate) {
-    fail(`Вакансия с названием «${name}» уже существует (№${duplicate.number}).`, 409);
-  }
+    if (duplicate) {
+      fail(`Вакансия с названием «${name}» уже существует (№${duplicate.number}).`, 409);
+    }
 
-  const row = id
-    ? await db.one(
-        'UPDATE vacancies SET name = $2, updated_at = now() WHERE id = $1 RETURNING *',
-        [id, name]
-      )
-    : await db.one(
-        `INSERT INTO vacancies (name, status) VALUES ($1, 'Открыта') RETURNING *`,
-        [name]
-      );
+    const before = id ? await tx.one('SELECT * FROM vacancies WHERE id = $1 FOR UPDATE', [id]) : null;
 
-  if (!row) {
-    fail('Вакансия не найдена.', 404);
-  }
+    if (id && !before) {
+      fail('Вакансия не найдена.', 404);
+    }
 
-  return { ok: true, vacancy: toVacancy(row) };
+    const row = before
+      ? await tx.one(
+          'UPDATE vacancies SET name = $2, links = COALESCE($3::jsonb, links), updated_at = now() WHERE id = $1 RETURNING *',
+          [id, name, links === undefined ? null : JSON.stringify(links)]
+        )
+      : await tx.one(
+          `INSERT INTO vacancies (name, status, links) VALUES ($1, 'Открыта', $2) RETURNING *`,
+          [name, JSON.stringify(links || [])]
+        );
+
+    if (before) {
+      await recordChanges(tx, 'vacancy', before, row, actor);
+    } else {
+      await recordEvent(tx, { entityType: 'vacancy', entityId: row.id, action: 'create', newDisplay: row.name, actor });
+    }
+
+    return { ok: true, vacancy: toVacancy(row) };
+  });
 }
 
-export async function setVacancyStatus(input = {}) {
+export async function setVacancyStatus(input = {}, actor) {
   const id = optionalUuid(input.id, 'Вакансия не найдена.');
   const status = clean(input.status);
   const vacancy = id ? await db.one('SELECT * FROM vacancies WHERE id = $1', [id]) : null;
@@ -83,10 +113,17 @@ export async function setVacancyStatus(input = {}) {
     fail(`Переход «${vacancy.status}» → «${status}» не разрешён.`);
   }
 
-  const row = await db.one(
-    'UPDATE vacancies SET status = $2, updated_at = now() WHERE id = $1 RETURNING *',
-    [id, status]
-  );
+  const row = await transaction(async tx => {
+    const updated = await tx.one(
+      'UPDATE vacancies SET status = $2, updated_at = now() WHERE id = $1 RETURNING *',
+      [id, status]
+    );
+    await recordEvent(tx, {
+      entityType: 'vacancy', entityId: id, action: 'status', field: 'status', fieldLabel: 'Статус',
+      oldDisplay: vacancy.status, newDisplay: status, actor
+    });
+    return updated;
+  });
 
   return { ok: true, vacancy: toVacancy(row) };
 }
@@ -98,27 +135,79 @@ export async function getSources() {
   return rows.map(toSource);
 }
 
-export async function saveSource(input = {}) {
+// Иконка источника: пресет (ключ) либо своя картинка — PNG до 64 КБ (редактор отдаёт 64×64).
+export const SOURCE_ICON_KEYS = Object.freeze([
+  'linkedin', 'github', 'telegram', 'instagram', 'facebook', 'whatsapp', 'hh', 'habr', 'djinni',
+  'enbek', 'olx', 'indeed', 'glassdoor', 'superjob', 'jooble', 'vk', 'youtube', 'x',
+  'website', 'referral', 'direct', 'internal', 'agency', 'event', 'other'
+]);
+const MAX_ICON_BYTES = 64 * 1024;
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+function decodeIconPng(value) {
+  const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(String(value || ''));
+  if (!match) fail('Иконка должна быть PNG-изображением.');
+  const buffer = Buffer.from(match[1], 'base64');
+  if (buffer.length > MAX_ICON_BYTES) fail('Иконка слишком большая (до 64 КБ).');
+  if (!buffer.subarray(0, 8).equals(PNG_SIGNATURE)) fail('Иконка должна быть PNG-изображением.');
+  return buffer;
+}
+
+export async function saveSource(input = {}, actor) {
   const name = clean(input.name);
   const id = optionalUuid(input.id, 'Источник не найден.');
+  const iconKey = input.iconKey === undefined ? undefined : clean(input.iconKey);
+  // iconData: undefined — не менять; '' — убрать свою картинку; data URL — новая картинка.
+  const iconPng = input.iconData === undefined ? undefined : input.iconData ? decodeIconPng(input.iconData) : null;
 
   if (!name) {
     fail('Название источника обязательно.');
   }
 
-  // Дубликаты дополнительно ловит уникальный индекс sources_name_active_uq.
-  const row = id
-    ? await db.one(
-        'UPDATE sources SET name = $2, updated_at = now() WHERE id = $1 RETURNING *',
-        [id, name]
-      )
-    : await db.one('INSERT INTO sources (name) VALUES ($1) RETURNING *', [name]);
-
-  if (!row) {
-    fail('Источник не найден.', 404);
+  if (iconKey && !SOURCE_ICON_KEYS.includes(iconKey)) {
+    fail('Неизвестная иконка источника.');
   }
 
-  return { ok: true, source: toSource(row) };
+  return transaction(async tx => {
+    const before = id ? await tx.one('SELECT * FROM sources WHERE id = $1 FOR UPDATE', [id]) : null;
+
+    if (id && !before) {
+      fail('Источник не найден.', 404);
+    }
+
+    const nextKey = iconKey === undefined ? (before ? before.icon_key : '') : iconKey;
+    const nextPng = iconPng === undefined ? (before ? before.icon_png : null) : iconPng;
+    const iconChanged = !before || nextKey !== before.icon_key || iconPng !== undefined;
+
+    // Дубликаты дополнительно ловит уникальный индекс sources_name_active_uq.
+    const row = before
+      ? await tx.one(
+          `UPDATE sources SET name = $2, icon_key = $3, icon_png = $4,
+             icon_updated_at = CASE WHEN $5 THEN now() ELSE icon_updated_at END, updated_at = now()
+           WHERE id = $1 RETURNING *`,
+          [id, name, nextKey, nextPng, iconChanged]
+        )
+      : await tx.one(
+          `INSERT INTO sources (name, icon_key, icon_png, icon_updated_at)
+           VALUES ($1, $2, $3, CASE WHEN $3::bytea IS NOT NULL THEN now() END) RETURNING *`,
+          [name, nextKey, nextPng]
+        );
+
+    if (before) {
+      await recordChanges(tx, 'source', before, row, actor);
+    } else {
+      await recordEvent(tx, { entityType: 'source', entityId: row.id, action: 'create', newDisplay: row.name, actor });
+    }
+
+    return { ok: true, source: toSource(row) };
+  });
+}
+
+// Своя картинка источника (для <img src="/source-icons/:id">).
+export async function getSourceIcon(id) {
+  const sourceId = optionalUuid(id, 'Источник не найден.');
+  const row = sourceId ? await db.one('SELECT icon_png FROM sources WHERE id = $1', [sourceId]) : null;
+  return row && row.icon_png ? row.icon_png : null;
 }
 
 // ---------- Шаблоны интервью ----------
@@ -149,7 +238,7 @@ export async function getTemplatesFor(vacancyId, stage, executor = db) {
   return rows.map(toTemplate);
 }
 
-export async function saveInterviewTemplate(input = {}) {
+export async function saveInterviewTemplate(input = {}, actor) {
   const id = optionalUuid(input.id, 'Шаблон не найден.');
   const name = clean(input.name);
   const vacancyId = optionalUuid(input.vacancyId, 'Вакансия не найдена.');
@@ -181,22 +270,34 @@ export async function saveInterviewTemplate(input = {}) {
 
   const params = [name, vacancyId, stage, required, JSON.stringify(questions)];
 
-  const saved = id
-    ? await db.one(
-        `UPDATE interview_templates
-         SET name = $2, vacancy_id = $3, stage = $4, required = $5, questions = $6, updated_at = now()
-         WHERE id = $1 RETURNING id`,
-        [id, ...params]
-      )
-    : await db.one(
-        `INSERT INTO interview_templates (name, vacancy_id, stage, required, questions)
-         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-        params
-      );
+  const saved = await transaction(async tx => {
+    const before = id ? await tx.one('SELECT * FROM interview_templates WHERE id = $1 FOR UPDATE', [id]) : null;
 
-  if (!saved) {
-    fail('Шаблон не найден.', 404);
-  }
+    if (id && !before) {
+      fail('Шаблон не найден.', 404);
+    }
+
+    const row = before
+      ? await tx.one(
+          `UPDATE interview_templates
+           SET name = $2, vacancy_id = $3, stage = $4, required = $5, questions = $6, updated_at = now()
+           WHERE id = $1 RETURNING *`,
+          [id, ...params]
+        )
+      : await tx.one(
+          `INSERT INTO interview_templates (name, vacancy_id, stage, required, questions)
+           VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+          params
+        );
+
+    if (before) {
+      await recordChanges(tx, 'template', before, row, actor);
+    } else {
+      await recordEvent(tx, { entityType: 'template', entityId: row.id, action: 'create', newDisplay: row.name, actor });
+    }
+
+    return row;
+  });
 
   const row = await db.one(TEMPLATE_SELECT + ' WHERE t.id = $1', [saved.id]);
 
@@ -242,6 +343,7 @@ export async function getReferenceData() {
     },
     otherReason: APP_CONFIG.OTHER_REASON,
     vacancyStatusTransitions: VACANCY_STATUS_TRANSITIONS,
+    sourceIconKeys: SOURCE_ICON_KEYS,
     trashRetentionDays: APP_CONFIG.TRASH_RETENTION_DAYS
   };
 }

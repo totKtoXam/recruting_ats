@@ -189,6 +189,10 @@
   --brand-linkedin:#0a66c2;
   --brand-telegram:#229ed9;
   --brand-hh:#e31e24;
+  --brand-instagram:#c72c6a;  --brand-facebook:#1467d6;  --brand-whatsapp:#0f7a6d;
+  --brand-youtube:#c00000;    --brand-vk:#0068e0;        --brand-habr:#3a7690;
+  --brand-enbek:#036394;      --brand-olx:#002f34;       --brand-indeed:#2557a7;
+  --brand-glassdoor:#0a7d34;  --brand-superjob:#15803d;  --brand-jooble:#b93f0a;
   --brand-github-bg:#111827;
   --brand-github-fg:#fff;
   --brand-referral-bg:#fef3c7;  --brand-referral-fg:#a16207;
@@ -2616,6 +2620,28 @@ th.sortable:focus-visible{outline:2px solid var(--primary-ring);outline-offset:-
 /* Board header: counts live on the state switch; vacancy chips are toggles. */
 .seg-count{margin-left:6px;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--surface);color:var(--text-2);font-size:12px;font-weight:600;line-height:18px;text-align:center;font-variant-numeric:tabular-nums}
 .segmented-option input:checked+span .seg-count{background:var(--primary-soft);color:var(--primary)}
+
+/* Переключатель состояния записей: у каждого состояния свой цвет и значок,
+   счётчик — цветная «таблетка»; у выбранного она залита цветом состояния. */
+.segmented-option[data-state]{--st:var(--primary);--st-tint:var(--primary-soft)}
+.segmented-option[data-state="active"]{--st:var(--success);--st-tint:var(--success-tint)}
+.segmented-option[data-state="archived"]{--st:var(--warning);--st-tint:var(--warning-tint)}
+.segmented-option[data-state="deleted"]{--st:var(--danger);--st-tint:var(--danger-soft)}
+.segmented-option[data-state]>span{gap:6px;padding:0 5px 0 9px}
+.seg-icon{width:14px;height:14px;flex:none;color:var(--st);opacity:.7;transition:opacity var(--dur-fast,.12s)}
+.segmented-option[data-state]:hover .seg-icon{opacity:1}
+.segmented-option[data-state] input:checked+span{color:var(--st);box-shadow:0 0 0 1px color-mix(in srgb,var(--st) 40%,transparent),0 1px 3px var(--hover)}
+.segmented-option[data-state] input:checked+span .seg-icon{opacity:1}
+.segmented-option[data-state] .seg-count{
+  margin-left:2px;min-width:20px;height:18px;min-height:0;padding:0 6px;line-height:18px;
+  display:inline-block;border-radius:999px;font-size:11.5px;font-weight:700;
+  background:var(--st-tint);color:var(--st);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--st) 22%,transparent);
+  transition:background-color var(--dur-fast,.12s),color var(--dur-fast,.12s)
+}
+.segmented-option[data-state] input:checked+span .seg-count{background:var(--st);color:var(--surface);box-shadow:none}
+.segmented-option[data-state] .seg-count.is-zero{background:transparent;color:var(--faint);box-shadow:inset 0 0 0 1px var(--line)}
+.segmented-option[data-state] input:checked+span .seg-count.is-zero{background:var(--st-tint);color:var(--st);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--st) 30%,transparent)}
 .vacancy-stats{gap:12px;padding:8px var(--page-pad)}
 .vacancy-stats-label{font-size:12px;font-weight:500;letter-spacing:0;text-transform:none;color:var(--muted)}
 .vacancy-stat-chip{height:28px;padding:0 4px 0 10px;font-size:13px}
@@ -2684,5 +2710,130 @@ th.sortable:focus-visible{outline:2px solid var(--primary-ring);outline-offset:-
   .data-table tbody td.table-empty{display:block}
   .data-table tbody td.table-empty::before{display:none}
 }
+
+/* Job-board / source brand icons (presets). Custom uploads render as <img>. */
+.brand-icon .icon{width:12px;height:12px}
+.brand-instagram{background:var(--brand-instagram);color:var(--brand-on)}
+.brand-facebook{background:var(--brand-facebook);color:var(--brand-on)}
+.brand-whatsapp{background:var(--brand-whatsapp);color:var(--brand-on)}
+.brand-youtube{background:var(--brand-youtube);color:var(--brand-on)}
+.brand-x,.brand-djinni{background:var(--brand-github-bg);color:var(--brand-github-fg)}
+.brand-vk{background:var(--brand-vk);color:var(--brand-on)}
+.brand-habr{background:var(--brand-habr);color:var(--brand-on)}
+.brand-enbek{background:var(--brand-enbek);color:var(--brand-on)}
+.brand-olx{background:var(--brand-olx);color:var(--brand-on);font-size:8px;letter-spacing:-.04em}
+.brand-indeed{background:var(--brand-indeed);color:var(--brand-on)}
+.brand-glassdoor{background:var(--brand-glassdoor);color:var(--brand-on)}
+.brand-superjob{background:var(--brand-superjob);color:var(--brand-on)}
+.brand-jooble{background:var(--brand-jooble);color:var(--brand-on)}
+.brand-website,.brand-direct,.brand-agency,.brand-event,.brand-other{background:var(--brand-generic-bg);color:var(--brand-generic-fg)}
+.brand-custom{background:transparent;overflow:hidden}
+.brand-custom img{width:100%;height:100%;object-fit:contain;display:block}
+.brand-icon{font-size:12px;line-height:1}
+
+/* =====================================================================
+   Board: collapsed columns, fresh records, filters
+   ===================================================================== */
+@media(min-width:901px){.filters{grid-template-columns:minmax(260px,2fr) repeat(2,minmax(180px,1fr)) auto}}
+
+/* Collapsed column = one tall button: chevron, count, vertical stage name. */
+.column.collapsed{flex:0 0 48px;min-width:48px;border-top-width:3px}
+.column-expand{
+  display:flex;flex-direction:column;align-items:center;gap:10px;
+  width:100%;height:100%;min-height:200px;padding:10px 0 14px;
+  border:0;border-radius:var(--radius);background:transparent;color:var(--muted);cursor:pointer;
+  transition:background-color var(--dur-fast),color var(--dur-fast)
+}
+.column-expand:hover{background:var(--hover);color:var(--text)}
+.column-expand:focus-visible{outline:none;box-shadow:inset 0 0 0 2px var(--primary-ring)}
+.column-expand-count{
+  min-width:24px;height:22px;padding:0 6px;border-radius:999px;
+  display:grid;place-items:center;font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;
+  background:var(--surface);color:var(--text-2);box-shadow:inset 0 0 0 1px var(--line)
+}
+.column-expand-label{
+  writing-mode:vertical-rl;transform:rotate(180deg);
+  font-size:13px;font-weight:600;letter-spacing:.01em;white-space:nowrap;color:var(--text-2)
+}
+.column-new .column-expand-label{color:var(--chip-new-fg)}
+.column-hr .column-expand-label{color:var(--chip-hr-fg)}
+.column-tech .column-expand-label{color:var(--chip-tech-fg)}
+.column-final .column-expand-label{color:var(--chip-final-fg)}
+.column-offer .column-expand-label{color:var(--chip-offer-fg)}
+.column-hired .column-expand-label{color:var(--chip-hired-fg)}
+.column-rejected .column-expand-label{color:var(--chip-rejected-fg)}
+.column-new .column-expand-count{background:var(--chip-new-bg);color:var(--chip-new-fg);box-shadow:none}
+.column-hr .column-expand-count{background:var(--chip-hr-bg);color:var(--chip-hr-fg);box-shadow:none}
+.column-tech .column-expand-count{background:var(--chip-tech-bg);color:var(--chip-tech-fg);box-shadow:none}
+.column-final .column-expand-count{background:var(--chip-final-bg);color:var(--chip-final-fg);box-shadow:none}
+.column-offer .column-expand-count{background:var(--chip-offer-bg);color:var(--chip-offer-fg);box-shadow:none}
+.column-hired .column-expand-count{background:var(--chip-hired-bg);color:var(--chip-hired-fg);box-shadow:none}
+.column-rejected .column-expand-count{background:var(--chip-rejected-bg);color:var(--chip-rejected-fg);box-shadow:none}
+.column.collapsed.drag-over .column-expand{background:var(--primary-tint)}
+
+/* Vacancy chips: multi-select + reset. */
+.vacancy-stat-reset{
+  display:inline-flex;align-items:center;gap:4px;height:28px;padding:0 10px;
+  border:1px dashed var(--line-strong);border-radius:999px;background:transparent;
+  color:var(--muted);font:inherit;font-size:13px;font-weight:500;cursor:pointer
+}
+.vacancy-stat-reset:hover{color:var(--danger);border-color:var(--danger)}
+.vacancy-stat-reset:focus-visible{outline:none;box-shadow:0 0 0 2px var(--primary-ring)}
+
+/* Fresh (just created) records: accent until opened. */
+.fresh-badge{
+  display:inline-flex;align-items:center;height:18px;margin-right:6px;padding:0 7px;border-radius:999px;
+  background:var(--primary);color:var(--on-primary);font-size:12px;font-weight:600;vertical-align:1px
+}
+.candidate-number .fresh-badge,.candidate-number .state-badge{margin-left:4px}
+.candidate-card.card-fresh{box-shadow:0 0 0 2px var(--primary-ring),var(--shadow);animation:freshPulse 1.6s var(--ease-out) 2}
+.data-table tbody tr.row-fresh,.template-row.row-fresh{background:var(--primary-tint-2);box-shadow:inset 3px 0 0 var(--primary)}
+@keyframes freshPulse{50%{box-shadow:0 0 0 5px var(--primary-tint-2),var(--shadow)}}
+@media(prefers-reduced-motion:reduce){.candidate-card.card-fresh{animation:none}}
+
+/* Source icon picker. */
+.icon-picker{display:grid;grid-template-columns:repeat(auto-fill,minmax(44px,1fr));gap:6px;margin-top:4px}
+.icon-tile{
+  position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+  min-height:44px;padding:6px 4px;border:1px solid var(--line);border-radius:var(--radius);
+  background:var(--surface);color:var(--text-2);font:inherit;cursor:pointer;
+  transition:border-color var(--dur-fast),background-color var(--dur-fast)
+}
+.icon-tile:hover:not(:disabled){border-color:var(--primary-border);background:var(--primary-tint)}
+.icon-tile:focus-visible{outline:none;box-shadow:0 0 0 2px var(--primary-ring)}
+.icon-tile.is-selected{border-color:var(--primary);background:var(--primary-tint-2);box-shadow:inset 0 0 0 1px var(--primary)}
+.icon-tile:disabled{opacity:.5;cursor:not-allowed}
+.icon-tile .brand-icon{width:22px;height:22px;flex-basis:22px}
+.icon-tile .brand-icon .icon{width:13px;height:13px}
+.icon-tile-caption{font-size:12px;line-height:1;color:var(--muted)}
+.icon-tile-auto{display:inline-flex}
+.icon-tile-upload .icon{width:18px;height:18px;color:var(--primary)}
+.icon-tile-custom{grid-column:span 2;flex-direction:row;cursor:default}
+.icon-tile-custom .brand-icon{width:28px;height:28px;flex-basis:28px}
+.icon-tile-actions{display:flex;gap:2px}
+.input-with-brand .brand-icon{border-radius:var(--radius-sm)}
+
+/* Vacancy publications editor + table icons. */
+.vacancy-links{display:flex;flex-direction:column;gap:8px}
+.vacancy-link-row{display:grid;grid-template-columns:22px minmax(0,1.6fr) minmax(0,1fr) auto auto;gap:8px;align-items:center}
+.vacancy-link-icon{display:inline-flex}
+.vacancy-link-open[hidden]{display:none}
+.pub-links{display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap}
+.pub-link{display:inline-flex;border-radius:var(--radius-sm);text-decoration:none}
+.pub-link .brand-icon{width:22px;height:22px;flex-basis:22px}
+.pub-link:hover .brand-icon{box-shadow:0 0 0 2px var(--primary-border)}
+@media(max-width:560px){
+  .vacancy-link-row{grid-template-columns:22px minmax(0,1fr) auto auto}
+  .vacancy-link-name{grid-column:2 / 3;grid-row:2}
+}
+
+/* State switch with counts wraps nicely on small screens. */
+.segmented{flex-wrap:wrap;height:auto;min-height:var(--control-h)}
+.segmented-option span{min-height:24px}
+
+/* Настройки: one page, top-level tabs under the page header. */
+.settings-tabs{flex:0 0 auto}
+.settings-tabs .tab{text-decoration:none}
+.sidebar-link-top{margin-top:10px}
 
 </style>
