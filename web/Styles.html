@@ -185,6 +185,7 @@
   --rejected-value:#4a2323;
 
   --brand-on:#fff;
+  --knob:#fff;           /* switch thumb: always light, both themes */
   --brand-linkedin:#0a66c2;
   --brand-telegram:#229ed9;
   --brand-hh:#e31e24;
@@ -291,6 +292,7 @@
     --rejected-label:#b98f8f;
     --rejected-value:#f3dede;
 
+    --knob:#f1f5f9;
     --brand-github-bg:#e6e9ef;
     --brand-github-fg:#111827;
     --brand-referral-bg:rgba(234,179,8,.18);  --brand-referral-fg:#fde047;
@@ -390,6 +392,7 @@
     --rejected-label:#b98f8f;
     --rejected-value:#f3dede;
 
+    --knob:#f1f5f9;
     --brand-github-bg:#e6e9ef;
     --brand-github-fg:#111827;
     --brand-referral-bg:rgba(234,179,8,.18);  --brand-referral-fg:#fde047;
@@ -2552,6 +2555,134 @@ button,a,summary,label,[role="button"],.candidate-card{touch-action:manipulation
 @media (prefers-reduced-motion:reduce){
   .skeleton::after{animation:none}
   .button:active:not(:disabled),.icon-btn:active:not(:disabled){transform:none}
+}
+
+/* =====================================================================
+   Screens polish: tables, toolbars, empty states
+   ===================================================================== */
+.nowrap{white-space:nowrap}
+
+/* Table card toolbar: the page header already names the section, so the
+   card title is kept for screen readers only; state switch left, CTA right. */
+#viewAdmin .table-toolbar>h3{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+#viewAdmin .table-toolbar{min-height:56px;padding:10px 12px}
+#viewAdmin .table-toolbar>.header-actions{flex:1 1 auto;justify-content:space-between;gap:12px;margin:0}
+
+/* Filter row: quiet filled inputs instead of a second row of underlines. */
+.filter-input,
+tr.filter-row input:not([type=checkbox]),
+tr.filter-row select{
+  height:30px;min-height:30px;padding:4px 8px;
+  border:1px solid transparent;border-radius:var(--radius-sm);
+  background-color:var(--surface-2);font-size:13px
+}
+tr.filter-row select,select.filter-input{padding-right:24px;background-position:right 6px center}
+.filter-input:hover,tr.filter-row input:hover,tr.filter-row select:hover{border-color:var(--line-strong)}
+.filter-input:focus,tr.filter-row input:focus,tr.filter-row select:focus{border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-ring);background-color:var(--surface)}
+.admin-table tr.filter-row th,.data-table tr.filter-row th{top:38px;height:44px;padding:6px 8px;vertical-align:middle}
+.admin-table thead th,.data-table thead th{height:38px;font-size:12px;letter-spacing:.01em}
+.admin-table td,.data-table td{height:48px;padding:8px 10px;font-size:14px}
+.data-table tbody tr:focus-visible{outline:2px solid var(--primary-ring);outline-offset:-2px}
+th.sortable:focus-visible{outline:2px solid var(--primary-ring);outline-offset:-2px}
+
+.table-empty-state{display:flex;flex-direction:column;align-items:center;gap:4px;padding:32px 16px;color:var(--muted)}
+.table-empty-state .icon{width:28px;height:28px;margin-bottom:6px;color:var(--faint);stroke-width:1.5}
+.table-empty-state strong{font-size:14px;font-weight:600;color:var(--text-2)}
+.table-empty-state span{font-size:12px;max-width:360px}
+.empty-cell,.table-empty{padding:0!important}
+
+.user-name-cell{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px}
+.tg-verified{color:var(--success);display:inline-flex;vertical-align:-2px}
+.tg-unverified{color:var(--faint);display:inline-flex;vertical-align:-2px}
+
+/* Vacancy status verbs: quiet secondary buttons next to the status chip. */
+.status-action{height:26px;padding:0 10px;border-color:var(--line);background:transparent;color:var(--text-2);font-size:12px;font-weight:500}
+.status-action:hover:not(:disabled){background:var(--primary-tint);border-color:var(--primary-border);color:var(--primary)}
+.status-action:focus-visible{outline:none;box-shadow:0 0 0 2px var(--primary-ring)}
+
+.table-pagination{min-height:48px;padding:6px 8px 6px 16px}
+
+@media(max-width:720px){
+  #viewAdmin .table-toolbar{padding:8px}
+  #viewAdmin .table-toolbar>.header-actions .segmented{flex:1 1 auto;min-width:0}
+  #viewAdmin .table-toolbar>.header-actions .segmented-option{flex:1 1 0}
+  #viewAdmin .table-toolbar>.header-actions .segmented-option span{justify-content:center;width:100%}
+  .table-pagination{gap:2px;padding:6px 4px 6px 12px}
+  .table-pagination .page-size,
+  .table-pagination .icon-btn:first-of-type,
+  .table-pagination .icon-btn:last-of-type{display:none}
+}
+
+/* Board header: counts live on the state switch; vacancy chips are toggles. */
+.seg-count{margin-left:6px;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--surface);color:var(--text-2);font-size:12px;font-weight:600;line-height:18px;text-align:center;font-variant-numeric:tabular-nums}
+.segmented-option input:checked+span .seg-count{background:var(--primary-soft);color:var(--primary)}
+.vacancy-stats{gap:12px;padding:8px var(--page-pad)}
+.vacancy-stats-label{font-size:12px;font-weight:500;letter-spacing:0;text-transform:none;color:var(--muted)}
+.vacancy-stat-chip{height:28px;padding:0 4px 0 10px;font-size:13px}
+.vacancy-stat-chip b{min-width:20px;height:20px;font-size:12px}
+.vacancy-stat-chip.active{border-color:var(--primary);background:var(--primary-tint-2);color:var(--primary-strong)}
+.vacancy-stat-chip.active b{background:var(--primary);color:var(--on-primary)}
+.vacancy-stat-chip:focus-visible{outline:none;box-shadow:0 0 0 2px var(--primary-ring)}
+
+/* Candidate header: current stage, then labelled transitions. */
+.candidate-header-flow{gap:8px}
+.candidate-header-flow .transition-bar:not(:empty){padding-left:10px;border-left:1px solid var(--line)}
+.candidate-header-flow .transition-bar:not(:empty)::before{content:"Перевести:";margin-right:4px;font-size:12px;color:var(--muted)}
+.transition-pill{height:28px;padding:0 10px;font-size:12px}
+.transition-pill:hover{filter:none;box-shadow:inset 0 0 0 1px currentColor}
+
+/* Phones: primary navigation moves to a bottom tab bar with labels
+   (icon-only rails are hard to read and eat horizontal space). */
+@media(max-width:720px){
+  .app-shell{display:block}
+  .sidebar{
+    position:fixed;left:0;right:0;bottom:0;top:auto;z-index:30;
+    width:100%;height:auto;flex:none;
+    border-right:0;border-top:1px solid var(--line);
+    background:var(--surface);
+    padding-bottom:env(safe-area-inset-bottom,0px);
+    box-shadow:0 -4px 16px -8px rgba(15,23,42,.18)
+  }
+  .sidebar-nav{flex-direction:row;align-items:stretch;gap:0;padding:4px 4px 2px;overflow:visible}
+  .sidebar-group{display:contents}
+  .sidebar-group-toggle{display:none!important}
+  .sidebar-group-items,.sidebar-group-items[hidden]{display:contents!important}
+  .sidebar-toggle{display:none}
+  .sidebar-link,.sidebar-sublink{
+    flex:1 1 0;min-width:0;height:56px;min-height:56px;padding:4px 2px;
+    flex-direction:column;justify-content:center;gap:3px;border-radius:var(--radius)
+  }
+  .sidebar-link[hidden]{display:none}
+  .sidebar-link .icon{width:20px;height:20px}
+  .sidebar-link span{display:none!important}
+  .sidebar-link::after{content:attr(data-short);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:500;line-height:1.2}
+  .sidebar-link.active{background:transparent}
+  .sidebar-link.active::before{left:25%;right:25%;top:0;bottom:auto;width:auto;height:3px;border-radius:0 0 3px 3px}
+  body{padding-bottom:calc(64px + env(safe-area-inset-bottom,0px))}
+  .sync-status{bottom:calc(72px + env(safe-area-inset-bottom,0px))}
+  .toast{bottom:calc(76px + env(safe-area-inset-bottom,0px))}
+  #viewAdmin{min-height:calc(100dvh - var(--topbar-h) - 64px)}
+}
+
+/* Phones: server tables become a list of cards ("label — value" rows),
+   the filter row turns into a wrapped set of labelled fields. */
+@media(max-width:720px){
+  .admin-table,.data-table{min-width:0!important}
+  .data-table,.data-table thead,.data-table tbody{display:block;width:100%}
+  .data-table thead tr:first-child{display:none}
+  .data-table tr.filter-row{display:flex;flex-wrap:wrap;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
+  .data-table tr.filter-row th{position:static;display:flex;flex-direction:column;gap:4px;flex:1 1 140px;height:auto;padding:0;border:0;background:none}
+  .data-table tr.filter-row th.no-filter{display:none}
+  .data-table tr.filter-row th[data-label]::before{content:attr(data-label);font-size:12px;font-weight:500;color:var(--muted)}
+  .data-table tr.filter-row th[data-label="№"]{flex:0 0 72px}
+  .data-table tbody tr{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;padding:12px;border-bottom:1px solid var(--line-soft)}
+  .data-table tbody td{grid-column:1;display:flex;align-items:baseline;gap:10px;height:auto;padding:0;border:0;min-width:0}
+  .data-table tbody td[data-label]:not([data-label=""])::before{content:attr(data-label);flex:0 0 92px;font-size:12px;color:var(--muted)}
+  .data-table tbody td[data-label=""]{grid-column:2;grid-row:1 / span 2;align-items:flex-start;justify-content:flex-end}
+  .data-table tbody td>*{min-width:0}
+  .data-table tbody tr:has(.table-empty){display:block;padding:0}
+  .data-table tbody td.table-empty{display:block}
+  .data-table tbody td.table-empty::before{display:none}
 }
 
 </style>

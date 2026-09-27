@@ -53,16 +53,16 @@
         <div class="sidebar-group" data-group="recruiting">
           <button type="button" class="sidebar-group-toggle" aria-expanded="true" onclick="toggleSidebarGroup('recruiting')"><svg class="icon"><use href="#i-kanban"/></svg><span>Рекрутинг</span><svg class="icon chevron"><use href="#i-chevron-right"/></svg></button>
           <div class="sidebar-group-items" id="sidebarGroup-recruiting">
-          <a class="sidebar-link" href="#/candidates" data-route="candidates"><svg class="icon"><use href="#i-users"/></svg><span>Кандидаты</span></a>
-          <a class="sidebar-link" href="#/vacancies" data-route="vacancies"><svg class="icon"><use href="#i-briefcase"/></svg><span>Вакансии</span></a>
+          <a class="sidebar-link" href="#/candidates" data-route="candidates" data-short="Кандидаты"><svg class="icon"><use href="#i-users"/></svg><span>Кандидаты</span></a>
+          <a class="sidebar-link" href="#/vacancies" data-route="vacancies" data-short="Вакансии"><svg class="icon"><use href="#i-briefcase"/></svg><span>Вакансии</span></a>
           </div>
         </div>
         <div class="sidebar-group" data-group="settings">
           <button type="button" class="sidebar-group-toggle" aria-expanded="true" onclick="toggleSidebarGroup('settings')"><svg class="icon"><use href="#i-settings"/></svg><span>Настройки</span><svg class="icon chevron"><use href="#i-chevron-right"/></svg></button>
           <div class="sidebar-group-items" id="sidebarGroup-settings">
-          <a class="sidebar-link" href="#/settings/sources" data-route="settings/sources"><svg class="icon"><use href="#i-list"/></svg><span>Источники вакансий</span></a>
-          <a class="sidebar-link" href="#/settings/users" data-route="settings/users" id="sidebarUsersLink" hidden><svg class="icon"><use href="#i-user"/></svg><span>Пользователи</span></a>
-          <a class="sidebar-link" href="#/settings/integrations" data-route="settings/integrations" data-admin-only hidden><svg class="icon"><use href="#i-link"/></svg><span>Интеграции</span></a>
+          <a class="sidebar-link" href="#/settings/sources" data-route="settings/sources" data-short="Источники"><svg class="icon"><use href="#i-list"/></svg><span>Источники вакансий</span></a>
+          <a class="sidebar-link" href="#/settings/users" data-route="settings/users" data-short="Люди" id="sidebarUsersLink" hidden><svg class="icon"><use href="#i-user"/></svg><span>Пользователи</span></a>
+          <a class="sidebar-link" href="#/settings/integrations" data-route="settings/integrations" data-short="Интеграции" data-admin-only hidden><svg class="icon"><use href="#i-link"/></svg><span>Интеграции</span></a>
           </div>
         </div>
       </nav>
@@ -95,7 +95,7 @@
 
       <div class="field compact">
         <label>Вакансия</label>
-        <select id="filterVacancy" onchange="renderBoard()"></select>
+        <select id="filterVacancy" onchange="renderBoard();renderVacancyStats()"></select>
       </div>
 
       <div class="field compact">
@@ -120,7 +120,7 @@
       </div>
     </section>
 
-    <section id="stats" class="stats"></section>
+    <section id="stats" class="stats" hidden></section>
     <section id="vacancyStats" class="vacancy-stats"></section>
     <section id="board" class="board"></section>
   </main>
@@ -298,7 +298,7 @@
               <input
                 id="candidateSalary"
                 inputmode="numeric"
-                placeholder="500 000"
+                placeholder="Например, 500 000"
                 oninput="formatMoneyInput(this, 10000000)"
               >
               <small class="field-hint">Максимум 10 000 000</small>
@@ -362,7 +362,7 @@
           <div class="field">
             <div class="field-header">
               <label>Иные ссылки</label>
-              <button class="icon-btn icon-btn-sm" type="button" data-tip="Добавить ссылку" aria-label="Добавить ссылку" onclick="addCandidateLink()"><svg class="icon"><use href="#i-plus"/></svg></button>
+              <button class="button button-ghost button-small" type="button" onclick="addCandidateLink()"><svg class="icon icon-sm"><use href="#i-plus"/></svg><span>Добавить</span></button>
             </div>
             <div id="candidateLinks"></div>
           </div>

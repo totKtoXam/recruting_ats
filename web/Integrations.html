@@ -1,30 +1,72 @@
 <style>
-/* ---------- Настройки → Интеграции (только администраторы) ---------- */
-.integrations{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:12px;align-items:start}
-.integration-card .section-title-row{align-items:flex-start}
-.integration-card h3{margin:0}
-.integration-desc{margin:2px 0 0;font-size:12px;color:var(--muted)}
-.integration-fields{display:flex;flex-direction:column;gap:12px;margin-top:4px}
-.integration-field label.field-label{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.source-badge{font-size:12px;font-weight:600;padding:1px 6px;border-radius:999px;background:var(--surface-3);color:var(--muted);text-transform:none}
+/* ---------- Настройки → Интеграции (только администраторы) ----------
+   Одна колонка карточек-форм: шапка (иконка, название, описание), поля,
+   подвал с действиями. «Сохранить» активна только при несохранённых правках. */
+#admin-integrations.active{overflow-y:auto}
+.integrations{display:flex;flex-direction:column;gap:16px;max-width:880px}
+.integration-card{border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface);box-shadow:var(--shadow);overflow:hidden}
+.integration-head{display:flex;align-items:flex-start;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line)}
+.integration-icon{width:36px;height:36px;flex:0 0 36px;display:grid;place-items:center;border-radius:var(--radius);background:var(--primary-soft);color:var(--primary)}
+.integration-icon .icon{width:18px;height:18px}
+.integration-title{min-width:0;flex:1}
+.integration-title h3{margin:0;font-size:16px;font-weight:650}
+.integration-desc{margin:2px 0 0;font-size:14px;color:var(--muted)}
+.integration-status{flex:0 0 auto;align-self:center}
+
+.integration-body{display:flex;flex-direction:column;gap:18px;padding:18px 20px 20px}
+.integration-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-flow:row dense;gap:18px 24px}
+.integration-field.wide,.integration-field.switch-field{grid-column:1/-1}
+.integration-field .field-label{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:22px}
+.integration-field .field-hint{margin-top:4px}
+
+/* Откуда взято значение: ATS / .env / по умолчанию / не задано. */
+.source-badge{flex:0 0 auto;display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:999px;font-size:12px;font-weight:500;white-space:nowrap;text-transform:none;letter-spacing:0}
 .source-badge.src-db{background:var(--primary-soft);color:var(--primary)}
 .source-badge.src-env{background:var(--surface-3);color:var(--text-2)}
+.source-badge.src-default{background:transparent;color:var(--muted);box-shadow:inset 0 0 0 1px var(--line)}
+.source-badge.src-none{background:transparent;color:var(--faint);border:1px dashed var(--line-strong)}
 .source-badge.src-broken{background:var(--danger-tint);color:var(--danger)}
+
 .secret-input{display:flex;gap:4px;align-items:center}
 .secret-input input{flex:1;min-width:0}
 .switch-line{display:flex;align-items:center;gap:10px;font-size:14px;cursor:pointer}
-.integration-result{margin-top:12px;padding:8px 10px;border-radius:var(--radius);font-size:12px;display:flex;gap:8px;align-items:flex-start}
+.switch-line .source-badge{margin-left:auto}
+
+.integration-info{display:flex;flex-direction:column;gap:10px;padding:14px 16px;border-radius:var(--radius);background:var(--surface-2);border:1px solid var(--line-soft);font-size:14px;color:var(--text-2)}
+.integration-info h4{margin:0;font-size:14px;font-weight:600;color:var(--text)}
+.integration-info p{margin:0}
+.copy-field{display:grid;grid-template-columns:110px minmax(0,1fr) auto;align-items:center;gap:8px}
+.copy-field span{font-size:12px;font-weight:500;color:var(--muted)}
+.copy-field code{min-width:0;padding:6px 8px;border-radius:var(--radius-sm);background:var(--surface);border:1px solid var(--line);font-size:13px;color:var(--text);overflow-wrap:anywhere}
+.integration-notes{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+.integration-notes code{font-size:12px;padding:0 4px;border-radius:4px;background:var(--surface-3);color:var(--text)}
+.integration-warning{display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border-radius:var(--radius);background:var(--warning-tint);color:var(--warning);font-size:12px}
+
+.integration-result{display:flex;gap:8px;align-items:flex-start;margin:0 20px 16px;padding:10px 12px;border-radius:var(--radius);font-size:14px}
 .integration-result[hidden]{display:none}
-.integration-result .icon{flex:0 0 auto;width:14px;height:14px;margin-top:1px}
+.integration-result .icon{flex:0 0 auto;width:16px;height:16px;margin-top:2px}
 .integration-result.ok{background:var(--success-tint);color:var(--success)}
 .integration-result.error{background:var(--danger-tint);color:var(--danger)}
 .integration-result.busy{background:var(--surface-2);color:var(--text-2)}
-.integration-info{margin-top:12px;padding:10px;border-radius:var(--radius);background:var(--surface-2);border:1px solid var(--line-soft);font-size:12px;color:var(--text-2);display:flex;flex-direction:column;gap:6px}
-.integration-info code{font-size:12px;padding:1px 4px;border-radius:4px;background:var(--surface-3);color:var(--text);overflow-wrap:anywhere}
-.copy-line{display:flex;align-items:center;gap:6px}
-.copy-line code{flex:1}
-.integration-meta{margin-top:10px;font-size:12px;color:var(--muted)}
-.integration-card.is-dirty .save-integration{box-shadow:0 0 0 2px var(--primary-ring)}
+.integration-result.busy .icon{animation:spin 1s linear infinite}
+
+.integration-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 20px;border-top:1px solid var(--line);background:var(--surface-2)}
+.integration-meta{margin-right:auto;font-size:12px;color:var(--muted)}
+.integration-dirty{display:none;align-items:center;gap:6px;font-size:12px;font-weight:500;color:var(--warning)}
+.integration-dirty::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.integration-card.is-dirty .integration-dirty{display:inline-flex}
+.integrations-footnote{max-width:880px;margin:16px 0 0;font-size:12px;color:var(--muted)}
+.integrations-footnote code{font-size:12px;padding:0 4px;border-radius:4px;background:var(--surface-3);color:var(--text)}
+
+@media(max-width:720px){
+  .integration-fields{grid-template-columns:1fr}
+  .integration-head,.integration-body{padding-left:14px;padding-right:14px}
+  .integration-foot{padding:12px 14px}
+  .integration-foot .button{flex:1 1 auto}
+  .integration-meta{flex:1 0 100%}
+  .copy-field{grid-template-columns:minmax(0,1fr) auto}
+  .copy-field span{grid-column:1/-1}
+}
 </style>
 
 <script>
@@ -35,6 +77,7 @@
 const integrations={data:null,initial:{},loading:false};
 const INTEGRATION_ICONS={auth:'user',smtp:'mail',telegram:'send'};
 const SOURCE_LABELS={db:'задано в ATS',env:'из .env',default:'по умолчанию',none:'не задано'};
+const SOURCE_TIPS={db:'Значение сохранено в ATS и важнее .env',default:'Используется значение по умолчанию',none:'Значение не задано ни в ATS, ни в .env'};
 
 async function showIntegrations(){
   if(integrations.loading)return;
@@ -51,42 +94,53 @@ async function showIntegrations(){
 
 function sourceBadge(field){
   if(field.broken)return '<span class="source-badge src-broken" data-tip="Сохранённое значение не расшифровано (сменился ключ шифрования) — действует .env. Введите заново.">не расшифровано</span>';
-  return '<span class="source-badge src-'+field.source+'"'+(field.source==='env'?' data-tip="Переменная '+escapeHtml(field.env)+'"':'')+'>'+SOURCE_LABELS[field.source]+'</span>';
+  const tip=field.source==='env'?'Переменная окружения '+field.env:SOURCE_TIPS[field.source];
+  return '<span class="source-badge src-'+field.source+'"'+(tip?' data-tip="'+escapeHtml(tip)+'"':'')+'>'+SOURCE_LABELS[field.source]+'</span>';
+}
+
+// Пример в плейсхолдере явно помечен, чтобы его не путали с введённым значением.
+function examplePlaceholder(text){
+  if(!text)return '';
+  return /^\d+$/.test(String(text))?String(text):'Например: '+text;
 }
 
 function integrationFieldHtml(group,field){
   const id='int-'+field.key.replace('.','-');
-  const label='<label class="field-label" for="'+id+'">'+escapeHtml(field.label)+' '+sourceBadge(field)+'</label>';
+  const label='<label class="field-label" for="'+id+'"><span>'+escapeHtml(field.label)+'</span>'+sourceBadge(field)+'</label>';
   const hint=field.hint?'<small class="field-hint">'+escapeHtml(field.hint)+'</small>':'';
   const oninput='markIntegrationDirty(\''+group+'\')';
+  const wide=field.type==='secret'||String(field.value||'').length>40||String(field.placeholder||'').length>40;
 
   if(field.type==='bool'){
-    return '<div class="field integration-field">'+
+    return '<div class="field integration-field switch-field">'+
       '<label class="switch-line"><span class="switch"><input id="'+id+'" type="checkbox" data-key="'+field.key+'"'+(field.value?' checked':'')+' onchange="'+oninput+'"><span class="switch-track"></span></span>'+
-      '<span>'+escapeHtml(field.label)+'</span> '+sourceBadge(field)+'</label>'+hint+'</div>';
+      '<span>'+escapeHtml(field.label)+'</span>'+sourceBadge(field)+'</label>'+hint+'</div>';
   }
 
   if(field.type==='secret'){
-    const placeholder=field.isSet?'Задан ('+field.hintValue+') — оставьте пустым, чтобы не менять':'Не задан';
-    return '<div class="field integration-field">'+label+
-      '<div class="secret-input"><input id="'+id+'" type="password" autocomplete="new-password" data-key="'+field.key+'" placeholder="'+escapeHtml(placeholder)+'" oninput="'+oninput+'">'+
-      '<button type="button" class="icon-btn" data-tip="Показать" aria-label="Показать" onclick="toggleSecretInput(\''+id+'\',this)">'+icon('eye')+'</button></div>'+hint+'</div>';
+    const current=field.isSet?'<small class="field-hint">Сейчас задан: <span class="tabular">'+escapeHtml(field.hintValue)+'</span>. Оставьте поле пустым — значение не изменится.</small>':'';
+    return '<div class="field integration-field wide">'+label+
+      '<div class="secret-input"><input id="'+id+'" type="password" autocomplete="new-password" data-key="'+field.key+'" placeholder="'+(field.isSet?'Новое значение':'Не задан')+'" oninput="'+oninput+'">'+
+      '<button type="button" class="icon-btn" data-tip="Показать" aria-label="Показать значение" aria-pressed="false" onclick="toggleSecretInput(\''+id+'\',this)">'+icon('eye')+'</button></div>'+current+hint+'</div>';
   }
 
-  return '<div class="field integration-field">'+label+
-    '<input id="'+id+'" type="'+(field.type==='number'?'number':'text')+'" data-key="'+field.key+'" value="'+escapeHtml(field.value)+'" placeholder="'+escapeHtml(field.placeholder)+'" oninput="'+oninput+'" autocomplete="off">'+hint+'</div>';
+  return '<div class="field integration-field'+(wide?' wide':'')+'">'+label+
+    '<input id="'+id+'" type="'+(field.type==='number'?'number':'text')+'" data-key="'+field.key+'" value="'+escapeHtml(field.value)+'" placeholder="'+escapeHtml(examplePlaceholder(field.placeholder))+'" oninput="'+oninput+'" autocomplete="off" spellcheck="false">'+hint+'</div>';
 }
 
 function authInfoHtml(info){
   const copy=text=>'<button type="button" class="icon-btn icon-btn-sm" data-tip="Скопировать" aria-label="Скопировать" onclick="copyIntegrationText(\''+escJs(text)+'\')">'+icon('copy','icon-sm')+'</button>';
   return '<div class="integration-info">'+
-    '<div>В Google Cloud Console → Clients у OAuth-клиента должны быть:</div>'+
-    '<div class="copy-line"><span>Redirect URI</span><code>'+escapeHtml(info.redirectUri)+'</code>'+copy(info.redirectUri)+'</div>'+
-    '<div class="copy-line"><span>JS origin</span><code>'+escapeHtml(info.javascriptOrigin)+'</code>'+copy(info.javascriptOrigin)+'</div>'+
-    '<div>Перед сохранением ATS проверяет Client ID и secret в Google: неверные значения не сохранятся, чтобы никто не потерял вход.</div>'+
-    (info.adminEmails.length?'<div>Постоянные администраторы из .env (<code>AUTH_ADMIN_EMAILS</code>): '+info.adminEmails.map(email=>'<code>'+escapeHtml(email)+'</code>').join(' ')+'</div>':'')+
-    '<div>Google Drive использует свой OAuth-клиент из .env — эти настройки на него не влияют.</div>'+
-    (info.authMode!=='google'?'<div><strong>Сейчас AUTH_MODE='+escapeHtml(info.authMode)+'</strong> — вход через Google выключен.</div>':'')+
+    (info.authMode!=='google'?'<div class="integration-warning">'+icon('alert','icon-sm')+'<span>Сейчас <strong>AUTH_MODE='+escapeHtml(info.authMode)+'</strong> — вход через Google выключен.</span></div>':'')+
+    '<h4>Настройка в Google Cloud Console</h4>'+
+    '<p>В OAuth-клиенте (раздел Clients) должны быть указаны:</p>'+
+    '<div class="copy-field"><span>Redirect URI</span><code>'+escapeHtml(info.redirectUri)+'</code>'+copy(info.redirectUri)+'</div>'+
+    '<div class="copy-field"><span>JS origin</span><code>'+escapeHtml(info.javascriptOrigin)+'</code>'+copy(info.javascriptOrigin)+'</div>'+
+    '<ul class="integration-notes">'+
+      '<li>Перед сохранением ATS проверяет Client ID и secret в Google — неверные значения не сохранятся, и никто не потеряет вход.</li>'+
+      (info.adminEmails.length?'<li>Постоянные администраторы из .env (<code>AUTH_ADMIN_EMAILS</code>): '+info.adminEmails.map(email=>'<code>'+escapeHtml(email)+'</code>').join(' ')+'</li>':'')+
+      '<li>Google Drive использует свой OAuth-клиент из .env — эти настройки на него не влияют.</li>'+
+    '</ul>'+
   '</div>';
 }
 
@@ -99,35 +153,47 @@ function renderIntegrations(){
     integrations.initial[group.key]={};
     group.fields.forEach(field=>{if(field.type!=='secret')integrations.initial[group.key][field.key]=field.value});
     const g=group.key;
-    return '<section class="admin-list-card integration-card" id="integration-'+g+'">'+
-      '<div class="section-title-row">'+
-        '<div><h3>'+icon(INTEGRATION_ICONS[g]||'settings')+' '+escapeHtml(group.title)+'</h3><p class="integration-desc">'+escapeHtml(group.description)+'</p></div>'+
-        '<div class="header-actions">'+
-          '<button type="button" class="icon-btn" data-tip="Проверить подключение" aria-label="Проверить" onclick="testIntegration(\''+g+'\',this)">'+icon('check')+'</button>'+
-          (group.overridden?'<button type="button" class="icon-btn" data-tip="Сбросить к значениям из .env" aria-label="Сбросить к .env" onclick="resetIntegration(\''+g+'\',this)">'+icon('reset')+'</button>':'')+
-          '<button type="button" class="icon-btn icon-btn-primary save-integration" data-tip="Сохранить" aria-label="Сохранить" onclick="saveIntegration(\''+g+'\',this)">'+icon('save')+'</button>'+
-        '</div>'+
+    const meta=group.updatedAt
+      ? 'Изменено '+escapeHtml(notifyFullTime(group.updatedAt))+(group.updatedBy?' · '+escapeHtml(group.updatedBy):'')
+      : 'Действуют значения из .env';
+    return '<section class="integration-card" id="integration-'+g+'" aria-labelledby="integration-title-'+g+'">'+
+      '<header class="integration-head">'+
+        '<span class="integration-icon" aria-hidden="true">'+icon(INTEGRATION_ICONS[g]||'settings')+'</span>'+
+        '<div class="integration-title"><h3 id="integration-title-'+g+'">'+escapeHtml(group.title)+'</h3><p class="integration-desc">'+escapeHtml(group.description)+'</p></div>'+
+      '</header>'+
+      '<div class="integration-body">'+
+        '<div class="integration-fields">'+group.fields.map(field=>integrationFieldHtml(g,field)).join('')+'</div>'+
+        (g==='auth'?authInfoHtml(data.info):'')+
       '</div>'+
-      '<div class="integration-fields">'+group.fields.map(field=>integrationFieldHtml(g,field)).join('')+'</div>'+
-      (g==='auth'?authInfoHtml(data.info):'')+
-      '<div class="integration-result" id="integrationResult-'+g+'" hidden></div>'+
-      (group.updatedAt?'<div class="integration-meta">Изменено '+escapeHtml(notifyFullTime(group.updatedAt))+(group.updatedBy?' · '+escapeHtml(group.updatedBy):'')+'</div>':'')+
+      '<div class="integration-result" id="integrationResult-'+g+'" role="status" aria-live="polite" hidden></div>'+
+      '<footer class="integration-foot">'+
+        '<span class="integration-meta">'+meta+'</span>'+
+        '<span class="integration-dirty">Есть несохранённые изменения</span>'+
+        (group.overridden?textBtn('reset','Сбросить к .env','resetIntegration(\''+g+'\',this)','button-ghost'):'')+
+        textBtn('refresh','Проверить подключение','testIntegration(\''+g+'\',this)','button-secondary')+
+        '<button type="button" class="button button-primary save-integration" disabled onclick="saveIntegration(\''+g+'\',this)">'+icon('save')+'<span>Сохранить</span></button>'+
+      '</footer>'+
     '</section>';
   }).join('')+'</div>'+
-  '<p class="muted notify-hint">Секреты хранятся в базе зашифрованными (ключ из '+escapeHtml(data.info.encryptionKey==='dev'?'dev-значения — задайте SESSION_SECRET':data.info.encryptionKey)+'). Если вход сломан неверными настройками — на сервере: <code>npm run settings:reset -- auth</code>.</p>';
+  '<p class="integrations-footnote">Секреты хранятся в базе зашифрованными (ключ из '+escapeHtml(data.info.encryptionKey==='dev'?'dev-значения — задайте SESSION_SECRET':data.info.encryptionKey)+'). Если вход сломан неверными настройками — выполните на сервере <code>npm run settings:reset -- auth</code>.</p>';
 }
 
 function markIntegrationDirty(group){
-  el('integration-'+group).classList.add('is-dirty');
+  const card=el('integration-'+group);
+  const dirty=Object.keys(collectIntegration(group)).length>0;
+  card.classList.toggle('is-dirty',dirty);
+  const save=card.querySelector('.save-integration');
+  if(save&&!save.classList.contains('is-loading'))save.disabled=!dirty;
 }
 
 function toggleSecretInput(id,button){
   const input=el(id);
   const show=input.type==='password';
   input.type=show?'text':'password';
+  button.setAttribute('aria-pressed',String(show));
+  button.dataset.tip=show?'Скрыть':'Показать';
   button.querySelector('use').setAttribute('href','#i-'+(show?'eye-off':'eye'));
 }
-
 async function copyIntegrationText(text){
   try{await navigator.clipboard.writeText(text);showToast('Скопировано.')}catch(error){showToast('Не удалось скопировать.','error')}
 }
@@ -156,7 +222,7 @@ function setIntegrationResult(group,type,message){
 }
 
 async function testIntegration(group,button){
-  button.disabled=true;
+  setButtonLoading(button,true,'Проверяю…');
   setIntegrationResult(group,'busy',group==='smtp'?'Подключаюсь к SMTP и отправляю тестовое письмо…':'Проверяю…');
   try{
     const result=await rpc('testIntegration',{group,values:collectIntegration(group)});
@@ -164,14 +230,14 @@ async function testIntegration(group,button){
   }catch(error){
     setIntegrationResult(group,'error',error.message||String(error));
   }finally{
-    button.disabled=false;
+    setButtonLoading(button,false);
   }
 }
 
 async function saveIntegration(group,button){
   const values=collectIntegration(group);
   if(!Object.keys(values).length){showToast('Нет изменений.');return}
-  button.disabled=true;
+  setButtonLoading(button,true,'Сохраняю…');
   if(group==='auth')setIntegrationResult(group,'busy','Проверяю Client ID и secret в Google…');
   try{
     integrations.data=await rpc('saveIntegration',{group,values});
@@ -180,8 +246,7 @@ async function saveIntegration(group,button){
     showToast('Настройки «'+integrations.data.groups.find(item=>item.key===group).title+'» сохранены.');
   }catch(error){
     setIntegrationResult(group,'error',error.message||String(error));
-  }finally{
-    button.disabled=false;
+    if(button.isConnected){setButtonLoading(button,false);button.disabled=false}
   }
 }
 

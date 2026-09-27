@@ -61,6 +61,26 @@ function setRich(id,html){
   textarea.value=html||'';
   if(window.RichEditor&&RichEditor.get(textarea))RichEditor.sync(textarea);
 }
+// Даты с сервера приходят строкой «YYYY-MM-DD[ HH:MM[:SS]]» (часовой пояс приложения).
+// Показываем по-человечески: «сегодня, 16:25», «вчера, 09:10», «27 сен, 16:25», «27 сен 2025».
+const MONTHS_SHORT=['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
+function fmtDate(value){
+  const text=String(value||'').trim();
+  const m=text.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
+  if(!m)return text;
+  const [,y,mo,d,hh,mm]=m;
+  const time=hh?hh+':'+mm:'';
+  const now=new Date();
+  const key=(date)=>date.getFullYear()+'-'+String(date.getMonth()+1).padStart(2,'0')+'-'+String(date.getDate()).padStart(2,'0');
+  const yesterday=new Date(now);yesterday.setDate(now.getDate()-1);
+  const day=y+'-'+mo+'-'+d;
+  let label;
+  if(day===key(now))label='сегодня';
+  else if(day===key(yesterday))label='вчера';
+  else label=Number(d)+' '+MONTHS_SHORT[Number(mo)-1]+(Number(y)!==now.getFullYear()?' '+y:'');
+  return time?label+', '+time:label;
+}
+
 function textToRichHtml(text){return text?'<p>'+escapeHtml(text).replace(/\n/g,'<br>')+'</p>':''}
 function option(v,label,selected){return '<option value="'+escapeHtml(v)+'"'+(selected?' selected':'')+'>'+escapeHtml(label)+'</option>'}
 
@@ -348,6 +368,8 @@ function applySidebarState(collapsed){
   // Подсказки у пунктов нужны только когда видны одни иконки.
   const iconsOnly=collapsed||NARROW_SCREEN.matches;
   document.querySelectorAll('.sidebar-link').forEach(link=>{
+    // Полное название — доступное имя (на телефоне видна короткая подпись data-short).
+    link.setAttribute('aria-label',link.textContent.trim());
     if(iconsOnly)link.dataset.tip=link.textContent.trim();
     else delete link.dataset.tip;
   });
@@ -542,9 +564,13 @@ function renderCurrentUser(){
     initials.hidden=!!user['Avatar URL'];
   }
 
-  if(name)name.textContent=user['ФИО']||user.Email||'Пользователь';
-  if(email)email.textContent=user.Email||'';
+  // Без ФИО показываем email одной строкой, а не дважды.
+  const hasName=!!(user['ФИО']&&user['ФИО']!==user.Email);
+  if(name)name.textContent=hasName?user['ФИО']:(user.Email||'Пользователь');
+  if(email){email.textContent=hasName?(user.Email||''):'';email.hidden=!hasName}
   badge.hidden=false;
+  // Профиль, открытый по прямой ссылке, ждал пользователя — дорисовываем.
+  if(el('viewProfile')&&!el('viewProfile').hidden&&typeof renderProfileMain==='function')renderProfileMain();
 }
 
 function renderInitialShell(){
@@ -1106,20 +1132,21 @@ function renderVacancyStats(){
       counts[vacancy['Vacancy ID']]
     );
 
+  const selected=value('filterVacancy');
   root.innerHTML=
     vacancies.length
-      ? '<div class="vacancy-stats-label">Кандидатов по вакансиям</div>'+
-        '<div class="vacancy-stat-list">'+
+      ? '<div class="vacancy-stats-label" id="vacancyStatsLabel">По вакансиям</div>'+
+        '<div class="vacancy-stat-list" role="group" aria-labelledby="vacancyStatsLabel">'+
         vacancies.map(vacancy=>{
           const count=
             counts[
               vacancy['Vacancy ID']
             ]||0;
+          const active=String(selected)===String(vacancy['Vacancy ID']);
 
-          return '<button class="vacancy-stat-chip" onclick="filterByVacancy(\''+
-            escJs(
-              vacancy['Vacancy ID']
-            )+
+          // Повторный клик по выбранной вакансии снимает фильтр.
+          return '<button type="button" class="vacancy-stat-chip'+(active?' active':'')+'" aria-pressed="'+active+'" onclick="filterByVacancy(\''+
+            escJs(active?'':vacancy['Vacancy ID'])+
             '\')">'+
             '<span>№'+
             escapeHtml(
@@ -1141,11 +1168,21 @@ function filterByVacancy(vacancyId){
   el('filterVacancy').value=
     vacancyId||'';
   renderBoard();
+  renderVacancyStats();
 }
 
 function renderStats(){
   if(!state.loaded.candidates)return;
   const s=state.stats||{};
+  // Счётчики — прямо на переключателе «Активные / Архив»; по этапам — в шапках колонок.
+  [['active',s.total||0],['archived',s.archived||0]].forEach(([key,count])=>{
+    const input=document.querySelector('input[name="boardState"][value="'+key+'"]');
+    const label=input&&input.nextElementSibling;
+    if(!label)return;
+    let badge=label.querySelector('.seg-count');
+    if(!badge){badge=document.createElement('span');badge.className='seg-count';label.appendChild(badge)}
+    badge.textContent=String(count);
+  });
   el('stats').innerHTML=
     '<div class="stat stat-main"><span>Активные</span><b>'+(s.total||0)+'</b></div>'+
     '<div class="stat"><span>Архив</span><b>'+(s.archived||0)+'</b></div>'+
@@ -1351,7 +1388,7 @@ function renderResumeHistoryPopover(candidate){
             '</strong>'+
             '<small>'+
             escapeHtml(
-              version.uploadedAt||
+              fmtDate(version.uploadedAt)||
               'Дата не указана'
             )+
             '</small>'+
@@ -1484,7 +1521,8 @@ function candidateLifecycleButtons(c,small){
     return iconBtn('unarchive','Вернуть из архива',call('unarchive'),size)+
       (admin?iconBtn('trash','Удалить (корзина, 30 дней)',call('delete'),(size+' icon-btn-danger').trim()):'');
   }
-  return iconBtn('archive','В архив',call('archive'),(size+' icon-btn-danger').trim());
+  // Архив обратим — нейтральная кнопка; красным помечено только удаление.
+  return iconBtn('archive','В архив',call('archive'),size);
 }
 
 async function candidateLifecycle(id,action,button){
@@ -1958,7 +1996,7 @@ function renderTransitions(){
   const restoring=isRejected(currentCandidate);
   root.innerHTML=allowedTransitionsFor(currentCandidate).map(status=>{
     const tip=restoring?'Вернуть на этап «'+status+'»':'Перевести на этап «'+status+'»';
-    return '<button class="transition-pill status-'+statusKey(status)+'" data-tip="'+escapeHtml(tip)+'" onclick="startTransition(\''+escJs(currentCandidate.ID)+'\',\''+escJs(status)+'\')">'+
+    return '<button type="button" class="transition-pill status-'+statusKey(status)+'" data-tip="'+escapeHtml(tip)+'" aria-label="'+escapeHtml(tip)+'" onclick="startTransition(\''+escJs(currentCandidate.ID)+'\',\''+escJs(status)+'\')">'+
       icon(restoring?'restore':(status===state.rejectedStatus?'reject':'arrow-right'),'icon-sm')+
       '<span>'+escapeHtml(status)+'</span></button>';
   }).join('');
@@ -1977,7 +2015,7 @@ function renderCandidateRejectedInfo(candidate){
     ['Причина',candidate['Причина отказа']],
     ['Комментарий',candidate['Комментарий к отказу'],true],
     ['Этап отказа',candidate.rejection.fromStatus],
-    ['Дата',candidate['Дата отказа']]
+    ['Дата',fmtDate(candidate['Дата отказа'])]
   ].filter(([,text])=>text);
   root.innerHTML='<div class="rejected-info-title">'+icon('reject','icon-sm')+'<strong>Отказано</strong></div>'+
     rows.map(([label,text,rich])=>'<div class="rejected-info-row"><span>'+escapeHtml(label)+'</span><span>'+(rich?richHtml(text):escapeHtml(text))+'</span></div>').join('');
@@ -2067,7 +2105,7 @@ function renderResumeVersions(versions){
     versions.map((v,index)=>
       '<a class="resume-version" href="'+escapeHtml(v.url||'#')+'" target="_blank" rel="noopener">'+
         '<span class="resume-version-index'+(index===0?' is-current':'')+'">v'+String(versions.length-index)+'</span>'+
-        '<div><strong>'+escapeHtml(v.name||'Резюме')+'</strong><small>'+(index===0?'Текущая · ':'')+escapeHtml(v.uploadedAt||'Дата не указана')+'</small></div>'+
+        '<div><strong>'+escapeHtml(v.name||'Резюме')+'</strong><small>'+(index===0?'Текущая · ':'')+escapeHtml(fmtDate(v.uploadedAt)||'Дата не указана')+'</small></div>'+
         '<span class="resume-open">'+externalMark()+'</span>'+
       '</a>'
     ).join('');
@@ -2893,7 +2931,7 @@ function renderInterviewHistory(){
           iconBtn('message','Комментарии','toggleInterviewComments(\''+escJs(i['Interview ID'])+'\')','icon-btn-sm')+
           interviewLifecycleButtons(i)+
         '</div></div>'+
-      '<div class="muted history-meta">'+escapeHtml(i['Дата']||'')+' · '+escapeHtml(i['Интервьюер']||'—')+' · '+escapeHtml(i['Шаблон']||'Без шаблона')+'</div>'+
+      '<div class="muted history-meta">'+escapeHtml(fmtDate(i['Дата']))+' · '+escapeHtml(i['Интервьюер']||'—')+' · '+escapeHtml(i['Шаблон']||'Без шаблона')+'</div>'+
       (i.answers||[]).map((a,index)=>'<div class="qa"><strong>'+(index+1)+'. '+escapeHtml(a.question)+'</strong>'+richHtml(a.answer)+'</div>').join('')+
       '<div class="qa"><strong>Результат</strong>'+richHtml(i['Результат'])+'</div>'+
       '<div class="history-comments" id="interviewComments-'+escapeHtml(i['Interview ID'])+'" hidden></div>'+

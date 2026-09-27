@@ -25,24 +25,27 @@ function mountServerTable(table){
 
   const header=table.columns.map(column=>{
     const sortable=!!column.sort;
-    return '<th'+(sortable?' class="sortable" onclick="serverTableSort(\''+table.id+'\',\''+column.sort+'\')"':'')+
+    const sortCall='serverTableSort(\''+table.id+'\',\''+column.sort+'\')';
+    return '<th'+(sortable?' class="sortable" tabindex="0" aria-sort="none" onclick="'+sortCall+'" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();'+sortCall+'}"':'')+
       ' data-sort-key="'+escapeHtml(column.sort||'')+'"'+(column.width?' style="width:'+column.width+'"':'')+'>'+
-      '<span>'+escapeHtml(column.label||'')+'</span>'+
+      (column.label?'<span>'+escapeHtml(column.label)+'</span>':'<span class="sr-only">Действия</span>')+
       (sortable?' '+icon('sort','icon-sm sort-icon'):'')+
     '</th>';
   }).join('');
 
   const filters=table.columns.map(column=>{
     const filter=column.filter;
-    if(!filter)return '<th></th>';
+    if(!filter)return '<th class="no-filter"></th>';
+    const label=' data-label="'+escapeHtml(column.label||'')+'"';
     const handler='serverTableFilter(\''+table.id+'\',\''+filter.key+'\',this.value)';
     if(filter.type==='select'){
-      return '<th><select class="filter-input" onchange="'+handler+'">'+
+      return '<th'+label+'><select class="filter-input" aria-label="Фильтр: '+escapeHtml(column.label||'')+'" onchange="'+handler+'">'+
         option('','Все')+filter.options().map(item=>typeof item==='object'?option(item.value,item.label):option(item,item)).join('')+
       '</select></th>';
     }
-    return '<th><input class="filter-input" type="'+(filter.type==='number'?'number':'search')+'" '+
-      'placeholder="Фильтр" oninput="'+handler+'"></th>';
+    const name=column.label||'значению';
+    return '<th'+label+'><input class="filter-input" type="'+(filter.type==='number'?'number':'search')+'" '+
+      'placeholder="'+(filter.type==='number'?'№':'Поиск')+'" aria-label="Фильтр по '+escapeHtml(name.toLowerCase())+'" oninput="'+handler+'"></th>';
   }).join('');
 
   root.innerHTML=
@@ -93,6 +96,7 @@ function renderServerTableBody(table){
     const active=table.query.sort.key===key;
     if(active)th.dataset.sort=table.query.sort.dir;
     else delete th.dataset.sort;
+    th.setAttribute('aria-sort',active?(table.query.sort.dir==='asc'?'ascending':'descending'):'none');
     const use=th.querySelector('.sort-icon use');
     if(use)use.setAttribute('href','#i-'+(active?(table.query.sort.dir==='asc'?'sort-asc':'sort-desc'):'sort'));
   });
@@ -101,11 +105,13 @@ function renderServerTableBody(table){
     ? data.items.map(item=>{
         const selected=table.isSelected&&table.isSelected(item);
         const stateClass=(item.state&&item.state!=='active'?' row-'+item.state:'')+(table.rowClass?' '+table.rowClass(item):'');
-        return '<tr class="clickable-row'+(selected?' selected-row':'')+stateClass+'" onclick="serverTableRowClick(\''+table.id+'\',\''+escJs(table.rowId(item))+'\')">'+
-          table.columns.map(column=>'<td>'+column.render(item)+'</td>').join('')+
+        return '<tr class="clickable-row'+(selected?' selected-row':'')+stateClass+'" tabindex="0"'+(selected?' aria-selected="true"':'')+
+          ' onkeydown="if(event.key===\'Enter\'&&event.target===this)this.click()"'+
+          ' onclick="serverTableRowClick(\''+table.id+'\',\''+escJs(table.rowId(item))+'\')">'+
+          table.columns.map(column=>'<td data-label="'+escapeHtml(column.label||'')+'">'+column.render(item)+'</td>').join('')+
         '</tr>';
       }).join('')
-    : '<tr><td class="table-empty" colspan="'+table.columns.length+'">Ничего не найдено</td></tr>';
+    : '<tr><td class="table-empty" colspan="'+table.columns.length+'">'+serverTableEmptyHtml(table)+'</td></tr>';
 
   const from=data.total?(data.page-1)*data.pageSize+1:0;
   const to=Math.min(data.page*data.pageSize,data.total);
@@ -124,6 +130,21 @@ function renderServerTableBody(table){
     '<span class="pagination-info">'+data.page+' / '+lastPage+'</span>'+
     nav('chevron-right','Следующая страница',data.page+1,data.page>=lastPage)+
     nav('chevrons-right','Последняя страница',lastPage,data.page>=lastPage);
+}
+
+// Пустая таблица объясняет почему: фильтры, архив/корзина или записей ещё нет.
+function serverTableEmptyHtml(table){
+  const filters={...table.query.filters};
+  const stateFilter=filters.state||'active';
+  delete filters.state;
+  let title=table.emptyText||'Записей пока нет';
+  let text='';
+  if(Object.keys(filters).length){title='Ничего не найдено';text='Измените или очистите фильтры в шапке таблицы.'}
+  else if(stateFilter==='archived')title='В архиве пусто';
+  else if(stateFilter==='deleted'){title='Корзина пуста';text='Удалённые записи хранятся здесь 30 дней.'}
+  else if(table.emptyHint)text=table.emptyHint;
+  return '<div class="table-empty-state">'+icon(Object.keys(filters).length?'search':'inbox')+
+    '<strong>'+escapeHtml(title)+'</strong>'+(text?'<span>'+escapeHtml(text)+'</span>':'')+'</div>';
 }
 
 function serverTableSort(id,key){
@@ -195,7 +216,7 @@ function setTableState(id,state){
 
 function stateBadge(item){
   if(item.state==='archived')return '<span class="state-badge state-archived">В архиве</span>';
-  if(item.state==='deleted')return '<span class="state-badge state-deleted" data-tip="Удалится окончательно '+escapeHtml(item.purgeAt)+'">Удалится через '+escapeHtml(item.daysUntilPurge)+' дн.</span>';
+  if(item.state==='deleted')return '<span class="state-badge state-deleted" data-tip="Удалится окончательно '+escapeHtml(fmtDate(item.purgeAt))+'">Удалится через '+escapeHtml(item.daysUntilPurge)+' дн.</span>';
   return '';
 }
 
@@ -216,9 +237,9 @@ function lifecycleButtons(type,id,state,small){
 function lifecycleNote(item){
   if(!item||item.state==='active')return '';
   if(item.state==='archived'){
-    return '<div class="lifecycle-note">'+icon('archive','icon-sm')+'<span>В архиве с '+escapeHtml(item.archivedAt)+'. Удалить можно только архивную запись.</span></div>';
+    return '<div class="lifecycle-note">'+icon('archive','icon-sm')+'<span>В архиве с '+escapeHtml(fmtDate(item.archivedAt))+'. Удалить можно только архивную запись.</span></div>';
   }
-  return '<div class="lifecycle-note deleted">'+icon('trash','icon-sm')+'<span>В корзине. Будет удалено окончательно '+escapeHtml(item.purgeAt)+' (через '+escapeHtml(item.daysUntilPurge)+' дн.). До этого её можно восстановить.</span></div>';
+  return '<div class="lifecycle-note deleted">'+icon('trash','icon-sm')+'<span>В корзине. Будет удалено окончательно '+escapeHtml(fmtDate(item.purgeAt))+' (через '+escapeHtml(item.daysUntilPurge)+' дн.). До этого её можно восстановить.</span></div>';
 }
 
 const ENTITY_ACTIONS={
@@ -275,10 +296,13 @@ function formActions(containerId,buttons){
 function vacancyStatusButtons(item,small){
   if(item.state!=='active')return '';
   const next=(state.vacancyStatusTransitions||{})[item['Статус']]||[];
-  const icons={'Открыта':'check','На паузе':'more','Закрыта':'close'};
-  return '<span class="status-actions">'+next.map(status=>
-    '<button type="button" class="status-action" data-tip="Перевести в «'+escapeHtml(status)+'»" onclick="event.stopPropagation();setVacancyStatusUi(\''+escJs(item['Vacancy ID'])+'\',\''+escJs(status)+'\',this)">'+
-      icon(icons[status]||'arrow-right','icon-sm')+'<span>'+escapeHtml(status)+'</span></button>'
+  // Кнопка называет действие («Приостановить»), а не целевой статус — иначе её путают с самим статусом.
+  const actions={'Открыта':['check','Открыть'],'На паузе':['clock','Приостановить'],'Закрыта':['x-circle','Закрыть']};
+  return '<span class="status-actions">'+next.map(status=>{
+    const [name,verb]=actions[status]||['arrow-right',status];
+    return '<button type="button" class="status-action" data-tip="Статус станет «'+escapeHtml(status)+'»" onclick="event.stopPropagation();setVacancyStatusUi(\''+escJs(item['Vacancy ID'])+'\',\''+escJs(status)+'\',this)">'+
+      icon(name,'icon-sm')+'<span>'+escapeHtml(verb)+'</span></button>';
+  }
   ).join('')+'</span>';
 }
 
@@ -286,6 +310,8 @@ const vacancyTable=createServerTable({
   id:'vacancies',
   containerId:'vacancyTable',
   rpcName:'listVacancies',
+  emptyText:'Вакансий пока нет',
+  emptyHint:'Создайте первую кнопкой «Новая вакансия».',
   defaultSort:{key:'number',dir:'desc'},
   rowId:item=>item['Vacancy ID'],
   isSelected:item=>String(item['Vacancy ID'])===String(value('vacancyId')),
@@ -305,6 +331,8 @@ const sourceTable=createServerTable({
   id:'sources',
   containerId:'sourceTable',
   rpcName:'listSources',
+  emptyText:'Источников пока нет',
+  emptyHint:'Добавьте, откуда приходят кандидаты: LinkedIn, hh, рекомендации…',
   defaultSort:{key:'name',dir:'asc'},
   rowId:item=>item['Source ID'],
   isSelected:item=>String(item['Source ID'])===String(value('sourceId')),
@@ -331,15 +359,19 @@ const userTable=createServerTable({
   id:'users',
   containerId:'userTable',
   rpcName:'listUsers',
+  emptyText:'Пользователей нет',
   defaultSort:{key:'status',dir:'asc'},
   rowId:item=>item['User ID'],
   isSelected:item=>String(item['User ID'])===String(value('userId')),
   onRowClick:item=>editUser(item),
   columns:[
-    {label:'ФИО',sort:'name',filter:{key:'name',type:'text'},render:item=>escapeHtml(item['ФИО']||'—')+(item.isAdmin?' <span class="mini-chip">Админ</span>':'')+' '+stateBadge(item)},
+    {label:'ФИО',sort:'name',filter:{key:'name',type:'text'},render:item=>{
+      const name=item['ФИО']&&item['ФИО']!==item.Email?escapeHtml(item['ФИО']):'<span class="muted">Имя не указано</span>';
+      return '<div class="user-name-cell">'+name+(item.isAdmin?'<span class="mini-chip">Админ</span>':'')+stateBadge(item)+'</div>';
+    }},
     {label:'Email',sort:'email',filter:{key:'email',type:'text'},render:item=>escapeHtml(item.Email)},
     {label:'Telegram',width:'150px',render:item=>item.telegram
-      ?'<span class="nowrap">'+escapeHtml(item.telegram)+(item.telegramVerified?' <span class="tg-verified" data-tip="Подтверждён через бота">'+icon('check','icon-sm')+'</span>':' <span class="muted" data-tip="Не подтверждён">?</span>')+'</span>'
+      ?'<span class="nowrap">'+escapeHtml(item.telegram)+(item.telegramVerified?' <span class="tg-verified" data-tip="Подтверждён через бота">'+icon('check','icon-sm')+'</span>':' <span class="tg-unverified" data-tip="Не подтверждён через бота">'+icon('clock','icon-sm')+'</span>')+'</span>'
       :'<span class="muted">—</span>'},
     {label:'Доступ',sort:'status',width:'120px',filter:{key:'status',type:'select',options:()=>[
       {value:'pending',label:'Ожидает'},
@@ -348,7 +380,7 @@ const userTable=createServerTable({
     ]},render:userAccessSwitch},
     {label:'Ответственный за этапы',sort:'stages',filter:{key:'stage',type:'select',options:()=>state.pipelineStatuses||[]},render:item=>
       (item.stages||[]).length?'<div class="chip-wrap">'+item.stages.map(stage=>statusChip(stage,true)).join('')+'</div>':'<span class="muted">—</span>'},
-    {label:'Последний вход',sort:'lastLogin',width:'140px',render:item=>escapeHtml(item['Последний вход']||'—')},
+    {label:'Последний вход',sort:'lastLogin',width:'150px',render:item=>item['Последний вход']?'<span class="nowrap" data-tip="'+escapeHtml(item['Последний вход'])+'">'+escapeHtml(fmtDate(item['Последний вход']))+'</span>':'<span class="muted">Не входил</span>'},
     {label:'',width:'76px',render:item=>'<div class="row-actions">'+lifecycleButtons('user',item['User ID'],item.state,true)+'</div>'}
   ]
 });
@@ -852,7 +884,7 @@ function renderUserStageOptions(selected){
     : [...document.querySelectorAll('.user-stage:checked')].map(x=>x.value);
 
   el('userStages').innerHTML=(state.pipelineStatuses||[]).map(stage=>
-    '<label class="checkbox-line status-soft-'+statusKey(stage)+'">'+
+    '<label class="stage-toggle stage-'+statusKey(stage)+'">'+
       '<input type="checkbox" class="user-stage" value="'+escapeHtml(stage)+'" '+(current.includes(stage)?'checked':'')+'>'+
       '<span>'+escapeHtml(stage)+'</span>'+
     '</label>'
@@ -922,10 +954,10 @@ function editUser(user){
 
   const rows=[
     ['Доступ',user['Статус доступа']],
-    ['Последний вход',user['Последний вход']],
-    ['Доступ выдан',user['Доступ выдан']],
-    ['Запрос доступа',user.accessStatus==='active'?'':user['Запрос доступа']],
-    ['Добавлен',user['Добавлен']]
+    ['Последний вход',fmtDate(user['Последний вход'])],
+    ['Доступ выдан',fmtDate(user['Доступ выдан'])],
+    ['Запрос доступа',user.accessStatus==='active'?'':fmtDate(user['Запрос доступа'])],
+    ['Добавлен',fmtDate(user['Добавлен'])]
   ].filter(([,text])=>text);
   el('userMeta').innerHTML=rows.map(([label,text])=>'<div class="user-meta-row"><span>'+escapeHtml(label)+'</span><span>'+escapeHtml(text)+'</span></div>').join('');
   el('userMeta').hidden=!rows.length;
