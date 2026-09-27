@@ -1,0 +1,704 @@
+<style>
+/* ---------- Уведомления: колокольчик, окно под ним, настройки и журнал ---------- */
+.notify-wrap{position:relative;display:inline-flex}
+.notify-bell{position:relative}
+.notify-badge{
+  position:absolute;top:2px;right:2px;min-width:16px;height:16px;padding:0 4px;
+  border-radius:999px;background:var(--danger);color:var(--on-danger);
+  font-size:10px;font-weight:700;line-height:16px;text-align:center;pointer-events:none;
+  box-shadow:0 0 0 2px var(--topbar-bg)
+}
+
+.notify-popover{
+  position:absolute;top:calc(100% + 8px);right:0;z-index:60;
+  width:380px;max-width:calc(100vw - 24px);max-height:min(560px,calc(100vh - 80px));
+  display:flex;flex-direction:column;
+  background:var(--surface-raised);color:var(--text);
+  border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow-pop);
+  overflow:hidden
+}
+.notify-popover[hidden]{display:none}
+.notify-pop-head{
+  display:flex;align-items:center;gap:6px;padding:8px 8px 8px 14px;
+  border-bottom:1px solid var(--line-soft)
+}
+.notify-pop-head h3{margin:0;font-size:14px;font-weight:600;flex:1}
+.notify-views{display:inline-flex;gap:2px;padding:2px;border-radius:var(--radius);background:var(--surface-3)}
+.notify-views .icon-btn{width:28px;height:28px;border:0;background:transparent}
+.notify-views .icon-btn.active{background:var(--surface);color:var(--primary);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.notify-list{overflow:auto;flex:1;min-height:80px}
+.notify-empty{padding:32px 16px;text-align:center;color:var(--muted);font-size:13px}
+.notify-empty .icon{width:28px;height:28px;display:block;margin:0 auto 8px;opacity:.5}
+.notify-more{display:block;width:100%;padding:8px;border:0;border-top:1px solid var(--line-soft);background:transparent;color:var(--primary);font-size:12px;cursor:pointer}
+.notify-more:hover{background:var(--hover)}
+
+.notify-item{
+  position:relative;display:flex;gap:10px;padding:10px 12px 10px 14px;
+  border-bottom:1px solid var(--line-soft);cursor:pointer
+}
+.notify-item:last-child{border-bottom:0}
+.notify-item:hover{background:var(--hover)}
+.notify-item.unread{background:var(--primary-tint)}
+.notify-item.unread:hover{background:var(--primary-tint-2)}
+.notify-item.unread::before{
+  content:"";position:absolute;left:5px;top:16px;width:6px;height:6px;border-radius:50%;background:var(--primary)
+}
+.notify-kind{
+  flex:0 0 28px;width:28px;height:28px;border-radius:50%;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:var(--surface-3);color:var(--text-2)
+}
+.notify-kind .icon{width:14px;height:14px}
+.notify-kind.kind-assigned{background:var(--primary-soft);color:var(--primary)}
+.notify-kind.kind-stage_responsible{background:var(--success-tint);color:var(--success)}
+.notify-kind.kind-status_changed{background:var(--warning-tint);color:var(--text-2)}
+.notify-body{flex:1;min-width:0}
+.notify-title{font-size:13px;font-weight:600;line-height:1.35;color:var(--text);overflow-wrap:anywhere}
+.notify-item.read .notify-title{font-weight:500}
+.notify-text{
+  margin-top:2px;font-size:12px;line-height:1.4;color:var(--text-2);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere
+}
+.notify-meta{margin-top:4px;font-size:11px;color:var(--muted);display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.notify-actions{display:flex;flex-direction:column;gap:2px;opacity:.55;transition:opacity .1s}
+.notify-item:hover .notify-actions,.notify-item:focus-within .notify-actions{opacity:1}
+.notify-actions .icon-btn{width:24px;height:24px}
+.notify-actions .icon-btn .icon{width:14px;height:14px}
+.icon-btn.is-important{color:var(--warning);opacity:1}
+.icon-btn.is-important .icon{fill:currentColor}
+.notify-item .icon-btn.is-important{opacity:1}
+
+/* Детали: по каким каналам и как доставлено. */
+.notify-details{margin-top:8px;padding:8px 10px;border-radius:var(--radius);background:var(--surface-2);border:1px solid var(--line-soft);cursor:default}
+.notify-details[hidden]{display:none}
+.delivery-row{display:grid;grid-template-columns:18px 1fr auto;gap:6px;align-items:center;font-size:12px;padding:3px 0}
+.delivery-row .icon{width:14px;height:14px;color:var(--text-2)}
+.delivery-target{min-width:0;overflow-wrap:anywhere;color:var(--text-2)}
+.delivery-error{grid-column:2 / -1;font-size:11px;color:var(--muted);margin-top:-2px}
+.delivery-status{font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;white-space:nowrap;background:var(--surface-3);color:var(--muted)}
+.delivery-status.st-sent{background:var(--success-tint);color:var(--success)}
+.delivery-status.st-pending{background:var(--primary-soft);color:var(--primary)}
+.delivery-status.st-failed{background:var(--danger-tint);color:var(--danger)}
+.delivery-chips{display:flex;gap:4px;flex-wrap:wrap}
+.delivery-chip{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--surface-3);color:var(--muted)}
+.delivery-chip .icon{width:12px;height:12px}
+.delivery-chip.st-sent{background:var(--success-tint);color:var(--success)}
+.delivery-chip.st-pending{background:var(--primary-soft);color:var(--primary)}
+.delivery-chip.st-failed{background:var(--danger-tint);color:var(--danger)}
+
+/* ---------- Страница настроек ---------- */
+.notify-page{display:flex;flex-direction:column;gap:12px}
+.notify-tabs{align-self:flex-start}
+.notify-tabs .icon{vertical-align:-2px;margin-right:4px}
+.notify-settings-grid{display:grid;grid-template-columns:minmax(260px,360px) minmax(0,1fr);gap:12px;align-items:start}
+.notify-settings-grid[hidden]{display:none}
+@media (max-width:900px){.notify-settings-grid{grid-template-columns:1fr}}
+.notify-hint{margin:4px 0 0;font-size:12px;max-width:640px}
+.notify-hint .icon{vertical-align:-2px}
+
+.notify-channels{display:flex;flex-direction:column;gap:8px}
+.channel-card{display:flex;gap:10px;align-items:flex-start;padding:10px;border:1px solid var(--line-soft);border-radius:var(--radius);background:var(--surface-2)}
+.channel-card>.icon{flex:0 0 auto;width:18px;height:18px;margin-top:1px;color:var(--text-2)}
+.channel-card-body{flex:1;min-width:0}
+.channel-card-title{font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.channel-card-text{font-size:12px;color:var(--text-2);margin-top:2px;overflow-wrap:anywhere}
+.channel-card-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.tg-link-box{margin-top:8px;padding:8px;border-radius:var(--radius);background:var(--surface);border:1px dashed var(--line);font-size:12px;color:var(--text-2)}
+.state-badge.state-ok{background:var(--success-tint);color:var(--success)}
+.nowrap{white-space:nowrap}
+.tg-verified{color:var(--success);display:inline-flex;vertical-align:-2px}
+.input-with-status{display:flex;align-items:center;gap:8px}
+.input-with-status input{flex:1}
+
+.notify-matrix{width:100%;border-collapse:collapse}
+.notify-matrix th,.notify-matrix td{padding:10px 8px;border-bottom:1px solid var(--line-soft);text-align:center;vertical-align:middle}
+.notify-matrix tr:last-child td{border-bottom:0}
+.notify-matrix th{font-size:12px;font-weight:600;color:var(--text-2)}
+.notify-matrix th .icon{display:block;margin:0 auto 2px;width:16px;height:16px}
+.notify-matrix th.unavailable{color:var(--muted)}
+.notify-matrix td:first-child,.notify-matrix th:first-child{text-align:left;width:auto}
+.notify-matrix td:not(:first-child),.notify-matrix th:not(:first-child){width:96px}
+.matrix-kind{font-size:13px;font-weight:600}
+.matrix-desc{font-size:12px;color:var(--muted);margin-top:2px}
+.matrix-scroll{overflow-x:auto}
+
+/* Журнал */
+.log-kind{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.log-kind .notify-kind{width:22px;height:22px;flex-basis:22px}
+.log-title{font-weight:600}
+tr.row-unread .log-title::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--primary);margin-right:6px;vertical-align:2px}
+.log-body{font-size:12px;color:var(--text-2);margin-top:2px;max-width:560px}
+tr:not(.row-unread) .log-title{font-weight:500}
+
+/* Текстовая кнопка (действия в карточках каналов). */
+.text-btn{
+  display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:var(--radius);
+  border:1px solid var(--line);background:var(--surface);color:var(--text);font-size:13px;font-weight:500;cursor:pointer
+}
+.text-btn:hover:not(:disabled){background:var(--hover);border-color:var(--line-strong)}
+.text-btn:disabled{opacity:.6;cursor:default}
+.text-btn:focus-visible{outline:none;box-shadow:0 0 0 2px var(--primary-ring)}
+.text-btn-primary{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
+.text-btn-primary:hover:not(:disabled){background:var(--primary-strong);border-color:var(--primary-strong)}
+.text-btn .icon{width:14px;height:14px}
+
+/* Кнопка «Следить» в карточке кандидата */
+#watchCandidateButton[aria-pressed="true"]{color:var(--primary);background:var(--primary-soft)}
+
+@media (max-width:520px){
+  .notify-popover{position:fixed;top:calc(var(--topbar-h,52px) + 4px);left:8px;right:8px;width:auto}
+}
+</style>
+
+<script>
+// ---------- Уведомления ----------
+// Колокольчик в шапке: окно с вкладками «Недавние» / «Непрочитанные» / «Журнал» (переход в настройки).
+// Настройки → Уведомления: каналы (email, Telegram), матрица «вид × канал», журнал уведомлений.
+
+const NOTIFY_KIND_ICONS={assigned:'user',candidate_changed:'edit',status_changed:'arrow-right',stage_responsible:'kanban'};
+const NOTIFY_CHANNEL_ICONS={app:'bell',email:'mail',telegram:'send'};
+const NOTIFY_CHANNEL_LABELS={app:'В приложении',email:'Эл. почта',telegram:'Telegram'};
+const DELIVERY_LABELS={sent:'Доставлено',pending:'В очереди',failed:'Ошибка',skipped:'Не отправлено'};
+const NOTIFY_POLL_MS=30000;
+
+const notify={
+  unread:0,
+  view:'recent',
+  items:[],
+  hasMore:false,
+  loading:false,
+  open:false,
+  expanded:new Set(),
+  pollTimer:null,
+  settings:null,
+  tgPoll:null
+};
+
+function setNotifyUnread(count){
+  notify.unread=Math.max(Number(count)||0,0);
+  const badge=el('notifyBadge');
+  if(!badge)return;
+  badge.hidden=!notify.unread;
+  badge.textContent=notify.unread>99?'99+':String(notify.unread);
+  const label=notify.unread?'Уведомления: непрочитанных '+notify.unread:'Уведомления';
+  el('notifyBell').setAttribute('aria-label',label);
+  el('notifyBell').dataset.tip=label;
+  startNotifyPolling();
+}
+
+function startNotifyPolling(){
+  if(notify.pollTimer)return;
+  notify.pollTimer=setInterval(async()=>{
+    if(document.hidden)return;
+    try{
+      const {unread}=await rpc('getNotificationUnread');
+      const changed=unread!==notify.unread;
+      setNotifyUnread(unread);
+      if(changed&&notify.open&&notify.view!=='log')loadNotifyFeed();
+    }catch(error){}
+  },NOTIFY_POLL_MS);
+}
+
+// Относительное время: «только что», «5 мин», «вчера 14:20», «12.03 09:15».
+function notifyTime(iso){
+  if(!iso)return '';
+  const date=new Date(iso);
+  const diff=(Date.now()-date.getTime())/1000;
+  const pad=n=>String(n).padStart(2,'0');
+  const hm=pad(date.getHours())+':'+pad(date.getMinutes());
+  if(diff<60)return 'только что';
+  if(diff<3600)return Math.floor(diff/60)+' мин назад';
+  const today=new Date();today.setHours(0,0,0,0);
+  if(date>=today)return 'сегодня '+hm;
+  const yesterday=new Date(today);yesterday.setDate(today.getDate()-1);
+  if(date>=yesterday)return 'вчера '+hm;
+  return pad(date.getDate())+'.'+pad(date.getMonth()+1)+(date.getFullYear()!==today.getFullYear()?'.'+date.getFullYear():'')+' '+hm;
+}
+
+function notifyFullTime(iso){
+  return iso?new Date(iso).toLocaleString('ru-RU'):'';
+}
+
+// ---------- Окно под колокольчиком ----------
+
+function toggleNotifyPopover(force){
+  const open=force===undefined?!notify.open:force;
+  notify.open=open;
+  el('notifyPopover').hidden=!open;
+  el('notifyBell').setAttribute('aria-expanded',String(open));
+  if(open){
+    renderNotifyPopover();
+    loadNotifyFeed();
+  }
+}
+
+document.addEventListener('mousedown',event=>{
+  if(!notify.open)return;
+  if(event.target.closest('.notify-wrap'))return;
+  toggleNotifyPopover(false);
+});
+window.addEventListener('hashchange',()=>{
+  if(notify.open)toggleNotifyPopover(false);
+});
+document.addEventListener('keydown',event=>{
+  if(event.key==='Escape'&&notify.open){
+    toggleNotifyPopover(false);
+    el('notifyBell').focus();
+  }
+});
+
+function notifyViewButton(view,iconName,tip){
+  return '<button type="button" class="icon-btn'+(notify.view===view?' active':'')+'" data-tip="'+tip+'" aria-label="'+tip+'" aria-pressed="'+(notify.view===view)+'" onclick="setNotifyView(\''+view+'\')">'+icon(iconName)+'</button>';
+}
+
+function renderNotifyPopover(){
+  const pop=el('notifyPopover');
+  pop.innerHTML=
+    '<div class="notify-pop-head">'+
+      '<h3>Уведомления</h3>'+
+      '<div class="notify-views" role="tablist">'+
+        notifyViewButton('recent','clock','Недавние')+
+        notifyViewButton('unread','dot','Непрочитанные')+
+        notifyViewButton('important','star','Важные')+
+        '<button type="button" class="icon-btn" data-tip="Журнал — все уведомления" aria-label="Журнал" onclick="openNotificationLog()">'+icon('history')+'</button>'+
+      '</div>'+
+      '<button type="button" class="icon-btn" data-tip="Отметить все как прочитанные" aria-label="Отметить все как прочитанные" onclick="markAllNotificationsRead(this)"'+(notify.unread?'':' disabled')+'>'+icon('check-check')+'</button>'+
+    '</div>'+
+    '<div class="notify-list" id="notifyList">'+renderNotifyList()+'</div>';
+}
+
+function renderNotifyList(){
+  if(notify.loading&&!notify.items.length)return '<div class="notify-empty">Загрузка…</div>';
+  if(!notify.items.length){
+    const text={recent:'Уведомлений пока нет.',unread:'Всё прочитано.',important:'Нет важных уведомлений.'}[notify.view];
+    return '<div class="notify-empty">'+icon(notify.view==='unread'?'check-check':'bell-off')+escapeHtml(text)+'</div>';
+  }
+  return notify.items.map(notifyItemHtml).join('')+
+    (notify.hasMore?'<button type="button" class="notify-more" onclick="loadNotifyFeed(true)">Показать ещё</button>':'');
+}
+
+function notifyItemHtml(item){
+  const id=escJs(item.id);
+  const expanded=notify.expanded.has(item.id);
+  return '<div class="notify-item '+(item.read?'read':'unread')+'" data-id="'+escapeHtml(item.id)+'" onclick="notifyItemClick(\''+id+'\',event)">'+
+    '<span class="notify-kind kind-'+escapeHtml(item.kind)+'" data-tip="'+escapeHtml(item.kindLabel)+'">'+icon(NOTIFY_KIND_ICONS[item.kind]||'bell')+'</span>'+
+    '<div class="notify-body">'+
+      '<div class="notify-title">'+escapeHtml(item.title)+'</div>'+
+      (item.body?'<div class="notify-text">'+escapeHtml(item.body)+'</div>':'')+
+      '<div class="notify-meta"><span data-tip="'+escapeHtml(notifyFullTime(item.createdAt))+'">'+escapeHtml(notifyTime(item.createdAt))+'</span>'+
+        (item.candidateState==='archived'?'<span class="state-badge state-archived">В архиве</span>':'')+
+        (item.candidateState==='deleted'?'<span class="state-badge state-deleted">В корзине</span>':'')+
+      '</div>'+
+      '<div class="notify-details" id="notifyDetails-'+escapeHtml(item.id)+'"'+(expanded?'':' hidden')+' onclick="event.stopPropagation()">'+deliveryRows(item)+'</div>'+
+    '</div>'+
+    '<div class="notify-actions" onclick="event.stopPropagation()">'+
+      '<button type="button" class="icon-btn icon-btn-sm'+(expanded?' active':'')+'" data-tip="Детали: каналы доставки" aria-label="Детали" aria-expanded="'+expanded+'" onclick="toggleNotifyDetails(\''+id+'\')">'+icon('info')+'</button>'+
+      '<button type="button" class="icon-btn icon-btn-sm'+(item.important?' is-important':'')+'" data-tip="'+(item.important?'Снять отметку «Важное»':'Отметить как важное')+'" aria-label="Важное" aria-pressed="'+item.important+'" onclick="toggleNotifyImportant(\''+id+'\',this)">'+icon('star')+'</button>'+
+    '</div>'+
+  '</div>';
+}
+
+function deliveryRows(item){
+  return (item.channels||[]).map(channel=>{
+    const target=channel.channel==='app'?'Колокольчик в ATS':(channel.recipient||'—');
+    const when=channel.status==='sent'&&channel.sentAt?' · '+notifyTime(channel.sentAt):'';
+    const attempts=channel.attempts>1?' · попыток: '+channel.attempts:'';
+    return '<div class="delivery-row">'+
+      icon(NOTIFY_CHANNEL_ICONS[channel.channel]||'bell')+
+      '<span class="delivery-target" title="'+escapeHtml(target)+'">'+escapeHtml(NOTIFY_CHANNEL_LABELS[channel.channel]||channel.channel)+' · '+escapeHtml(target)+escapeHtml(when+attempts)+'</span>'+
+      '<span class="delivery-status st-'+escapeHtml(channel.status)+'">'+escapeHtml(DELIVERY_LABELS[channel.status]||channel.status)+'</span>'+
+      (channel.error?'<span class="delivery-error">'+escapeHtml(channel.error)+'</span>':'')+
+    '</div>';
+  }).join('')||'<div class="muted">Нет данных о доставке.</div>';
+}
+
+function setNotifyView(view){
+  notify.view=view;
+  notify.items=[];
+  notify.expanded.clear();
+  renderNotifyPopover();
+  loadNotifyFeed();
+}
+
+async function loadNotifyFeed(more){
+  const view=notify.view;
+  notify.loading=true;
+  if(!more)renderNotifyListOnly();
+  try{
+    const before=more&&notify.items.length?notify.items[notify.items.length-1].createdAt:undefined;
+    const data=await rpc('getNotificationFeed',{view,limit:20,before});
+    if(view!==notify.view)return;
+    notify.items=more?[...notify.items,...data.items]:data.items;
+    notify.hasMore=data.hasMore;
+    setNotifyUnread(data.unread);
+  }catch(error){
+    showToast(error.message||String(error),'error');
+  }finally{
+    notify.loading=false;
+    if(notify.open)renderNotifyPopover();
+  }
+}
+
+function renderNotifyListOnly(){
+  const list=el('notifyList');
+  if(list)list.innerHTML=renderNotifyList();
+}
+
+function findNotify(id){
+  return notify.items.find(item=>item.id===id);
+}
+
+// Клик по уведомлению: отмечаем прочитанным и открываем карточку кандидата.
+async function notifyItemClick(id){
+  const item=findNotify(id);
+  if(!item)return;
+  if(!item.read)await markNotificationRead(id,true);
+  if(item.candidateId&&item.candidateState!=='missing'){
+    toggleNotifyPopover(false);
+    openCandidateFromNotification(item.candidateId);
+  }
+}
+
+async function openCandidateFromNotification(candidateId){
+  if(candidateById(candidateId)){
+    location.hash='#/candidate/'+encodeURIComponent(candidateId);
+    return;
+  }
+  // Кандидат в архиве или корзине: грузим списки и открываем.
+  try{
+    if(typeof ensureArchivedCandidatesLoaded==='function')await ensureArchivedCandidatesLoaded();
+    if(!candidateById(candidateId)&&typeof ensureDeletedCandidatesLoaded==='function'&&isAdminUser())await ensureDeletedCandidatesLoaded();
+  }catch(error){}
+  if(candidateById(candidateId))location.hash='#/candidate/'+encodeURIComponent(candidateId);
+  else showToast('Кандидат недоступен.','error');
+}
+
+async function markNotificationRead(id,read){
+  try{
+    const {unread}=await rpc('markNotificationRead',{id,read});
+    const item=findNotify(id);
+    if(item)item.read=read;
+    setNotifyUnread(unread);
+    if(notify.open){
+      if(notify.view==='unread'&&read)notify.items=notify.items.filter(entry=>entry.id!==id);
+      renderNotifyPopover();
+    }
+    rerenderLogRow(id,{read});
+  }catch(error){
+    showToast(error.message||String(error),'error');
+  }
+}
+
+async function markAllNotificationsRead(button){
+  try{
+    if(button)button.disabled=true;
+    await rpc('markAllNotificationsRead');
+    notify.items.forEach(item=>item.read=true);
+    if(notify.view==='unread')notify.items=[];
+    setNotifyUnread(0);
+    if(notify.open)renderNotifyPopover();
+    if(serverTables.notificationLog&&serverTables.notificationLog.data)loadServerTable('notificationLog');
+    showToast('Все уведомления прочитаны.');
+  }catch(error){
+    showToast(error.message||String(error),'error');
+  }finally{
+    if(button&&notify.unread)button.disabled=false;
+  }
+}
+
+async function toggleNotifyImportant(id,button){
+  const item=findNotify(id)||logItem(id);
+  if(!item)return;
+  const important=!item.important;
+  try{
+    if(button)button.disabled=true;
+    await rpc('setNotificationImportant',{id,important});
+    item.important=important;
+    const other=findNotify(id);if(other)other.important=important;
+    if(notify.open){
+      if(notify.view==='important'&&!important)notify.items=notify.items.filter(entry=>entry.id!==id);
+      renderNotifyPopover();
+    }
+    rerenderLogRow(id,{important});
+  }catch(error){
+    showToast(error.message||String(error),'error');
+  }finally{
+    if(button)button.disabled=false;
+  }
+}
+
+// Детали перезапрашиваются: статус доставки мог измениться после загрузки ленты.
+async function toggleNotifyDetails(id){
+  if(notify.expanded.has(id)){
+    notify.expanded.delete(id);
+    renderNotifyPopover();
+    return;
+  }
+  notify.expanded.add(id);
+  renderNotifyPopover();
+  try{
+    const fresh=await rpc('getNotification',id);
+    const index=notify.items.findIndex(entry=>entry.id===id);
+    if(index>=0)notify.items[index]=fresh;
+    if(notify.open)renderNotifyPopover();
+  }catch(error){}
+}
+
+function openNotificationLog(){
+  toggleNotifyPopover(false);
+  navigateTo('settings/notifications/log');
+}
+
+// ---------- Настройки → Уведомления ----------
+
+function showNotificationSettings(tab){
+  const log=tab==='log';
+  el('notifyTabSettings').hidden=log;
+  el('notifyTabLog').hidden=!log;
+  document.querySelectorAll('input[name="notifyTab"]').forEach(input=>input.checked=input.value===(log?'log':'settings'));
+  if(log)loadServerTable('notificationLog');
+  else loadNotificationSettings();
+}
+
+async function loadNotificationSettings(){
+  try{
+    notify.settings=await rpc('getNotificationSettings');
+    renderNotificationSettings();
+  }catch(error){
+    el('notifyChannels').innerHTML='<div class="empty-state compact">'+escapeHtml(error.message||String(error))+'</div>';
+  }
+}
+
+function renderNotificationSettings(){
+  const settings=notify.settings;
+  if(!settings)return;
+  const channel=key=>settings.channels.find(item=>item.key===key)||{};
+  const email=channel('email');
+  const telegram=settings.telegram;
+
+  const emailCard=
+    '<div class="channel-card">'+icon('mail')+
+      '<div class="channel-card-body">'+
+        '<div class="channel-card-title">Эл. почта '+(email.available?'<span class="state-badge state-ok">Работает</span>':'<span class="state-badge state-archived">Недоступно</span>')+'</div>'+
+        '<div class="channel-card-text">'+escapeHtml(email.available?'Письма приходят на '+settings.email:email.reason)+'</div>'+
+      '</div>'+
+    '</div>';
+
+  let tgText,tgActions='';
+  if(!telegram.botConfigured){
+    tgText='Telegram-бот не настроен на сервере. Администратору: создать бота в @BotFather и указать TELEGRAM_BOT_TOKEN.';
+  }else if(telegram.linked){
+    tgText='Привязан'+(telegram.username?' аккаунт @'+telegram.username:'')+(telegram.verifiedAt?' · '+notifyFullTime(telegram.verifiedAt):'')+'. Отключить можно и в самом боте командой /stop.';
+    tgActions='<button type="button" class="text-btn" onclick="unlinkTelegram(this)">Отвязать</button>';
+  }else{
+    tgText='Привяжите свой Telegram: откроется бот'+(telegram.botUsername?' @'+telegram.botUsername:'')+', нажмите «Старт» — аккаунт подтвердится автоматически.';
+    tgActions='<button type="button" class="text-btn text-btn-primary" onclick="linkTelegram(this)">'+icon('send','icon-sm')+' Привязать Telegram</button>';
+  }
+
+  const tgCard=
+    '<div class="channel-card">'+icon('send')+
+      '<div class="channel-card-body">'+
+        '<div class="channel-card-title">Telegram '+
+          (telegram.linked?'<span class="state-badge state-ok">Подтверждён</span>':telegram.botConfigured?'<span class="state-badge state-archived">Не привязан</span>':'<span class="state-badge">Недоступно</span>')+
+        '</div>'+
+        '<div class="channel-card-text">'+escapeHtml(tgText)+'</div>'+
+        (tgActions?'<div class="channel-card-actions">'+tgActions+'</div>':'')+
+        '<div id="tgLinkBox"></div>'+
+      '</div>'+
+    '</div>';
+
+  const appCard=
+    '<div class="channel-card">'+icon('bell')+
+      '<div class="channel-card-body">'+
+        '<div class="channel-card-title">В приложении <span class="state-badge state-ok">Работает</span></div>'+
+        '<div class="channel-card-text">Колокольчик в шапке ATS.</div>'+
+      '</div>'+
+    '</div>';
+
+  el('notifyChannels').innerHTML=appCard+emailCard+tgCard;
+
+  const header='<tr><th>Вид уведомления</th>'+settings.channels.map(item=>
+    '<th class="'+(item.available?'':'unavailable')+'"'+(item.reason?' data-tip="'+escapeHtml(item.reason)+'"':'')+'>'+icon(NOTIFY_CHANNEL_ICONS[item.key])+escapeHtml(item.label)+(item.available?'':' *')+'</th>'
+  ).join('')+'</tr>';
+
+  const rows=settings.kinds.map(kind=>
+    '<tr><td><div class="matrix-kind">'+escapeHtml(kind.label)+'</div><div class="matrix-desc">'+escapeHtml(kind.description)+'</div></td>'+
+      settings.channels.map(item=>{
+        const checked=settings.preferences[kind.key]&&settings.preferences[kind.key][item.key];
+        return '<td><label class="switch" data-tip="'+escapeHtml(kind.label+' · '+item.label)+'">'+
+          '<input type="checkbox"'+(checked?' checked':'')+' aria-label="'+escapeHtml(kind.label+': '+item.label)+'" onchange="setNotificationPreference(\''+kind.key+'\',\''+item.key+'\',this)">'+
+          '<span class="switch-track"></span></label></td>';
+      }).join('')+
+    '</tr>'
+  ).join('');
+
+  const footnote=settings.channels.some(item=>!item.available)
+    ?'<p class="muted notify-hint">* Канал сейчас недоступен — настройка сохранится и начнёт работать, когда канал станет доступен.</p>':'';
+
+  el('notifyMatrix').innerHTML='<div class="matrix-scroll"><table class="notify-matrix"><thead>'+header+'</thead><tbody>'+rows+'</tbody></table></div>'+footnote;
+}
+
+async function setNotificationPreference(kind,channel,input){
+  const enabled=input.checked;
+  input.disabled=true;
+  try{
+    await rpc('setNotificationPreference',{kind,channel,enabled});
+    notify.settings.preferences[kind][channel]=enabled;
+  }catch(error){
+    input.checked=!enabled;
+    showToast(error.message||String(error),'error');
+  }finally{
+    input.disabled=false;
+  }
+}
+
+// Привязка Telegram: ссылка на бота с одноразовым кодом; статус проверяем, пока код действует.
+async function linkTelegram(button){
+  try{
+    button.disabled=true;
+    const {url,expiresAt}=await rpc('createTelegramLink');
+    window.open(url,'_blank','noopener');
+    el('tgLinkBox').innerHTML='<div class="tg-link-box">Откройте бота и нажмите «Старт». Если Telegram не открылся — <a href="'+escapeHtml(url)+'" target="_blank" rel="noopener">перейдите по ссылке</a>. Ссылка действует до '+escapeHtml(new Date(expiresAt).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}))+'.</div>';
+    watchTelegramLink(new Date(expiresAt).getTime());
+  }catch(error){
+    showToast(error.message||String(error),'error');
+  }finally{
+    button.disabled=false;
+  }
+}
+
+function watchTelegramLink(until){
+  clearInterval(notify.tgPoll);
+  notify.tgPoll=setInterval(async()=>{
+    if(Date.now()>until||el('notifyTabSettings').hidden||el('viewAdmin').hidden){
+      clearInterval(notify.tgPoll);
+      return;
+    }
+    try{
+      const settings=await rpc('getNotificationSettings');
+      if(settings.telegram.linked){
+        clearInterval(notify.tgPoll);
+        notify.settings=settings;
+        renderNotificationSettings();
+        showToast('Telegram привязан'+(settings.telegram.username?': @'+settings.telegram.username:'')+'.');
+      }
+    }catch(error){}
+  },3000);
+}
+
+async function unlinkTelegram(button){
+  if(!await showConfirm('Отвязать Telegram? Уведомления в Telegram перестанут приходить.','Отвязать Telegram'))return;
+  try{
+    button.disabled=true;
+    await rpc('unlinkTelegram');
+    await loadNotificationSettings();
+    showToast('Telegram отвязан.');
+  }catch(error){
+    showToast(error.message||String(error),'error');
+    button.disabled=false;
+  }
+}
+
+// ---------- Журнал ----------
+
+function deliveryChips(item){
+  return '<div class="delivery-chips">'+(item.channels||[]).map(channel=>{
+    const tip=(NOTIFY_CHANNEL_LABELS[channel.channel]||channel.channel)+': '+(DELIVERY_LABELS[channel.status]||channel.status)+
+      (channel.recipient?' ('+channel.recipient+')':'')+(channel.error?' — '+channel.error:'');
+    return '<span class="delivery-chip st-'+escapeHtml(channel.status)+'" data-tip="'+escapeHtml(tip)+'">'+icon(NOTIFY_CHANNEL_ICONS[channel.channel]||'bell')+'</span>';
+  }).join('')+'</div>';
+}
+
+const notificationLogTable=createServerTable({
+  id:'notificationLog',
+  containerId:'notificationLogTable',
+  rpcName:'listNotificationLog',
+  defaultSort:{key:'createdAt',dir:'desc'},
+  rowId:item=>item.id,
+  rowClass:item=>item.read?'':'row-unread',
+  onRowClick:item=>logRowClick(item),
+  columns:[
+    {label:'Дата',sort:'createdAt',width:'140px',render:item=>'<span data-tip="'+escapeHtml(notifyFullTime(item.createdAt))+'">'+escapeHtml(notifyTime(item.createdAt))+'</span>'},
+    {label:'Вид',sort:'kind',width:'200px',filter:{key:'kind',type:'select',options:()=>(notify.settings?notify.settings.kinds:[
+      {key:'assigned',label:'Назначение карточки'},{key:'candidate_changed',label:'Изменения в карточке'},
+      {key:'status_changed',label:'Перенос карточки'},{key:'stage_responsible',label:'Переход на ваш этап'}
+    ]).map(kind=>({value:kind.key,label:kind.label}))},render:item=>
+      '<span class="log-kind"><span class="notify-kind kind-'+escapeHtml(item.kind)+'">'+icon(NOTIFY_KIND_ICONS[item.kind]||'bell')+'</span>'+escapeHtml(item.kindLabel)+'</span>'},
+    {label:'Уведомление',sort:'title',filter:{key:'q',type:'text'},render:item=>
+      '<div class="log-title">'+escapeHtml(item.title)+'</div>'+(item.body?'<div class="log-body">'+escapeHtml(item.body)+'</div>':'')},
+    {label:'Каналы',width:'120px',filter:{key:'delivery',type:'select',options:()=>[
+      {value:'sent',label:'Доставлено'},{value:'pending',label:'В очереди'},{value:'failed',label:'Ошибка'},
+      {value:'skipped',label:'Не отправлено'},{value:'app',label:'Только в приложении'}
+    ]},render:deliveryChips},
+    {label:'Статус',sort:'read',width:'110px',filter:{key:'read',type:'select',options:()=>[
+      {value:'unread',label:'Непрочитанные'},{value:'read',label:'Прочитанные'}
+    ]},render:item=>item.read?'<span class="muted">Прочитано</span>':'<strong>Новое</strong>'},
+    {label:'',width:'76px',filter:{key:'important',type:'select',options:()=>[{value:'yes',label:'★ Важные'},{value:'no',label:'Обычные'}]},render:item=>
+      '<div class="row-actions" onclick="event.stopPropagation()">'+
+        '<button type="button" class="icon-btn icon-btn-sm" data-tip="'+(item.read?'Отметить непрочитанным':'Отметить прочитанным')+'" aria-label="Прочитано" onclick="markNotificationRead(\''+escJs(item.id)+'\','+(!item.read)+')">'+icon(item.read?'dot':'check','icon-sm')+'</button>'+
+        '<button type="button" class="icon-btn icon-btn-sm'+(item.important?' is-important':'')+'" data-tip="'+(item.important?'Снять «Важное»':'Отметить как важное')+'" aria-label="Важное" onclick="toggleNotifyImportant(\''+escJs(item.id)+'\',this)">'+icon('star','icon-sm')+'</button>'+
+      '</div>'}
+  ]
+});
+
+function logItem(id){
+  const table=serverTables.notificationLog;
+  return table&&table.data?table.data.items.find(item=>item.id===id):null;
+}
+
+function rerenderLogRow(id,patch){
+  const item=logItem(id);
+  if(!item)return;
+  Object.assign(item,patch);
+  rerenderServerTable('notificationLog');
+}
+
+async function logRowClick(item){
+  if(!item.read)await markNotificationRead(item.id,true);
+  if(item.candidateId&&item.candidateState!=='missing')openCandidateFromNotification(item.candidateId);
+}
+
+// ---------- «Следить» в карточке кандидата ----------
+
+let watchRequestId=0;
+
+async function refreshCandidateWatch(candidate){
+  const button=el('watchCandidateButton');
+  if(!button)return;
+  const requestId=++watchRequestId;
+  if(!candidate||!candidate.ID){button.hidden=true;return}
+  button.hidden=false;
+  button.dataset.candidateId=candidate.ID;
+  renderWatchButton(false,0);
+  try{
+    const {watching,watchers}=await rpc('getCandidateWatch',candidate.ID);
+    if(requestId===watchRequestId)renderWatchButton(watching,watchers);
+  }catch(error){}
+}
+
+function renderWatchButton(watching,watchers){
+  const button=el('watchCandidateButton');
+  button.setAttribute('aria-pressed',String(watching));
+  const others=watching?watchers-1:watchers;
+  const tip=(watching?'Вы следите — нажмите, чтобы перестать':'Следить: получать уведомления об изменениях')+
+    (others>0?' · следят ещё '+others:'');
+  button.dataset.tip=tip;
+  button.setAttribute('aria-label',tip);
+}
+
+async function toggleCandidateWatch(button){
+  const candidateId=button.dataset.candidateId;
+  if(!candidateId)return;
+  const watch=button.getAttribute('aria-pressed')!=='true';
+  try{
+    button.disabled=true;
+    const {watching,watchers}=await rpc('setCandidateWatch',{candidateId,watch});
+    renderWatchButton(watching,watchers);
+    showToast(watching?'Вы следите за кандидатом.':'Вы больше не следите за кандидатом.');
+  }catch(error){
+    showToast(error.message||String(error),'error');
+  }finally{
+    button.disabled=false;
+  }
+}
+</script>

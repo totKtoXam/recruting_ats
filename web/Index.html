@@ -27,6 +27,10 @@
           <small id="currentUserEmail"></small>
         </span>
       </div>
+      <div class="notify-wrap">
+        <button type="button" id="notifyBell" class="icon-btn notify-bell" data-tip="Уведомления" aria-label="Уведомления" aria-haspopup="dialog" aria-expanded="false" onclick="toggleNotifyPopover()"><svg class="icon"><use href="#i-bell"/></svg><span id="notifyBadge" class="notify-badge" hidden></span></button>
+        <div id="notifyPopover" class="notify-popover" role="dialog" aria-label="Уведомления" hidden></div>
+      </div>
       <button type="button" class="icon-btn" data-theme-toggle data-tip="Тема: системная" aria-label="Тема: системная" onclick="ThemeManager.cycle()"><svg class="icon"><use href="#i-monitor"/></svg></button>
       <form method="post" action="/auth/logout" class="logout-form">
         <button type="submit" class="icon-btn" data-tip="Выйти" aria-label="Выйти"><svg class="icon"><use href="#i-logout"/></svg></button>
@@ -48,6 +52,7 @@
           <button type="button" class="sidebar-group-toggle" aria-expanded="true" onclick="toggleSidebarGroup('settings')"><svg class="icon"><use href="#i-settings"/></svg><span>Настройки</span><svg class="icon chevron"><use href="#i-chevron-right"/></svg></button>
           <div class="sidebar-group-items" id="sidebarGroup-settings">
           <a class="sidebar-link" href="#/settings/sources" data-route="settings/sources"><svg class="icon"><use href="#i-list"/></svg><span>Источники вакансий</span></a>
+          <a class="sidebar-link" href="#/settings/notifications" data-route="settings/notifications"><svg class="icon"><use href="#i-bell"/></svg><span>Уведомления</span></a>
           <a class="sidebar-link" href="#/settings/users" data-route="settings/users" id="sidebarUsersLink" hidden><svg class="icon"><use href="#i-user"/></svg><span>Пользователи</span></a>
           </div>
         </div>
@@ -127,6 +132,7 @@
         </div>
 
         <div class="candidate-header-actions">
+          <button id="watchCandidateButton" class="icon-btn" data-tip="Следить за кандидатом" aria-label="Следить за кандидатом" aria-pressed="false" onclick="toggleCandidateWatch(this)" hidden><svg class="icon"><use href="#i-eye"/></svg></button>
           <button id="shareCandidateButton" class="icon-btn" data-tip="Скопировать ссылку" aria-label="Скопировать ссылку" onclick="copyCandidateLink(this)" hidden><svg class="icon"><use href="#i-share"/></svg></button>
           <span id="candidateLifecycleActions" class="header-actions"></span>
           <button class="icon-btn icon-btn-primary" data-tip="Сохранить" aria-label="Сохранить" onclick="saveCandidateForm(this)"><svg class="icon"><use href="#i-save"/></svg></button>
@@ -472,5 +478,6 @@
   <?!= include('Comments'); ?>
   <?!= include('Scripts'); ?>
   <?!= include('AdminScripts'); ?>
+  <?!= include('Notifications'); ?>
 </body>
 </html>

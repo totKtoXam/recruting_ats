@@ -158,6 +158,15 @@
       </div>
 
       <div class="field">
+        <label for="userTelegram">Telegram</label>
+        <div class="input-with-status">
+          <input id="userTelegram" placeholder="@username" autocomplete="off">
+          <span id="userTelegramStatus" class="state-badge" hidden></span>
+        </div>
+        <small class="field-hint">Подтверждается самим пользователем: «Настройки → Уведомления → Привязать Telegram». Ник, указанный здесь, считается неподтверждённым.</small>
+      </div>
+
+      <div class="field">
         <label>Ответственный за этапы</label>
         <div id="userStages" class="stage-checks"></div>
         <small class="field-hint">Отмеченные этапы делают пользователя ответственным: его можно назначить рекрутером (все этапы), HR или проф. интервьювером кандидата. Доступ в ATS для этого не обязателен.</small>
@@ -175,6 +184,43 @@
 
       <div id="userMeta" class="user-meta" hidden></div>
     </aside>
+  </div>
+</section>
+
+<!-- ===================== Уведомления (для всех пользователей) ===================== -->
+<section id="admin-notifications" class="admin-page-section">
+  <div class="notify-page">
+    <div class="segmented notify-tabs" role="tablist">
+      <label class="segmented-option"><input type="radio" name="notifyTab" value="settings" onchange="navigateTo('settings/notifications')"><span><svg class="icon icon-sm"><use href="#i-settings"/></svg> Подписки</span></label>
+      <label class="segmented-option"><input type="radio" name="notifyTab" value="log" onchange="navigateTo('settings/notifications/log')"><span><svg class="icon icon-sm"><use href="#i-history"/></svg> Журнал</span></label>
+    </div>
+
+    <div id="notifyTabSettings" class="notify-settings-grid">
+      <div class="admin-list-card">
+        <div class="section-title-row"><h3>Каналы</h3></div>
+        <div id="notifyChannels" class="notify-channels"><div class="empty-state compact">Загрузка…</div></div>
+      </div>
+
+      <div class="admin-list-card">
+        <div class="section-title-row">
+          <div>
+            <h3>Что присылать</h3>
+            <p class="muted notify-hint">Уведомления приходят по кандидатам, где вы назначены рекрутером, HR или проф. интервьювером, и по тем, за которыми вы следите (<svg class="icon icon-sm"><use href="#i-eye"/></svg> в карточке кандидата). О своих действиях уведомлений нет.</p>
+          </div>
+        </div>
+        <div id="notifyMatrix"></div>
+      </div>
+    </div>
+
+    <div id="notifyTabLog" class="admin-list-card directory-table-card" hidden>
+      <div class="section-title-row table-toolbar">
+        <h3>Журнал уведомлений</h3>
+        <div class="header-actions">
+          <button class="icon-btn" data-tip="Отметить все как прочитанные" aria-label="Отметить все как прочитанные" onclick="markAllNotificationsRead(this)"><svg class="icon"><use href="#i-check-check"/></svg></button>
+        </div>
+      </div>
+      <div id="notificationLogTable"></div>
+    </div>
   </div>
 </section>
 

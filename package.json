@@ -22,7 +22,11 @@
     "exceljs": "^4.4.0",
     "express": "^5.1.0",
     "express-session": "^1.18.1",
+    "nodemailer": "^7.0.13",
     "pg": "^8.13.1",
     "sanitize-html": "^2.17.7"
+  },
+  "devDependencies": {
+    "smtp-server": "^3.19.13"
   }
 }

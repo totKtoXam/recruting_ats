@@ -100,7 +100,7 @@ function renderServerTableBody(table){
   root.querySelector('tbody').innerHTML=data.items.length
     ? data.items.map(item=>{
         const selected=table.isSelected&&table.isSelected(item);
-        const stateClass=item.state&&item.state!=='active'?' row-'+item.state:'';
+        const stateClass=(item.state&&item.state!=='active'?' row-'+item.state:'')+(table.rowClass?' '+table.rowClass(item):'');
         return '<tr class="clickable-row'+(selected?' selected-row':'')+stateClass+'" onclick="serverTableRowClick(\''+table.id+'\',\''+escJs(table.rowId(item))+'\')">'+
           table.columns.map(column=>'<td>'+column.render(item)+'</td>').join('')+
         '</tr>';
@@ -338,6 +338,9 @@ const userTable=createServerTable({
   columns:[
     {label:'ФИО',sort:'name',filter:{key:'name',type:'text'},render:item=>escapeHtml(item['ФИО']||'—')+(item.isAdmin?' <span class="mini-chip">Админ</span>':'')+' '+stateBadge(item)},
     {label:'Email',sort:'email',filter:{key:'email',type:'text'},render:item=>escapeHtml(item.Email)},
+    {label:'Telegram',width:'150px',render:item=>item.telegram
+      ?'<span class="nowrap">'+escapeHtml(item.telegram)+(item.telegramVerified?' <span class="tg-verified" data-tip="Подтверждён через бота">'+icon('check','icon-sm')+'</span>':' <span class="muted" data-tip="Не подтверждён">?</span>')+'</span>'
+      :'<span class="muted">—</span>'},
     {label:'Доступ',sort:'status',width:'120px',filter:{key:'status',type:'select',options:()=>[
       {value:'pending',label:'Ожидает'},
       {value:'active',label:'Открыт'},
@@ -830,13 +833,14 @@ function renderUserFormActions(user){
 }
 
 function setUserFormReadOnly(readOnly){
-  ['userLastName','userFirstName','userMiddleName'].forEach(id=>el(id).readOnly=readOnly);
+  ['userLastName','userFirstName','userMiddleName','userTelegram'].forEach(id=>el(id).readOnly=readOnly);
   document.querySelectorAll('#userForm input[type=checkbox]').forEach(box=>box.disabled=readOnly);
 }
 
 function resetUserForm(){
   el('userId').value='';
-  ['userLastName','userFirstName','userMiddleName','userEmail'].forEach(id=>el(id).value='');
+  ['userLastName','userFirstName','userMiddleName','userEmail','userTelegram'].forEach(id=>el(id).value='');
+  renderUserTelegramStatus(null);
   el('userEmail').readOnly=false;
   el('userEmailHint').textContent='Любой домен. Человек войдёт через Google с этим адресом.';
   el('userActive').checked=true;
@@ -858,6 +862,8 @@ function editUser(user){
   el('userFirstName').value=user['Имя']||'';
   el('userMiddleName').value=user['Отчество']||'';
   el('userEmail').value=user.Email;
+  el('userTelegram').value=user.telegram||'';
+  renderUserTelegramStatus(user);
   el('userEmail').readOnly=!user.emailEditable;
   el('userEmailHint').textContent=user.emailEditable
     ?'Пользователь ещё не входил — email можно исправить.'
@@ -881,6 +887,14 @@ function editUser(user){
   el('userMeta').innerHTML=rows.map(([label,text])=>'<div class="user-meta-row"><span>'+escapeHtml(label)+'</span><span>'+escapeHtml(text)+'</span></div>').join('');
   el('userMeta').hidden=!rows.length;
   rerenderServerTable('users');
+}
+
+function renderUserTelegramStatus(user){
+  const badge=el('userTelegramStatus');
+  if(!user||!user.telegram){badge.hidden=true;return}
+  badge.hidden=false;
+  badge.className='state-badge '+(user.telegramVerified?'state-ok':'state-archived');
+  badge.textContent=user.telegramVerified?'Подтверждён':'Не подтверждён';
 }
 
 async function reopenUser(id){
@@ -914,7 +928,8 @@ async function saveUserForm(button){
       middleName:value('userMiddleName').trim(),
       stages:[...document.querySelectorAll('.user-stage:checked')].map(x=>x.value),
       isActive:el('userActive').checked,
-      isAdmin:el('userAdmin').checked
+      isAdmin:el('userAdmin').checked,
+      telegram:value('userTelegram').trim()
     });
     el('userId').value=user['User ID'];
     await afterUserChange(user);

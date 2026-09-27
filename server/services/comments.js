@@ -6,6 +6,7 @@ import { fail } from '../lib/errors.js';
 import { richFromInput } from '../lib/richtext.js';
 import { isUuid, optionalUuid } from '../lib/validation.js';
 import { userDisplayName } from './mappers.js';
+import { commentSnippet, notifyCandidateEvent } from './notifications.js';
 
 export const REACTIONS = ['👍', '👎', '❤️', '😂', '🎉', '👀'];
 
@@ -23,7 +24,10 @@ async function assertEntity(executor, entityType, entityId) {
   }
 
   const row = isUuid(entityId)
-    ? await executor.one(`SELECT id, deleted_at FROM ${table} WHERE id = $1`, [entityId])
+    ? await executor.one(
+        `SELECT id, deleted_at${entityType === 'interview' ? ', candidate_id, to_status' : ''} FROM ${table} WHERE id = $1`,
+        [entityId]
+      )
     : null;
 
   if (!row) {
@@ -161,6 +165,16 @@ export async function addComment(input = {}, actor) {
 
     if (!id) {
       fail('Комментарий пустой.');
+    }
+
+    // Комментарий к кандидату или к его результату интервью — изменение карточки кандидата.
+    const candidateId = entityType === 'candidate' ? entity.id : entityType === 'interview' ? entity.candidate_id : null;
+    if (candidateId) {
+      const where = entityType === 'interview' ? ` к этапу «${entity.to_status}»` : '';
+      await notifyCandidateEvent(tx, candidateId, actor, {
+        type: 'changed',
+        text: `${parentId ? 'Ответ на комментарий' : 'Новый комментарий'}${where}: «${commentSnippet(input.bodyHtml)}».`
+      });
     }
 
     return toComment(await tx.one(COMMENT_SELECT + ' WHERE c.id = $1', [id]), actor);

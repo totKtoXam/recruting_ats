@@ -5,6 +5,7 @@ import {
   clean,
   composeFullName,
   normalizeNamePart,
+  normalizeTelegramUsername,
   optionalUuid,
   splitFullName,
   validateEmail
@@ -212,6 +213,8 @@ export async function saveUser(input = {}, actor) {
   const middleName = normalizeNamePart(input.middleName);
   const stages = normalizeStages(input.stages);
   const isAdmin = input.isAdmin === true;
+  // Ник, указанный администратором, — не подтверждён; подтверждение — привязкой через бота.
+  const telegram = input.telegram === undefined ? undefined : normalizeTelegramUsername(input.telegram);
 
   if (!lastName || !firstName) {
     fail('Фамилия и имя обязательны.');
@@ -237,13 +240,13 @@ export async function saveUser(input = {}, actor) {
       const created = await tx.one(
         `INSERT INTO users
            (email, full_name, last_name, first_name, middle_name, stages,
-            is_active, is_admin, access_granted_at, access_granted_by)
+            is_active, is_admin, access_granted_at, access_granted_by, telegram_username)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
-                 CASE WHEN $7 THEN now() END, CASE WHEN $7 THEN $9::uuid END)
+                 CASE WHEN $7 THEN now() END, CASE WHEN $7 THEN $9::uuid END, $10)
          RETURNING *`,
         [
           email, composeFullName(lastName, firstName, middleName), lastName, firstName,
-          middleName, stages, isActive, isAdmin, actor.id
+          middleName, stages, isActive, isAdmin, actor.id, telegram || ''
         ]
       );
 
@@ -280,18 +283,25 @@ export async function saveUser(input = {}, actor) {
     // Права администратора подразумевают доступ.
     const grantAccess = isAdmin && !existing.is_active;
 
+    // Новый ник снимает подтверждение: привязанный чат принадлежит прежнему аккаунту.
+    const telegramChanged =
+      telegram !== undefined && telegram.toLowerCase() !== (existing.telegram_username || '').toLowerCase();
+
     const updated = await tx.one(
       `UPDATE users SET
          email = $2, last_name = $3, first_name = $4, middle_name = $5, full_name = $6,
          stages = $7, is_admin = $8,
          is_active = is_active OR $9,
          access_granted_at = CASE WHEN $9 THEN now() ELSE access_granted_at END,
-         access_granted_by = CASE WHEN $9 THEN $10::uuid ELSE access_granted_by END
+         access_granted_by = CASE WHEN $9 THEN $10::uuid ELSE access_granted_by END,
+         telegram_username = CASE WHEN $11 THEN $12 ELSE telegram_username END,
+         telegram_chat_id = CASE WHEN $11 THEN NULL ELSE telegram_chat_id END,
+         telegram_verified_at = CASE WHEN $11 THEN NULL ELSE telegram_verified_at END
        WHERE id = $1 RETURNING *`,
       [
         id, email, lastName, firstName, middleName,
         composeFullName(lastName, firstName, middleName), stages, isAdmin,
-        grantAccess, actor.id
+        grantAccess, actor.id, telegramChanged, telegram || ''
       ]
     );
 

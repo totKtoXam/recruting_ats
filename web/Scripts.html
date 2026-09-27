@@ -82,12 +82,50 @@ async function rpc(name,args){
   return data.result;
 }
 
+// Тост закрывается кликом по нему (или по ×), сам скрывается по таймеру;
+// при наведении таймер ставится на паузу. Ошибки висят дольше.
 function showToast(message,type='success'){
   const toast=el('toast');
-  toast.textContent=message;
-  toast.className='toast active '+(type==='error'?'toast-error':'toast-success');
+  if(!toast)return;
+  const isError=type==='error';
+  if(!toast.dataset.bound){
+    toast.dataset.bound='1';
+    toast.addEventListener('click',hideToast);
+    toast.addEventListener('mouseenter',()=>clearTimeout(showToast.timer));
+    toast.addEventListener('mouseleave',()=>{
+      if(toast.classList.contains('active'))scheduleToastHide(1500);
+    });
+  }
+  toast.replaceChildren();
+  const icon=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  icon.setAttribute('class','icon toast-icon');
+  const use=document.createElementNS('http://www.w3.org/2000/svg','use');
+  use.setAttribute('href',isError?'#i-alert':'#i-check');
+  icon.appendChild(use);
+  const text=document.createElement('span');
+  text.className='toast-text';
+  text.textContent=message;
+  const close=document.createElement('button');
+  close.type='button';
+  close.className='toast-close';
+  close.setAttribute('aria-label','Закрыть');
+  close.innerHTML='<svg class="icon"><use href="#i-close"/></svg>';
+  toast.append(icon,text,close);
+  toast.setAttribute('role',isError?'alert':'status');
+  toast.title='Нажмите, чтобы закрыть';
+  toast.className='toast active '+(isError?'toast-error':'toast-success');
+  scheduleToastHide(isError?7000:3500);
+}
+
+function scheduleToastHide(delay){
   clearTimeout(showToast.timer);
-  showToast.timer=setTimeout(()=>toast.className='toast',3200);
+  showToast.timer=setTimeout(hideToast,delay);
+}
+
+function hideToast(){
+  clearTimeout(showToast.timer);
+  const toast=el('toast');
+  if(toast)toast.className='toast';
 }
 
 function showConfirm(message,title='Подтверждение'){
@@ -299,6 +337,8 @@ function applySidebarState(collapsed){
 const ADMIN_ROUTES={
   'vacancies':{section:'vacancies',title:'Вакансии',description:'Вакансии и шаблоны интервью по этапам.'},
   'settings/sources':{section:'sources',title:'Источники вакансий',description:'Откуда приходят кандидаты.'},
+  'settings/notifications':{section:'notifications',tab:'settings',title:'Уведомления',description:'Какие уведомления и куда получать. Журнал — все ваши уведомления.'},
+  'settings/notifications/log':{section:'notifications',tab:'log',title:'Уведомления',description:'Какие уведомления и куда получать. Журнал — все ваши уведомления.'},
   'settings/users':{section:'users',title:'Пользователи',description:'Войти может любой Google Account, работать в ATS — только тот, кому открыт доступ.',adminOnly:true}
 };
 
@@ -340,7 +380,7 @@ function applyRoute(){
   el('viewCandidates').hidden=route.page!=='candidates';
   el('viewAdmin').hidden=route.page!=='admin';
   document.querySelectorAll('.sidebar-link').forEach(link=>{
-    const active=link.dataset.route===route.path;
+    const active=link.dataset.route===route.path||route.path.startsWith(link.dataset.route+'/');
     link.classList.toggle('active',active);
     if(active)link.setAttribute('aria-current','page');
     else link.removeAttribute('aria-current');
@@ -350,6 +390,7 @@ function applyRoute(){
   if(route.page==='admin'){
     if(typeof showAdminSection==='function')showAdminSection(route.path);
     if(typeof renderAdminAll==='function')renderAdminAll();
+    if(route.section==='notifications'&&typeof showNotificationSettings==='function')showNotificationSettings(ADMIN_ROUTES[route.path].tab);
     if(state.loaded.references){
       ensureAdminUsersLoaded().catch(()=>{});
     }
@@ -491,6 +532,7 @@ function applyBootstrapData(data){
   }
 
   updateSyncStatus();
+  if(typeof setNotifyUnread==='function')setNotifyUnread(data.notificationsUnread||0);
   maybeOpenCandidateFromRoute();
   maybeLoadInitialDraft();
 
@@ -1772,6 +1814,7 @@ function openCandidate(candidate){
   renderCandidateRejectedInfo(candidate);
 
   el('shareCandidateButton').hidden=isNew;
+  if(typeof refreshCandidateWatch==='function')refreshCandidateWatch(isNew?null:candidate);
   el('candidateLifecycleActions').innerHTML=isNew?'':candidateLifecycleButtons(candidate,false);
   // Кандидата в корзине нельзя изменить — только восстановить.
   const readOnly=!!(candidate&&candidate.state==='deleted');
@@ -2209,6 +2252,7 @@ async function saveCandidateForm(button){
       setLink('candidateFolderLink',saved['Папка кандидата'],'Открыть папку кандидата ↗');
       el('candidateNumberLabel').textContent='№'+(saved['№']||'—');
       el('shareCandidateButton').hidden=false;
+      if(typeof refreshCandidateWatch==='function')refreshCandidateWatch(saved);
       el('candidateLifecycleActions').innerHTML=candidateLifecycleButtons(saved,false);
       // Первый комментарий уже в ленте: показываем её вместо поля ввода.
       if(!candidateCommentThread||!el('candidateFirstCommentField').hidden){
@@ -2828,5 +2872,8 @@ async function saveInterviewEdit(button){
   }).catch(()=>{});
 }
 
-init();
+// После разбора всего документа: скрипты админки и уведомлений подключаются ниже этого файла,
+// а маршрут (например, прямая ссылка на раздел настроек) нужно применить уже с ними.
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);
+else init();
 </script>
