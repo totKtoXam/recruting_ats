@@ -100,7 +100,8 @@ function renderServerTableBody(table){
   root.querySelector('tbody').innerHTML=data.items.length
     ? data.items.map(item=>{
         const selected=table.isSelected&&table.isSelected(item);
-        return '<tr class="clickable-row'+(selected?' selected-row':'')+'" onclick="serverTableRowClick(\''+table.id+'\',\''+escJs(table.rowId(item))+'\')">'+
+        const stateClass=item.state&&item.state!=='active'?' row-'+item.state:'';
+        return '<tr class="clickable-row'+(selected?' selected-row':'')+stateClass+'" onclick="serverTableRowClick(\''+table.id+'\',\''+escJs(table.rowId(item))+'\')">'+
           table.columns.map(column=>'<td>'+column.render(item)+'</td>').join('')+
         '</tr>';
       }).join('')
@@ -166,6 +167,121 @@ function rerenderServerTable(id){
   if(table&&table.data)renderServerTableBody(table);
 }
 
+// ---------- Состояние записей: активные / архив / корзина ----------
+
+const STATE_LABELS={active:'Активные',archived:'Архив',deleted:'Корзина'};
+
+function renderStateSwitches(){
+  document.querySelectorAll('.state-switch[data-table]').forEach(root=>{
+    const id=root.dataset.table;
+    const table=serverTables[id];
+    if(!table)return;
+    const current=table.query.filters.state||'active';
+    // Корзину видят только администраторы: удалять и восстанавливать могут только они.
+    const states=isAdminUser()?['active','archived','deleted']:['active','archived'];
+    root.innerHTML=states.map(state=>
+      '<label class="segmented-option"><input type="radio" name="state-'+id+'" value="'+state+'"'+(state===current?' checked':'')+
+      ' onchange="setTableState(\''+id+'\',this.value)"><span>'+STATE_LABELS[state]+'</span></label>'
+    ).join('');
+  });
+}
+
+function setTableState(id,state){
+  const table=serverTables[id];
+  table.query.filters.state=state;
+  table.query.page=1;
+  loadServerTable(id);
+}
+
+function stateBadge(item){
+  if(item.state==='archived')return '<span class="state-badge state-archived">В архиве</span>';
+  if(item.state==='deleted')return '<span class="state-badge state-deleted" data-tip="Удалится окончательно '+escapeHtml(item.purgeAt)+'">Удалится через '+escapeHtml(item.daysUntilPurge)+' дн.</span>';
+  return '';
+}
+
+// Кнопки жизненного цикла для записи в зависимости от её состояния.
+function lifecycleButtons(type,id,state,small){
+  const size=small?' icon-btn-sm':'';
+  const call=action=>'event.stopPropagation();entityAction(\''+type+'\',\''+escJs(id)+'\',\''+action+'\',this)';
+  if(state==='deleted'){
+    return isAdminUser()?iconBtn('restore','Восстановить из корзины',call('restore'),size.trim()):'';
+  }
+  if(state==='archived'){
+    return iconBtn('unarchive','Вернуть из архива',call('unarchive'),size.trim())+
+      (isAdminUser()?iconBtn('trash','Удалить (корзина, 30 дней)',call('delete'),(size+' icon-btn-danger').trim()):'');
+  }
+  return iconBtn('archive','В архив',call('archive'),size.trim());
+}
+
+function lifecycleNote(item){
+  if(!item||item.state==='active')return '';
+  if(item.state==='archived'){
+    return '<div class="lifecycle-note">'+icon('archive','icon-sm')+'<span>В архиве с '+escapeHtml(item.archivedAt)+'. Удалить можно только архивную запись.</span></div>';
+  }
+  return '<div class="lifecycle-note deleted">'+icon('trash','icon-sm')+'<span>В корзине. Будет удалено окончательно '+escapeHtml(item.purgeAt)+' (через '+escapeHtml(item.daysUntilPurge)+' дн.). До этого её можно восстановить.</span></div>';
+}
+
+const ENTITY_ACTIONS={
+  archive:{rpc:'archiveEntity',done:'Отправлено в архив.'},
+  unarchive:{rpc:'unarchiveEntity',done:'Возвращено из архива.'},
+  delete:{rpc:'deleteEntity',done:'Перемещено в корзину. Восстановить можно в течение 30 дней.'},
+  restore:{rpc:'restoreEntity',done:'Восстановлено из корзины (в архив).'}
+};
+
+const ENTITY_AFTER={
+  vacancy:async id=>{await refreshReferences();await loadServerTable('vacancies');if(String(value('vacancyId'))===String(id))await reopenVacancy(id)},
+  source:async id=>{await refreshReferences();await loadServerTable('sources');if(String(value('sourceId'))===String(id))reopenSource(id)},
+  user:async id=>{await refreshReferences();ensureAdminUsersLoaded(true).catch(()=>{});await loadServerTable('users');if(String(value('userId'))===String(id))reopenUser(id)},
+  template:async()=>{await refreshReferences();await loadVacancyTemplates();await loadServerTable('vacancies');closeTemplateModal()}
+};
+
+async function entityAction(type,id,action,button){
+  if(action==='delete'){
+    const ok=await showConfirm('Удалить запись? Она будет в корзине 30 дней — за это время её можно восстановить. Потом она удалится из базы окончательно.','Удаление');
+    if(!ok)return;
+  }
+  await runUiTask({button,label:'…'},async()=>{
+    await rpc(ENTITY_ACTIONS[action].rpc,{type,id});
+    if(ENTITY_AFTER[type])await ENTITY_AFTER[type](id);
+    showToast(ENTITY_ACTIONS[action].done);
+  }).catch(()=>{});
+}
+
+// Строка таблицы перерисовывается по данным сервера; для формы ищем запись по id.
+function tableItem(tableId,idKey,id){
+  const table=serverTables[tableId];
+  return (table&&table.data&&table.data.items||[]).find(item=>String(item[idKey])===String(id))||null;
+}
+
+async function findInTable(tableId,idKey,id){
+  let item=tableItem(tableId,idKey,id);
+  if(item)return item;
+  // Запись могла сменить состояние и уйти на другой «таб» — ищем во всех состояниях.
+  const table=serverTables[tableId];
+  for(const state of ['active','archived','deleted']){
+    const data=await rpc(table.rpcName,{page:1,pageSize:100,filters:{state}}).catch(()=>null);
+    item=data&&data.items.find(row=>String(row[idKey])===String(id));
+    if(item)return item;
+  }
+  return null;
+}
+
+function formActions(containerId,buttons){
+  el(containerId).innerHTML=buttons.filter(Boolean).join('');
+}
+
+// ---------- Таблицы ----------
+
+function vacancyStatusButtons(item,small){
+  if(item.state!=='active')return '';
+  const next=(state.vacancyStatusTransitions||{})[item['Статус']]||[];
+  const icons={'Открыта':'check','На паузе':'more','Закрыта':'close'};
+  return '<span class="status-actions">'+next.map(status=>
+    '<button type="button" class="status-action" data-tip="Перевести в «'+escapeHtml(status)+'»" onclick="event.stopPropagation();setVacancyStatusUi(\''+escJs(item['Vacancy ID'])+'\',\''+escJs(status)+'\',this)">'+
+      icon(icons[status]||'arrow-right','icon-sm')+'<span>'+escapeHtml(status)+'</span></button>'
+  ).join('')+'</span>';
+}
+
 const vacancyTable=createServerTable({
   id:'vacancies',
   containerId:'vacancyTable',
@@ -175,10 +291,13 @@ const vacancyTable=createServerTable({
   isSelected:item=>String(item['Vacancy ID'])===String(value('vacancyId')),
   onRowClick:item=>editVacancy(item['Vacancy ID'],item),
   columns:[
-    {label:'№',sort:'number',width:'72px',filter:{key:'number',type:'number'},render:item=>escapeHtml(item['№'])},
-    {label:'Вакансия',sort:'name',filter:{key:'name',type:'text'},render:item=>escapeHtml(item['Вакансия'])},
-    {label:'Статус',sort:'status',width:'140px',filter:{key:'status',type:'select',options:()=>['Открыта','На паузе','Закрыта']},render:item=>vacancyStatusChip(item['Статус'])},
-    {label:'Шаблоны',sort:'templates',render:item=>templateChips(item.templates||[])}
+    {label:'№',sort:'number',width:'64px',filter:{key:'number',type:'number'},render:item=>escapeHtml(item['№'])},
+    {label:'Вакансия',sort:'name',filter:{key:'name',type:'text'},render:item=>escapeHtml(item['Вакансия'])+' '+stateBadge(item)},
+    {label:'Статус',sort:'status',width:'250px',filter:{key:'status',type:'select',options:()=>['Открыта','На паузе','Закрыта']},render:item=>
+      '<div class="chip-wrap">'+vacancyStatusChip(item['Статус'])+vacancyStatusButtons(item,true)+'</div>'},
+    {label:'Кандидаты',sort:'candidates',width:'90px',render:item=>escapeHtml(item.candidateCount||0)},
+    {label:'Шаблоны',sort:'templates',render:item=>templateChips(item.templates||[])},
+    {label:'',width:'76px',render:item=>'<div class="row-actions">'+lifecycleButtons('vacancy',item['Vacancy ID'],item.state,true)+'</div>'}
   ]
 });
 
@@ -191,42 +310,21 @@ const sourceTable=createServerTable({
   isSelected:item=>String(item['Source ID'])===String(value('sourceId')),
   onRowClick:item=>editSource(item['Source ID'],item),
   columns:[
-    {label:'№',sort:'number',width:'72px',filter:{key:'number',type:'number'},render:item=>escapeHtml(item['№'])},
-    {label:'Источник',sort:'name',filter:{key:'name',type:'text'},render:item=>'<div class="source-name-cell">'+sourceIconHtml(item['Название'])+'<span>'+escapeHtml(item['Название'])+'</span></div>'}
+    {label:'№',sort:'number',width:'64px',filter:{key:'number',type:'number'},render:item=>escapeHtml(item['№'])},
+    {label:'Источник',sort:'name',filter:{key:'name',type:'text'},render:item=>'<div class="source-name-cell">'+sourceIconHtml(item['Название'])+'<span>'+escapeHtml(item['Название'])+'</span> '+stateBadge(item)+'</div>'},
+    {label:'',width:'76px',render:item=>'<div class="row-actions">'+lifecycleButtons('source',item['Source ID'],item.state,true)+'</div>'}
   ]
 });
 
-const responsibleTable=createServerTable({
-  id:'responsibles',
-  containerId:'responsibleTable',
-  rpcName:'listResponsibles',
-  defaultSort:{key:'lastName',dir:'asc'},
-  rowId:item=>item['Responsible ID'],
-  isSelected:item=>String(item['Responsible ID'])===String(value('responsibleId')),
-  onRowClick:item=>editResponsible(item['Responsible ID'],item),
-  columns:[
-    {label:'№',sort:'number',width:'72px',filter:{key:'number',type:'number'},render:item=>escapeHtml(item['№'])},
-    {label:'Фамилия',sort:'lastName',filter:{key:'lastName',type:'text'},render:item=>escapeHtml(item['Фамилия'])},
-    {label:'Имя',sort:'firstName',filter:{key:'firstName',type:'text'},render:item=>escapeHtml(item['Имя'])},
-    {label:'Отчество',sort:'middleName',filter:{key:'middleName',type:'text'},render:item=>escapeHtml(item['Отчество'])},
-    {label:'Email',sort:'email',filter:{key:'email',type:'text'},render:item=>escapeHtml(item['Email'])},
-    {label:'Пользователь',sort:'user',filter:{key:'user',type:'text'},render:item=>escapeHtml(item['Пользователь']||'—')},
-    {label:'Этапы',sort:'stages',filter:{key:'stage',type:'select',options:()=>state.pipelineStatuses||[]},render:item=>'<div class="chip-wrap">'+(item.stages||[]).map(stage=>statusChip(stage,true)).join('')+'</div>'}
-  ]
-});
-
-const USER_ACCESS_CHIPS={active:'status-hired',pending:'status-offer',disabled:'status-rejected'};
-
-function userAccessChip(user){
-  return '<span class="status-chip small '+(USER_ACCESS_CHIPS[user.accessStatus]||'')+'">'+escapeHtml(user['Статус доступа'])+'</span>';
-}
-
-function userQuickAction(user){
+function userAccessSwitch(user){
   const self=state.currentUser&&String(state.currentUser['User ID'])===String(user['User ID']);
-  if(self)return '<span class="muted">Это вы</span>';
-  return user.accessStatus==='active'
-    ? iconBtn('x-circle','Закрыть доступ','event.stopPropagation();setUserAccess(\''+escJs(user['User ID'])+'\',false,this)','icon-btn-sm icon-btn-danger')
-    : iconBtn('check','Открыть доступ','event.stopPropagation();setUserAccess(\''+escJs(user['User ID'])+'\',true,this)','icon-btn-sm icon-btn-primary');
+  const disabled=self||user.state!=='active';
+  const tip=self?'Это вы':user.state!=='active'?'Сначала верните из архива':(user.accessStatus==='active'?'Закрыть доступ':'Открыть доступ');
+  return '<label class="switch" data-tip="'+escapeHtml(tip)+'" onclick="event.stopPropagation()">'+
+    '<input type="checkbox"'+(user.accessStatus==='active'?' checked':'')+(disabled?' disabled':'')+
+    ' aria-label="Доступ в ATS" onchange="setUserAccess(\''+escJs(user['User ID'])+'\',this.checked,this)">'+
+    '<span class="switch-track"></span></label>'+
+    (user.accessStatus==='pending'&&user['Запрос доступа']?' <span class="state-badge state-archived" data-tip="Пытался войти '+escapeHtml(user['Запрос доступа'])+'">Ждёт</span>':'');
 }
 
 const userTable=createServerTable({
@@ -238,21 +336,21 @@ const userTable=createServerTable({
   isSelected:item=>String(item['User ID'])===String(value('userId')),
   onRowClick:item=>editUser(item),
   columns:[
+    {label:'ФИО',sort:'name',filter:{key:'name',type:'text'},render:item=>escapeHtml(item['ФИО']||'—')+(item.isAdmin?' <span class="mini-chip">Админ</span>':'')+' '+stateBadge(item)},
     {label:'Email',sort:'email',filter:{key:'email',type:'text'},render:item=>escapeHtml(item.Email)},
-    {label:'ФИО',sort:'name',filter:{key:'name',type:'text'},render:item=>escapeHtml(item['ФИО']||'—')},
-    {label:'Доступ',sort:'status',width:'150px',filter:{key:'status',type:'select',options:()=>[
-      {value:'pending',label:'Ожидает доступа'},
-      {value:'active',label:'Доступ открыт'},
-      {value:'disabled',label:'Доступ отключён'}
-    ]},render:userAccessChip},
-    {label:'Админ',sort:'admin',width:'90px',filter:{key:'admin',type:'select',options:()=>[{value:'yes',label:'Да'},{value:'no',label:'Нет'}]},render:item=>item.isAdmin?'Да':'—'},
-    {label:'Последний вход',sort:'lastLogin',width:'150px',render:item=>escapeHtml(item['Последний вход']||'—')},
-    {label:'Запрос доступа',sort:'requested',width:'150px',render:item=>escapeHtml(item.accessStatus==='active'?'—':(item['Запрос доступа']||'—'))},
-    {label:'',width:'80px',render:userQuickAction}
+    {label:'Доступ',sort:'status',width:'120px',filter:{key:'status',type:'select',options:()=>[
+      {value:'pending',label:'Ожидает'},
+      {value:'active',label:'Открыт'},
+      {value:'disabled',label:'Отключён'}
+    ]},render:userAccessSwitch},
+    {label:'Ответственный за этапы',sort:'stages',filter:{key:'stage',type:'select',options:()=>state.pipelineStatuses||[]},render:item=>
+      (item.stages||[]).length?'<div class="chip-wrap">'+item.stages.map(stage=>statusChip(stage,true)).join('')+'</div>':'<span class="muted">—</span>'},
+    {label:'Последний вход',sort:'lastLogin',width:'140px',render:item=>escapeHtml(item['Последний вход']||'—')},
+    {label:'',width:'76px',render:item=>'<div class="row-actions">'+lifecycleButtons('user',item['User ID'],item.state,true)+'</div>'}
   ]
 });
 
-const ADMIN_TABLES=['vacancies','sources','responsibles'];
+const ADMIN_TABLES=['vacancies','sources'];
 
 function visibleAdminTables(){
   return isAdminUser()?[...ADMIN_TABLES,'users']:ADMIN_TABLES;
@@ -278,6 +376,9 @@ function initAdmin(){
   // Модальное окно шаблона лежит в разметке админки, но должно жить в <body>,
   // иначе оно скрыто вместе с разделом, когда открыта доска кандидатов.
   document.body.appendChild(el('templateModal'));
+  renderVacancyFormActions(null);
+  renderSourceFormActions(null);
+  renderUserFormActions(null);
 }
 
 function adminVisible(){
@@ -288,16 +389,15 @@ function renderAdminAll(){
   initAdmin();
 
   if(!state.loaded.references){
-    ['vacancyTable','sourceTable','responsibleTable'].forEach(id=>{
+    ['vacancyTable','sourceTable','userTable'].forEach(id=>{
       if(el(id))el(id).innerHTML='<div class="empty-state compact">Данные загружаются в фоне…</div>';
     });
     return;
   }
 
-  renderResponsibleUserOptions();
-  renderResponsibleStageOptions();
+  renderStateSwitches();
+  renderUserStageOptions();
   renderTemplateStageOptions();
-  renderVacancyTemplatesForSelected();
   renderSourceFormIcon();
 
   // Таблицы загружаются при первом открытии админ-панели.
@@ -336,7 +436,20 @@ function upsertById(collection,idKey,entity){
   else collection.push(entity);
 }
 
+// Лента комментариев: одна на форму, пересоздаётся при смене записи.
+const commentThreads={};
+
+function mountCommentThread(key,containerId,entityType,entityId){
+  const container=el(containerId);
+  if(commentThreads[key]){commentThreads[key].destroy();delete commentThreads[key]}
+  container.innerHTML='';
+  if(!entityId||typeof CommentThread==='undefined')return;
+  commentThreads[key]=CommentThread.mount(container,{entityType,entityId,currentUser:state.currentUser});
+}
+
 // ---------- Вакансии ----------
+
+let currentVacancy=null;
 
 function setVacancyNameError(message){
   const node=el('vacancyNameError');
@@ -345,32 +458,60 @@ function setVacancyNameError(message){
   el('vacancyName').classList.toggle('input-error',!!message);
 }
 
+function renderVacancyFormActions(vacancy){
+  const readOnly=vacancy&&vacancy.state==='deleted';
+  formActions('vacancyFormActions',[
+    readOnly?'':iconBtn('save','Сохранить вакансию','saveVacancyForm(this)','icon-btn-primary'),
+    iconBtn('close','Отмена','resetVacancyForm()'),
+    vacancy?lifecycleButtons('vacancy',vacancy['Vacancy ID'],vacancy.state):''
+  ]);
+}
+
+function renderVacancyStatus(vacancy){
+  el('vacancyStatusField').hidden=!vacancy;
+  if(!vacancy)return;
+  el('vacancyStatusChip').innerHTML=vacancyStatusChip(vacancy['Статус']);
+  el('vacancyStatusActions').innerHTML=vacancyStatusButtons(vacancy);
+}
+
 function resetVacancyForm(){
+  currentVacancy=null;
   el('vacancyId').value='';
   el('vacancyName').value='';
-  el('vacancyStatus').value='Открыта';
-  el('vacancyComment').value='';
+  el('vacancyName').readOnly=false;
   el('vacancyFormTitle').textContent='Новая вакансия';
-  el('vacancyDeleteButton').hidden=true;
+  el('vacancyLifecycleNote').innerHTML='';
   setVacancyNameError('');
+  renderVacancyFormActions(null);
+  renderVacancyStatus(null);
+  mountCommentThread('vacancy','vacancyComments','vacancy',null);
   rerenderServerTable('vacancies');
-  renderVacancyTemplatesForSelected();
+  loadVacancyTemplates();
   el('vacancyName').focus();
 }
 
 function editVacancy(id,item){
-  const vacancy=item||state.vacancies.find(x=>String(x['Vacancy ID'])===String(id));
+  const vacancy=item||tableItem('vacancies','Vacancy ID',id)||state.vacancies.find(x=>String(x['Vacancy ID'])===String(id));
   if(!vacancy)return;
+  currentVacancy=vacancy;
 
   el('vacancyId').value=id;
   el('vacancyName').value=vacancy['Вакансия']||'';
-  el('vacancyStatus').value=vacancy['Статус']||'Открыта';
-  el('vacancyComment').value=vacancy['Комментарий']||'';
+  el('vacancyName').readOnly=vacancy.state==='deleted';
   el('vacancyFormTitle').textContent='№'+(vacancy['№']||'—')+' · '+vacancy['Вакансия'];
-  el('vacancyDeleteButton').hidden=false;
+  el('vacancyLifecycleNote').innerHTML=lifecycleNote(vacancy);
   setVacancyNameError('');
+  renderVacancyFormActions(vacancy);
+  renderVacancyStatus(vacancy);
+  mountCommentThread('vacancy','vacancyComments','vacancy',id);
   rerenderServerTable('vacancies');
-  renderVacancyTemplatesForSelected();
+  loadVacancyTemplates();
+}
+
+async function reopenVacancy(id){
+  const item=await findInTable('vacancies','Vacancy ID',id);
+  if(item)editVacancy(id,item);
+  else resetVacancyForm();
 }
 
 async function saveVacancyForm(button){
@@ -392,11 +533,11 @@ async function saveVacancyForm(button){
 
   await runUiTask({button,formId:'vacancyForm',label:'Сохранение…'},async()=>{
     try{
-      const {vacancy}=await rpc('saveVacancy',{id,name,status:value('vacancyStatus'),comment:value('vacancyComment')});
+      const {vacancy}=await rpc('saveVacancy',{id,name});
       upsertById(state.vacancies,'Vacancy ID',vacancy);
-      editVacancy(vacancy['Vacancy ID'],vacancy);
       populateGlobalFilters();
       await loadServerTable('vacancies');
+      editVacancy(vacancy['Vacancy ID'],tableItem('vacancies','Vacancy ID',vacancy['Vacancy ID'])||vacancy);
       showToast('Вакансия сохранена.');
     }catch(error){
       if(/уже существует/.test(error.message))setVacancyNameError(error.message);
@@ -405,27 +546,20 @@ async function saveVacancyForm(button){
   }).catch(()=>{});
 }
 
-async function deleteVacancyUi(id,button){
-  if(!id)return;
-  const vacancy=state.vacancies.find(x=>String(x['Vacancy ID'])===String(id));
-  const ok=await showConfirm(
-    'Удалить вакансию «'+(vacancy?vacancy['Вакансия']:'')+'» вместе с её шаблонами? Записи останутся в базе как удалённые.',
-    'Удаление вакансии'
-  );
-  if(!ok)return;
-
-  await runUiTask({button,label:'Удаление…'},async()=>{
-    await rpc('deleteVacancy',id);
-    state.vacancies=state.vacancies.filter(v=>String(v['Vacancy ID'])!==String(id));
-    state.interviewTemplates=state.interviewTemplates.filter(t=>String(t['Vacancy ID'])!==String(id));
-    if(String(value('vacancyId'))===String(id))resetVacancyForm();
+async function setVacancyStatusUi(id,status,button){
+  await runUiTask({button,label:'…'},async()=>{
+    const {vacancy}=await rpc('setVacancyStatus',{id,status});
+    upsertById(state.vacancies,'Vacancy ID',vacancy);
     populateGlobalFilters();
     await loadServerTable('vacancies');
-    showToast('Вакансия удалена.');
+    if(String(value('vacancyId'))===String(id))editVacancy(id,tableItem('vacancies','Vacancy ID',id)||vacancy);
+    showToast('Статус вакансии: «'+status+'».');
   }).catch(()=>{});
 }
 
 // ---------- Шаблоны интервью ----------
+
+let vacancyTemplatesCache=[];
 
 function renderTemplateStageOptions(selected){
   if(!el('templateStage'))return;
@@ -434,19 +568,23 @@ function renderTemplateStageOptions(selected){
     (state.pipelineStatuses||[]).map(status=>option(status,status,status===current)).join('');
 }
 
-function vacancyTemplates(vacancyId){
-  const order=state.pipelineStatuses||[];
-  return state.interviewTemplates
-    .filter(t=>String(t['Vacancy ID'])===String(vacancyId))
-    .sort((a,b)=>order.indexOf(a['Этап'])-order.indexOf(b['Этап'])||(a['№']||0)-(b['№']||0));
+async function loadVacancyTemplates(){
+  const vacancyId=value('vacancyId');
+  vacancyTemplatesCache=[];
+  if(vacancyId){
+    vacancyTemplatesCache=await rpc('listVacancyTemplates',vacancyId).catch(error=>{showToast(error.message,'error');return []});
+    if(String(value('vacancyId'))!==String(vacancyId))return;
+  }
+  renderVacancyTemplatesForSelected();
 }
 
 function renderVacancyTemplatesForSelected(){
   const vacancyId=value('vacancyId');
   const list=el('vacancyTemplateList');
   const empty=el('vacancyTemplateEmpty');
+  const vacancyActive=currentVacancy&&currentVacancy.state==='active';
 
-  el('templateAddButton').disabled=!vacancyId;
+  el('templateAddButton').disabled=!vacancyId||!vacancyActive;
 
   if(!vacancyId){
     empty.hidden=false;
@@ -456,10 +594,15 @@ function renderVacancyTemplatesForSelected(){
     return;
   }
 
-  const templates=vacancyTemplates(vacancyId);
-  el('vacancyTemplateCount').textContent=templates.length;
+  const order=state.pipelineStatuses||[];
+  const showAll=el('templateShowAll').checked;
+  const templates=vacancyTemplatesCache
+    .filter(t=>showAll||t.state==='active')
+    .sort((a,b)=>order.indexOf(a['Этап'])-order.indexOf(b['Этап'])||(a['№']||0)-(b['№']||0));
+
+  el('vacancyTemplateCount').textContent=vacancyTemplatesCache.filter(t=>t.state==='active').length;
   empty.hidden=templates.length>0;
-  empty.textContent='Шаблонов пока нет.';
+  empty.textContent=showAll?'Шаблонов нет.':'Активных шаблонов нет.';
 
   const selected=el('templateModal').classList.contains('open')?value('templateId'):'';
 
@@ -471,9 +614,10 @@ function renderVacancyTemplatesForSelected(){
           statusChip(t['Этап'],true)+
           (t.required?'<span class="mini-chip">Обязательный</span>':'')+
           '<span class="muted">'+(t.questions||[]).length+' вопр.</span>'+
+          stateBadge(t)+
         '</div>'+
       '</div>'+
-      '<button class="icon-btn icon-btn-sm icon-btn-danger" data-tip="Удалить шаблон" aria-label="Удалить шаблон" onclick="event.stopPropagation();deleteTemplateUi(\''+escJs(t['Template ID'])+'\',this)">'+icon('trash','icon-sm')+'</button>'+
+      '<div class="row-actions">'+lifecycleButtons('template',t['Template ID'],t.state,true)+'</div>'+
     '</div>'
   ).join('');
 }
@@ -542,16 +686,21 @@ function openTemplateModal(id){
   const vacancyId=value('vacancyId');
   if(!vacancyId)return;
 
-  const template=id?state.interviewTemplates.find(x=>String(x['Template ID'])===String(id)):null;
-  const vacancy=state.vacancies.find(v=>String(v['Vacancy ID'])===String(vacancyId));
+  const template=id?vacancyTemplatesCache.find(x=>String(x['Template ID'])===String(id)):null;
+  const readOnly=template&&template.state==='deleted';
 
   el('templateId').value=template?template['Template ID']:'';
   el('templateName').value=template?template['Название']||'':'';
   el('templateRequired').checked=!!(template&&template.required);
   renderTemplateStageOptions(template?template['Этап']:'');
   el('templateModalTitle').textContent=template?'№'+(template['№']||'—')+' · '+template['Название']:'Новый шаблон';
-  el('templateModalVacancy').textContent=vacancy?'Вакансия: '+vacancy['Вакансия']:'';
-  el('templateDeleteButton').hidden=!template;
+  el('templateModalVacancy').innerHTML=(currentVacancy?'Вакансия: '+escapeHtml(currentVacancy['Вакансия']):'')+(template?' '+stateBadge(template):'');
+
+  formActions('templateFormActions',[
+    readOnly?'':iconBtn('save','Сохранить шаблон','saveTemplateForm(this)','icon-btn-primary'),
+    iconBtn('close','Отмена','closeTemplateModal()'),
+    template?lifecycleButtons('template',template['Template ID'],template.state):''
+  ]);
 
   el('templateQuestionsList').innerHTML='';
   const questions=template?template.questions||[]:[];
@@ -581,27 +730,12 @@ async function saveTemplateForm(button){
   if(!questions.length){showToast('Добавьте хотя бы один вопрос.','error');return}
 
   await runUiTask({button,formId:'templateForm',label:'Сохранение…'},async()=>{
-    const {template}=await rpc('saveInterviewTemplate',{id:value('templateId'),name,vacancyId,stage,required,questions});
-    upsertById(state.interviewTemplates,'Template ID',template);
+    await rpc('saveInterviewTemplate',{id:value('templateId'),name,vacancyId,stage,required,questions});
+    await refreshReferences();
     closeTemplateModal();
+    await loadVacancyTemplates();
     await loadServerTable('vacancies');
     showToast('Шаблон интервью сохранён.');
-  }).catch(()=>{});
-}
-
-async function deleteTemplateUi(id,button){
-  if(!id)return;
-  const template=state.interviewTemplates.find(x=>String(x['Template ID'])===String(id));
-  const ok=await showConfirm('Удалить шаблон «'+(template?template['Название']:'')+'»?','Удаление шаблона');
-  if(!ok)return;
-
-  await runUiTask({button,label:'Удаление…'},async()=>{
-    await rpc('deleteInterviewTemplate',id);
-    state.interviewTemplates=state.interviewTemplates.filter(t=>String(t['Template ID'])!==String(id));
-    if(String(value('templateId'))===String(id))closeTemplateModal();
-    renderVacancyTemplatesForSelected();
-    await loadServerTable('vacancies');
-    showToast('Шаблон удалён.');
   }).catch(()=>{});
 }
 
@@ -615,26 +749,45 @@ function renderSourceFormIcon(){
   node.textContent=brand.text;
 }
 
+function renderSourceFormActions(source){
+  const readOnly=source&&source.state==='deleted';
+  formActions('sourceFormActions',[
+    readOnly?'':iconBtn('save','Сохранить источник','saveSourceForm(this)','icon-btn-primary'),
+    iconBtn('close','Отмена','resetSourceForm()'),
+    source?lifecycleButtons('source',source['Source ID'],source.state):''
+  ]);
+}
+
 function resetSourceForm(){
   el('sourceId').value='';
   el('sourceName').value='';
+  el('sourceName').readOnly=false;
   el('sourceFormTitle').textContent='Новый источник';
-  el('sourceDeleteButton').hidden=true;
+  el('sourceLifecycleNote').innerHTML='';
+  renderSourceFormActions(null);
   renderSourceFormIcon();
   rerenderServerTable('sources');
   el('sourceName').focus();
 }
 
 function editSource(id,item){
-  const source=item||state.sources.find(x=>String(x['Source ID'])===String(id));
+  const source=item||tableItem('sources','Source ID',id)||state.sources.find(x=>String(x['Source ID'])===String(id));
   if(!source)return;
 
   el('sourceId').value=id;
   el('sourceName').value=source['Название']||'';
+  el('sourceName').readOnly=source.state==='deleted';
   el('sourceFormTitle').textContent='№'+(source['№']||'—')+' · '+source['Название'];
-  el('sourceDeleteButton').hidden=false;
+  el('sourceLifecycleNote').innerHTML=lifecycleNote(source);
+  renderSourceFormActions(source);
   renderSourceFormIcon();
   rerenderServerTable('sources');
+}
+
+async function reopenSource(id){
+  const item=await findInTable('sources','Source ID',id);
+  if(item)editSource(id,item);
+  else resetSourceForm();
 }
 
 async function saveSourceForm(button){
@@ -644,168 +797,80 @@ async function saveSourceForm(button){
   await runUiTask({button,formId:'sourceForm',label:'Сохранение…'},async()=>{
     const {source}=await rpc('saveSource',{id:value('sourceId'),name});
     upsertById(state.sources,'Source ID',source);
-    editSource(source['Source ID'],source);
     populateGlobalFilters();
     await loadServerTable('sources');
+    editSource(source['Source ID'],tableItem('sources','Source ID',source['Source ID'])||source);
     showToast('Источник сохранён.');
   }).catch(()=>{});
 }
 
-async function deleteSourceUi(id,button){
-  if(!id)return;
-  const source=state.sources.find(x=>String(x['Source ID'])===String(id));
-  const ok=await showConfirm('Удалить источник «'+(source?source['Название']:'')+'»?','Удаление источника');
-  if(!ok)return;
+// ---------- Пользователи (они же ответственные) ----------
 
-  await runUiTask({button,label:'Удаление…'},async()=>{
-    await rpc('deleteSource',id);
-    state.sources=state.sources.filter(s=>String(s['Source ID'])!==String(id));
-    if(String(value('sourceId'))===String(id))resetSourceForm();
-    populateGlobalFilters();
-    await loadServerTable('sources');
-    showToast('Источник удалён.');
-  }).catch(()=>{});
-}
-
-// ---------- Ответственные ----------
-
-function renderResponsibleStageOptions(selected){
-  if(!el('responsibleStages'))return;
+function renderUserStageOptions(selected){
+  if(!el('userStages'))return;
   const current=selected!==undefined
     ? selected
-    : [...document.querySelectorAll('.responsible-stage:checked')].map(x=>x.value);
+    : [...document.querySelectorAll('.user-stage:checked')].map(x=>x.value);
 
-  el('responsibleStages').innerHTML=(state.pipelineStatuses||[]).map(stage=>
-    '<label class="stage-check checkbox-line status-soft-'+statusKey(stage)+'">'+
-      '<input type="checkbox" class="responsible-stage" value="'+escapeHtml(stage)+'" '+(current.includes(stage)?'checked':'')+'>'+
+  el('userStages').innerHTML=(state.pipelineStatuses||[]).map(stage=>
+    '<label class="checkbox-line status-soft-'+statusKey(stage)+'">'+
+      '<input type="checkbox" class="user-stage" value="'+escapeHtml(stage)+'" '+(current.includes(stage)?'checked':'')+'>'+
       '<span>'+escapeHtml(stage)+'</span>'+
     '</label>'
   ).join('');
 }
 
-function userDisplayName(user){
-  if(!user)return '—';
-  const name=user['ФИО']||user.Email||'Пользователь';
-  return user.Email&&user.Email!==name?name+' · '+user.Email:name;
+function renderUserFormActions(user){
+  const readOnly=user&&user.state==='deleted';
+  formActions('userFormActions',[
+    readOnly?'':iconBtn('save','Сохранить','saveUserForm(this)','icon-btn-primary'),
+    iconBtn('close','Отмена','resetUserForm()'),
+    user?lifecycleButtons('user',user['User ID'],user.state):''
+  ]);
 }
 
-function renderResponsibleUserOptions(selected){
-  const select=el('responsibleUserId');
-  if(!select)return;
-  const current=selected!==undefined?String(selected||''):String(select.value||'');
-  select.innerHTML=option('','Не привязан',!current)+
-    (state.users||[]).map(user=>option(user['User ID'],userDisplayName(user),String(user['User ID'])===current)).join('');
-}
-
-function resetResponsibleForm(){
-  el('responsibleId').value='';
-  el('responsibleLastName').value='';
-  el('responsibleFirstName').value='';
-  el('responsibleMiddleName').value='';
-  el('responsibleEmail').value='';
-  el('responsibleFormTitle').textContent='Новый ответственный';
-  el('responsibleDeleteButton').hidden=true;
-  renderResponsibleUserOptions('');
-  renderResponsibleStageOptions([]);
-  rerenderServerTable('responsibles');
-  el('responsibleLastName').focus();
-}
-
-function editResponsible(id,item){
-  const responsible=item||state.responsibles.find(x=>String(x['Responsible ID'])===String(id));
-  if(!responsible)return;
-
-  el('responsibleId').value=id;
-  el('responsibleLastName').value=responsible['Фамилия']||'';
-  el('responsibleFirstName').value=responsible['Имя']||'';
-  el('responsibleMiddleName').value=responsible['Отчество']||'';
-  el('responsibleEmail').value=responsible['Email']||'';
-  el('responsibleFormTitle').textContent='№'+(responsible['№']||'—')+' · '+fullNameOf(responsible);
-  el('responsibleDeleteButton').hidden=false;
-  renderResponsibleUserOptions(responsible['User ID']||'');
-  renderResponsibleStageOptions(responsible.stages||[]);
-  rerenderServerTable('responsibles');
-}
-
-async function saveResponsibleForm(button){
-  const lastName=value('responsibleLastName').trim();
-  const firstName=value('responsibleFirstName').trim();
-  const middleName=value('responsibleMiddleName').trim();
-  const stages=[...document.querySelectorAll('.responsible-stage:checked')].map(x=>x.value);
-
-  if(!lastName||!firstName){showToast('Фамилия и имя обязательны.','error');return}
-  if(!stages.length){showToast('Выберите хотя бы один этап.','error');return}
-  if(!validateEmailField(el('responsibleEmail')))return;
-
-  await runUiTask({button,formId:'responsibleForm',label:'Сохранение…'},async()=>{
-    const {responsible}=await rpc('saveResponsible',{
-      id:value('responsibleId'),
-      lastName,
-      firstName,
-      middleName,
-      email:value('responsibleEmail'),
-      userId:value('responsibleUserId'),
-      stages
-    });
-    upsertById(state.responsibles,'Responsible ID',responsible);
-    editResponsible(responsible['Responsible ID'],responsible);
-    populateGlobalFilters();
-    await loadServerTable('responsibles');
-    showToast('Ответственный сохранён.');
-  }).catch(()=>{});
-}
-
-async function deleteResponsibleUi(id,button){
-  if(!id)return;
-  const responsible=state.responsibles.find(x=>String(x['Responsible ID'])===String(id));
-  const ok=await showConfirm('Удалить ответственного «'+(responsible?fullNameOf(responsible):'')+'»?','Удаление ответственного');
-  if(!ok)return;
-
-  await runUiTask({button,label:'Удаление…'},async()=>{
-    await rpc('deleteResponsible',id);
-    state.responsibles=state.responsibles.filter(r=>String(r['Responsible ID'])!==String(id));
-    if(String(value('responsibleId'))===String(id))resetResponsibleForm();
-    populateGlobalFilters();
-    await loadServerTable('responsibles');
-    showToast('Ответственный удалён.');
-  }).catch(()=>{});
-}
-
-// ---------- Пользователи и доступ ----------
-
-function syncUserAdminCheckbox(){
-  // Администратор всегда имеет доступ.
-  if(el('userAdmin').checked)el('userActive').checked=true;
-  el('userAdmin').disabled=!el('userActive').checked;
-  if(!el('userActive').checked)el('userAdmin').checked=false;
+function setUserFormReadOnly(readOnly){
+  ['userLastName','userFirstName','userMiddleName'].forEach(id=>el(id).readOnly=readOnly);
+  document.querySelectorAll('#userForm input[type=checkbox]').forEach(box=>box.disabled=readOnly);
 }
 
 function resetUserForm(){
   el('userId').value='';
-  el('userEmail').value='';
+  ['userLastName','userFirstName','userMiddleName','userEmail'].forEach(id=>el(id).value='');
   el('userEmail').readOnly=false;
-  el('userFullName').value='';
-  el('userFullName').readOnly=false;
+  el('userEmailHint').textContent='Любой домен. Человек войдёт через Google с этим адресом.';
   el('userActive').checked=true;
+  el('userNewAccessField').hidden=false;
   el('userAdmin').checked=false;
-  el('userAdmin').disabled=false;
   el('userFormTitle').textContent='Новый пользователь';
+  el('userLifecycleNote').innerHTML='';
   el('userMeta').hidden=true;
+  setUserFormReadOnly(false);
+  renderUserStageOptions([]);
+  renderUserFormActions(null);
   rerenderServerTable('users');
-  el('userEmail').focus();
+  el('userLastName').focus();
 }
 
 function editUser(user){
   el('userId').value=user['User ID'];
+  el('userLastName').value=user['Фамилия']||'';
+  el('userFirstName').value=user['Имя']||'';
+  el('userMiddleName').value=user['Отчество']||'';
   el('userEmail').value=user.Email;
-  el('userEmail').readOnly=true;
-  el('userFullName').value=user['ФИО']||'';
-  // После первого входа ФИО приходит из Google.
-  el('userFullName').readOnly=!!user['Последний вход'];
-  el('userActive').checked=user.accessStatus==='active';
+  el('userEmail').readOnly=!user.emailEditable;
+  el('userEmailHint').textContent=user.emailEditable
+    ?'Пользователь ещё не входил — email можно исправить.'
+    :'Email подтверждён входом через Google и не меняется.';
+  // Доступ переключается в списке; в форме — только для нового пользователя.
+  el('userNewAccessField').hidden=true;
   el('userAdmin').checked=!!user.isAdmin;
-  syncUserAdminCheckbox();
   el('userFormTitle').textContent=user['ФИО']||user.Email;
+  el('userLifecycleNote').innerHTML=lifecycleNote(user);
+  setUserFormReadOnly(user.state==='deleted');
+  renderUserStageOptions(user.stages||[]);
+  renderUserFormActions(user);
+
   const rows=[
     ['Доступ',user['Статус доступа']],
     ['Последний вход',user['Последний вход']],
@@ -818,46 +883,61 @@ function editUser(user){
   rerenderServerTable('users');
 }
 
-async function persistUser(payload,button,formId){
-  return runUiTask({button,formId,label:'Сохранение…'},async()=>{
-    const {user}=await rpc('saveUser',payload);
-    await loadServerTable('users');
-    // Список для привязки к ответственным содержит только пользователей с доступом.
-    ensureAdminUsersLoaded(true).catch(()=>{});
-    return user;
-  });
+async function reopenUser(id){
+  const item=await findInTable('users','User ID',id);
+  if(item)editUser(item);
+  else resetUserForm();
+}
+
+async function afterUserChange(user){
+  await loadServerTable('users');
+  // Ответственные для форм кандидатов и список для упоминаний.
+  refreshReferences().catch(()=>{});
+  ensureAdminUsersLoaded(true).catch(()=>{});
+  if(user&&String(value('userId'))===String(user['User ID']))editUser(tableItem('users','User ID',user['User ID'])||user);
 }
 
 async function saveUserForm(button){
   const id=value('userId');
-  if(!id&&!validateEmailField(el('userEmail')))return;
-  if(!id&&!value('userEmail').trim()){showToast('Укажите email.','error');return}
+  const lastName=value('userLastName').trim();
+  const firstName=value('userFirstName').trim();
+  if(!lastName||!firstName){showToast('Фамилия и имя обязательны.','error');return}
+  if(!value('userEmail').trim()){showToast('Укажите email.','error');return}
+  if(!el('userEmail').readOnly&&!validateEmailField(el('userEmail')))return;
 
-  const user=await persistUser({
-    id,
-    email:value('userEmail').trim(),
-    fullName:value('userFullName').trim(),
-    isActive:el('userActive').checked,
-    isAdmin:el('userAdmin').checked
-  },button,'userForm').catch(()=>null);
-
-  if(user){
-    editUser(user);
-    showToast(id?'Пользователь сохранён.':'Пользователь добавлен. Он сможет войти через Google.');
-  }
+  await runUiTask({button,formId:'userForm',label:'Сохранение…'},async()=>{
+    const {user}=await rpc('saveUser',{
+      id,
+      email:value('userEmail').trim(),
+      lastName,
+      firstName,
+      middleName:value('userMiddleName').trim(),
+      stages:[...document.querySelectorAll('.user-stage:checked')].map(x=>x.value),
+      isActive:el('userActive').checked,
+      isAdmin:el('userAdmin').checked
+    });
+    el('userId').value=user['User ID'];
+    await afterUserChange(user);
+    showToast(id?'Пользователь сохранён.':'Пользователь добавлен.');
+  }).catch(()=>{});
 }
 
-async function setUserAccess(id,isActive,button){
-  const row=(serverTables.users.data&&serverTables.users.data.items||[]).find(item=>String(item['User ID'])===String(id));
-  if(!row)return;
-  if(!isActive){
+async function setUserAccess(id,isActive,input){
+  const row=tableItem('users','User ID',id);
+  if(!isActive&&row){
     const ok=await showConfirm('Закрыть доступ пользователю '+row.Email+'? Он будет разлогинен при следующем действии.','Закрытие доступа');
-    if(!ok)return;
+    if(!ok){input.checked=true;return}
   }
-  const user=await persistUser({id,fullName:'',isActive,isAdmin:isActive&&row.isAdmin},button).catch(()=>null);
-  if(user){
-    if(String(value('userId'))===String(id))editUser(user);
+  input.disabled=true;
+  try{
+    const {user}=await rpc('setUserAccess',{id,isActive});
+    await afterUserChange(user);
     showToast(isActive?'Доступ открыт: '+user.Email:'Доступ закрыт: '+user.Email);
+  }catch(error){
+    input.checked=!isActive;
+    showToast(error.message,'error');
+  }finally{
+    input.disabled=false;
   }
 }
 </script>

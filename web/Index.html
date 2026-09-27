@@ -5,6 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <?!= include('Styles'); ?>
+  <?!= include('AppStyles'); ?>
 </head>
 <body>
   <?!= include('Icons'); ?>
@@ -26,6 +27,7 @@
           <small id="currentUserEmail"></small>
         </span>
       </div>
+      <button type="button" class="icon-btn" data-theme-toggle data-tip="Тема: системная" aria-label="Тема: системная" onclick="ThemeManager.cycle()"><svg class="icon"><use href="#i-monitor"/></svg></button>
       <form method="post" action="/auth/logout" class="logout-form">
         <button type="submit" class="icon-btn" data-tip="Выйти" aria-label="Выйти"><svg class="icon"><use href="#i-logout"/></svg></button>
       </form>
@@ -35,13 +37,20 @@
   <div class="app-shell">
     <aside id="sidebar" class="sidebar" aria-label="Основное меню">
       <nav class="sidebar-nav">
-        <div class="sidebar-section-title"><span>Рекрутинг</span></div>
-        <a class="sidebar-link" href="#/candidates" data-route="candidates"><svg class="icon"><use href="#i-kanban"/></svg><span>Кандидаты</span></a>
-        <a class="sidebar-link" href="#/vacancies" data-route="vacancies"><svg class="icon"><use href="#i-briefcase"/></svg><span>Вакансии</span></a>
-        <div class="sidebar-group-title"><svg class="icon"><use href="#i-settings"/></svg><span>Настройки</span></div>
-        <a class="sidebar-link sidebar-sublink" href="#/settings/sources" data-route="settings/sources"><svg class="icon"><use href="#i-list"/></svg><span>Источники вакансий</span></a>
-        <a class="sidebar-link sidebar-sublink" href="#/settings/responsibles" data-route="settings/responsibles"><svg class="icon"><use href="#i-users"/></svg><span>Ответственные</span></a>
-        <a id="sidebarUsersLink" class="sidebar-link sidebar-sublink" href="#/settings/users" data-route="settings/users" hidden><svg class="icon"><use href="#i-user"/></svg><span>Пользователи</span></a>
+        <div class="sidebar-group" data-group="recruiting">
+          <button type="button" class="sidebar-group-toggle" aria-expanded="true" onclick="toggleSidebarGroup('recruiting')"><svg class="icon"><use href="#i-kanban"/></svg><span>Рекрутинг</span><svg class="icon chevron"><use href="#i-chevron-right"/></svg></button>
+          <div class="sidebar-group-items" id="sidebarGroup-recruiting">
+          <a class="sidebar-link" href="#/candidates" data-route="candidates"><svg class="icon"><use href="#i-users"/></svg><span>Кандидаты</span></a>
+          <a class="sidebar-link" href="#/vacancies" data-route="vacancies"><svg class="icon"><use href="#i-briefcase"/></svg><span>Вакансии</span></a>
+          </div>
+        </div>
+        <div class="sidebar-group" data-group="settings">
+          <button type="button" class="sidebar-group-toggle" aria-expanded="true" onclick="toggleSidebarGroup('settings')"><svg class="icon"><use href="#i-settings"/></svg><span>Настройки</span><svg class="icon chevron"><use href="#i-chevron-right"/></svg></button>
+          <div class="sidebar-group-items" id="sidebarGroup-settings">
+          <a class="sidebar-link" href="#/settings/sources" data-route="settings/sources"><svg class="icon"><use href="#i-list"/></svg><span>Источники вакансий</span></a>
+          <a class="sidebar-link" href="#/settings/users" data-route="settings/users" id="sidebarUsersLink" hidden><svg class="icon"><use href="#i-user"/></svg><span>Пользователи</span></a>
+          </div>
+        </div>
       </nav>
       <button id="sidebarToggle" class="icon-btn sidebar-toggle" data-tip="Свернуть меню" aria-label="Свернуть меню" onclick="toggleSidebar()"><svg class="icon"><use href="#i-chevrons-left"/></svg></button>
     </aside>
@@ -81,10 +90,16 @@
         <select id="filterSource" onchange="renderBoard()"></select>
       </div>
 
-      <label class="toggle">
-        <input id="filterArchived" type="checkbox" onchange="toggleArchivedFilter()">
-        <span>Архив</span>
-      </label>
+      <div class="field compact">
+        <label>Показать</label>
+        <div class="segmented" id="boardStateSwitch">
+          <label class="segmented-option"><input type="radio" name="boardState" value="active" checked onchange="setBoardState(this.value)"><span>Активные</span></label>
+          <label class="segmented-option"><input type="radio" name="boardState" value="archived" onchange="setBoardState(this.value)"><span>Архив</span></label>
+          <label class="segmented-option"><input type="radio" name="boardState" value="deleted" onchange="setBoardState(this.value)"><span>Корзина</span></label>
+        </div>
+        <!-- Прежний флажок «Архив» — для совместимости со старым кодом. -->
+        <input id="filterArchived" type="checkbox" hidden>
+      </div>
     </section>
 
     <section id="stats" class="stats"></section>
@@ -113,7 +128,7 @@
 
         <div class="candidate-header-actions">
           <button id="shareCandidateButton" class="icon-btn" data-tip="Скопировать ссылку" aria-label="Скопировать ссылку" onclick="copyCandidateLink(this)" hidden><svg class="icon"><use href="#i-share"/></svg></button>
-          <button id="archiveCandidateButton" class="icon-btn icon-btn-danger" data-tip="Архивировать" aria-label="Архивировать" onclick="archiveCurrentCandidate(this)" hidden><svg class="icon"><use href="#i-archive"/></svg></button>
+          <span id="candidateLifecycleActions" class="header-actions"></span>
           <button class="icon-btn icon-btn-primary" data-tip="Сохранить" aria-label="Сохранить" onclick="saveCandidateForm(this)"><svg class="icon"><use href="#i-save"/></svg></button>
           <button class="icon-btn" data-tip="Закрыть" aria-label="Закрыть" onclick="closeCandidate()"><svg class="icon"><use href="#i-close"/></svg></button>
         </div>
@@ -240,7 +255,7 @@
           <div class="section-heading compact-heading">
             <div>
               <h3>Материалы</h3>
-              <p>Резюме, папка, комментарии и ссылки.</p>
+              <p>Резюме, папка, ссылки и комментарии.</p>
             </div>
           </div>
 
@@ -270,17 +285,19 @@
           </div>
 
           <div class="field">
-            <label>Комментарий</label>
-            <textarea id="candidateComment" placeholder="Дополнительная информация о кандидате"></textarea>
-          </div>
-
-          <div class="field">
             <div class="field-header">
               <label>Иные ссылки</label>
               <button class="icon-btn icon-btn-sm" type="button" data-tip="Добавить ссылку" aria-label="Добавить ссылку" onclick="addCandidateLink()"><svg class="icon"><use href="#i-plus"/></svg></button>
             </div>
             <div id="candidateLinks"></div>
           </div>
+
+          <!-- Новый кандидат: первый комментарий; существующий: лента комментариев. -->
+          <div id="candidateFirstCommentField" class="field">
+            <label>Комментарий</label>
+            <textarea id="candidateComment" data-rich placeholder="Дополнительная информация о кандидате"></textarea>
+          </div>
+          <div id="candidateComments" class="comments-host"></div>
         </section>
 
         <section class="candidate-column candidate-column-interviews">
@@ -304,7 +321,10 @@
           <h2>Результат этапа</h2>
           <div id="transitionTitle" class="muted"></div>
         </div>
-        <button class="icon-btn" data-tip="Закрыть" aria-label="Закрыть" onclick="closeTransition()"><svg class="icon"><use href="#i-close"/></svg></button>
+        <div class="header-actions">
+          <button type="button" class="icon-btn icon-btn-primary" data-tip="Сохранить и перейти" aria-label="Сохранить и перейти" onclick="submitTransition(this)"><svg class="icon"><use href="#i-check"/></svg></button>
+          <button type="button" class="icon-btn" data-tip="Отмена" aria-label="Отмена" onclick="closeTransition()"><svg class="icon"><use href="#i-close"/></svg></button>
+        </div>
       </div>
 
       <section id="transitionForm" class="form-card form-card-flat">
@@ -322,18 +342,14 @@
           <div id="transitionQuestions" class="field full"></div>
 
           <div class="field full">
-            <label>Комментарии</label>
-            <textarea id="transitionComment"></textarea>
+            <label>Комментарий</label>
+            <textarea id="transitionComment" data-rich placeholder="Попадёт в ленту комментариев этого результата"></textarea>
           </div>
 
           <div class="field full">
             <label>Результат *</label>
-            <textarea id="transitionResult"></textarea>
+            <textarea id="transitionResult" data-rich placeholder="Итог этапа"></textarea>
           </div>
-        </div>
-
-        <div class="actions">
-          <button class="icon-btn icon-btn-primary" data-tip="Сохранить и перейти" aria-label="Сохранить и перейти" onclick="submitTransition(this)"><svg class="icon"><use href="#i-check"/></svg></button>
         </div>
       </section>
     </div>
@@ -343,25 +359,18 @@
     <div class="panel">
       <div class="panel-header">
         <h2>Редактирование результата</h2>
-        <button class="icon-btn" data-tip="Закрыть" aria-label="Закрыть" onclick="closeInterviewEdit()"><svg class="icon"><use href="#i-close"/></svg></button>
+        <div class="header-actions">
+          <button type="button" class="icon-btn icon-btn-primary" data-tip="Сохранить" aria-label="Сохранить" onclick="saveInterviewEdit(this)"><svg class="icon"><use href="#i-save"/></svg></button>
+          <button type="button" class="icon-btn" data-tip="Отмена" aria-label="Отмена" onclick="closeInterviewEdit()"><svg class="icon"><use href="#i-close"/></svg></button>
+        </div>
       </div>
 
       <section id="interviewEditForm" class="form-card form-card-flat">
         <div id="editInterviewQuestions"></div>
 
         <div class="field">
-          <label>Комментарий</label>
-          <textarea id="editInterviewComment"></textarea>
-        </div>
-
-        <div class="field">
-          <label>Результат</label>
-          <textarea id="editInterviewResult"></textarea>
-        </div>
-
-        <div class="actions">
-          <button class="icon-btn icon-btn-danger left" data-tip="Удалить" aria-label="Удалить" onclick="softDeleteInterview(this)"><svg class="icon"><use href="#i-trash"/></svg></button>
-          <button class="icon-btn icon-btn-primary" data-tip="Сохранить" aria-label="Сохранить" onclick="saveInterviewEdit(this)"><svg class="icon"><use href="#i-save"/></svg></button>
+          <label>Результат *</label>
+          <textarea id="editInterviewResult" data-rich></textarea>
         </div>
       </section>
     </div>
@@ -375,7 +384,10 @@
           <h2 id="rejectionTitle">Отказ кандидату</h2>
           <div id="rejectionSubtitle" class="muted"></div>
         </div>
-        <button class="icon-btn" data-tip="Закрыть" aria-label="Закрыть" onclick="closeRejection()"><svg class="icon"><use href="#i-close"/></svg></button>
+        <div class="header-actions">
+          <button type="button" class="icon-btn icon-btn-danger" data-tip="Отказать" aria-label="Отказать" onclick="submitRejection(this)"><svg class="icon"><use href="#i-reject"/></svg></button>
+          <button type="button" class="icon-btn" data-tip="Отмена" aria-label="Отмена" onclick="closeRejection()"><svg class="icon"><use href="#i-close"/></svg></button>
+        </div>
       </div>
 
       <section id="rejectionForm" class="form-card form-card-flat rejection-panel">
@@ -405,12 +417,8 @@
 
         <div class="field">
           <label id="rejectionCommentLabel" for="rejectionComment">Комментарий</label>
-          <textarea id="rejectionComment" oninput="this.classList.remove('input-error')"></textarea>
+          <textarea id="rejectionComment" data-rich></textarea>
           <small id="rejectionCommentHint" class="field-error" hidden>Для причины «Другое» опишите причину отказа.</small>
-        </div>
-
-        <div class="actions">
-          <button class="icon-btn icon-btn-danger" data-tip="Отказать" aria-label="Отказать" onclick="submitRejection(this)"><svg class="icon"><use href="#i-reject"/></svg></button>
         </div>
       </section>
     </div>
@@ -424,17 +432,16 @@
           <h2 id="restoreTitle">Вернуть кандидата</h2>
           <div id="restoreSubtitle" class="muted"></div>
         </div>
-        <button class="icon-btn" data-tip="Закрыть" aria-label="Закрыть" onclick="closeRestore()"><svg class="icon"><use href="#i-close"/></svg></button>
+        <div class="header-actions">
+          <button type="button" class="icon-btn icon-btn-primary" data-tip="Вернуть на этап" aria-label="Вернуть на этап" onclick="submitRestore(this)"><svg class="icon"><use href="#i-restore"/></svg></button>
+          <button type="button" class="icon-btn" data-tip="Отмена" aria-label="Отмена" onclick="closeRestore()"><svg class="icon"><use href="#i-close"/></svg></button>
+        </div>
       </div>
 
       <section id="restoreForm" class="form-card form-card-flat">
         <div class="field">
           <label for="restoreComment">Комментарий</label>
-          <textarea id="restoreComment" placeholder="Почему кандидат возвращается в воронку"></textarea>
-        </div>
-
-        <div class="actions">
-          <button class="icon-btn icon-btn-primary" data-tip="Вернуть на этап" aria-label="Вернуть на этап" onclick="submitRestore(this)"><svg class="icon"><use href="#i-restore"/></svg></button>
+          <textarea id="restoreComment" data-rich placeholder="Почему кандидат возвращается в воронку"></textarea>
         </div>
       </section>
     </div>
@@ -461,6 +468,8 @@
   </script>
 
   <?!= include('UiKit'); ?>
+  <?!= include('Editor'); ?>
+  <?!= include('Comments'); ?>
   <?!= include('Scripts'); ?>
   <?!= include('AdminScripts'); ?>
 </body>

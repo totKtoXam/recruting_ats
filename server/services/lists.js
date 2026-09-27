@@ -5,12 +5,21 @@
 import { APP_CONFIG } from '../config.js';
 import { db } from '../db/pool.js';
 import { clean } from '../lib/validation.js';
-import { toPublicUser, toResponsible, toSource, toVacancy } from './mappers.js';
+import { toPublicUser, toSource, toVacancy } from './mappers.js';
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 
 const like = value => '%' + value.replace(/[\\%_]/g, char => '\\' + char) + '%';
+
+// Состояние записи: активные (по умолчанию), архив или корзина.
+const STATES = ['active', 'archived', 'deleted'];
+
+function stateClause(alias, state) {
+  if (state === 'archived') return `${alias}.archived_at IS NOT NULL AND ${alias}.deleted_at IS NULL`;
+  if (state === 'deleted') return `${alias}.deleted_at IS NOT NULL`;
+  return `${alias}.archived_at IS NULL AND ${alias}.deleted_at IS NULL`;
+}
 
 // Типы фильтров: text — подстрока без учёта регистра, eq — точное совпадение,
 // number — точное число, arrayContains — элемент text[].
@@ -41,8 +50,11 @@ async function queryList(definition, input = {}) {
   const params = [];
   const param = () => `$${params.length + 1}`;
   const where = [...(definition.where || [])];
+  const filters = input.filters || {};
+  const state = STATES.includes(filters.state) ? filters.state : 'active';
+  where.push(stateClause(definition.alias, state));
 
-  for (const [key, rawValue] of Object.entries(input.filters || {})) {
+  for (const [key, rawValue] of Object.entries(filters)) {
     const filter = definition.filters[key];
     const value = clean(rawValue);
 
@@ -88,6 +100,7 @@ async function queryList(definition, input = {}) {
 
   return {
     items: rows.map(definition.map),
+    state,
     total,
     page,
     pageSize,
@@ -101,33 +114,35 @@ const VACANCIES = {
         'id', t.id, 'number', t.number, 'name', t.name, 'stage', t.stage, 'required', t.required
       ) ORDER BY t.number), '[]'::jsonb)
      FROM interview_templates t
-     WHERE t.vacancy_id = v.id AND t.deleted_at IS NULL) AS templates`,
+     WHERE t.vacancy_id = v.id AND t.archived_at IS NULL AND t.deleted_at IS NULL) AS templates,
+    (SELECT count(*)::int FROM candidates c WHERE c.vacancy_id = v.id AND c.deleted_at IS NULL) AS candidate_count`,
   from: 'vacancies v',
-  where: ['v.deleted_at IS NULL'],
+  alias: 'v',
   filters: {
     number: { type: 'number', sql: 'v.number' },
     name: { type: 'text', sql: 'v.name' },
-    status: { type: 'eq', sql: 'v.status', allowed: APP_CONFIG.VACANCY_STATUSES },
-    comment: { type: 'text', sql: 'v.comment' }
+    status: { type: 'eq', sql: 'v.status', allowed: APP_CONFIG.VACANCY_STATUSES }
   },
   sorts: {
     number: 'v.number',
     name: 'lower(v.name)',
     status: `array_position(ARRAY['Открыта', 'На паузе', 'Закрыта'], v.status)`,
     templates:
-      '(SELECT count(*) FROM interview_templates t WHERE t.vacancy_id = v.id AND t.deleted_at IS NULL)',
+      '(SELECT count(*) FROM interview_templates t WHERE t.vacancy_id = v.id AND t.archived_at IS NULL AND t.deleted_at IS NULL)',
+    candidates: '(SELECT count(*) FROM candidates c WHERE c.vacancy_id = v.id AND c.deleted_at IS NULL)',
     createdAt: 'v.created_at',
-    updatedAt: 'v.updated_at'
+    updatedAt: 'v.updated_at',
+    deletedAt: 'v.deleted_at'
   },
   defaultSort: { key: 'number', dir: 'DESC' },
   tieBreaker: 'v.id',
-  map: row => ({ ...toVacancy(row), templates: row.templates || [] })
+  map: row => ({ ...toVacancy(row), templates: row.templates || [], candidateCount: row.candidate_count })
 };
 
 const SOURCES = {
   select: 's.*',
   from: 'sources s',
-  where: ['s.deleted_at IS NULL'],
+  alias: 's',
   filters: {
     number: { type: 'number', sql: 's.number' },
     name: { type: 'text', sql: 's.name' }
@@ -135,43 +150,12 @@ const SOURCES = {
   sorts: {
     number: 's.number',
     name: 'lower(s.name)',
-    createdAt: 's.created_at'
+    createdAt: 's.created_at',
+    deletedAt: 's.deleted_at'
   },
   defaultSort: { key: 'name', dir: 'ASC' },
   tieBreaker: 's.id',
   map: toSource
-};
-
-const RESPONSIBLES = {
-  select: `r.*, u.email AS user_email, u.full_name AS user_full_name`,
-  from: 'responsibles r LEFT JOIN users u ON u.id = r.user_id',
-  where: ['r.deleted_at IS NULL'],
-  filters: {
-    number: { type: 'number', sql: 'r.number' },
-    lastName: { type: 'text', sql: 'r.last_name' },
-    firstName: { type: 'text', sql: 'r.first_name' },
-    middleName: { type: 'text', sql: 'r.middle_name' },
-    email: { type: 'text', sql: 'r.email' },
-    user: { type: 'text', sql: `concat_ws(' ', u.full_name, u.email)` },
-    stage: { type: 'arrayContains', sql: 'r.stages', allowed: APP_CONFIG.PIPELINE_STATUSES }
-  },
-  sorts: {
-    number: 'r.number',
-    lastName: 'lower(r.last_name)',
-    firstName: 'lower(r.first_name)',
-    middleName: 'lower(r.middle_name)',
-    email: 'lower(r.email)',
-    user: `lower(coalesce(nullif(u.full_name, ''), u.email))`,
-    stages: 'cardinality(r.stages)'
-  },
-  defaultSort: { key: 'lastName', dir: 'ASC' },
-  tieBreaker: 'r.id',
-  map: row => ({
-    ...toResponsible(row),
-    'Пользователь': row.user_id
-      ? [row.user_full_name, row.user_email].filter(Boolean).join(' · ')
-      : ''
-  })
 };
 
 const USER_STATUS_SQL = `CASE WHEN u.is_active THEN 'active'
@@ -180,16 +164,30 @@ const USER_STATUS_SQL = `CASE WHEN u.is_active THEN 'active'
 const USERS = {
   select: 'u.*',
   from: 'users u',
-  where: [],
+  alias: 'u',
   filters: {
     email: { type: 'text', sql: 'u.email' },
-    name: { type: 'text', sql: 'u.full_name' },
+    name: { type: 'text', sql: `concat_ws(' ', u.last_name, u.first_name, u.middle_name, u.full_name)` },
+    lastName: { type: 'text', sql: 'u.last_name' },
+    firstName: { type: 'text', sql: 'u.first_name' },
+    middleName: { type: 'text', sql: 'u.middle_name' },
+    stage: { type: 'arrayContains', sql: 'u.stages', allowed: APP_CONFIG.PIPELINE_STATUSES },
+    responsible: {
+      type: 'eq',
+      sql: `CASE WHEN cardinality(u.stages) > 0 THEN 'yes' ELSE 'no' END`,
+      allowed: ['yes', 'no']
+    },
     status: { type: 'eq', sql: USER_STATUS_SQL, allowed: ['active', 'pending', 'disabled'] },
     admin: { type: 'eq', sql: `CASE WHEN u.is_admin THEN 'yes' ELSE 'no' END`, allowed: ['yes', 'no'] }
   },
   sorts: {
     email: 'lower(u.email)',
-    name: `lower(nullif(u.full_name, ''))`,
+    name: `lower(nullif(concat_ws(' ', nullif(u.last_name, ''), nullif(u.first_name, '')), ''))`,
+    lastName: `lower(nullif(u.last_name, ''))`,
+    firstName: `lower(nullif(u.first_name, ''))`,
+    middleName: `lower(nullif(u.middle_name, ''))`,
+    stages: 'cardinality(u.stages)',
+    deletedAt: 'u.deleted_at',
     // Сначала ожидающие доступа — им нужно решение администратора.
     status: `array_position(ARRAY['pending', 'active', 'disabled'], ${USER_STATUS_SQL})`,
     admin: 'u.is_admin',
@@ -205,4 +203,3 @@ const USERS = {
 export const listVacancies = input => queryList(VACANCIES, input);
 export const listUsers = input => queryList(USERS, input);
 export const listSources = input => queryList(SOURCES, input);
-export const listResponsibles = input => queryList(RESPONSIBLES, input);

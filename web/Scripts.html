@@ -22,6 +22,7 @@ let state={
 };
 
 let currentCandidate=null;
+let candidateCommentThread=null;
 let currentCandidateDraft=null;
 let draftLoadStarted=false;
 let pendingTransition=null;
@@ -42,6 +43,20 @@ function escapeHtml(v){return String(v??'').replaceAll('&','&amp;').replaceAll('
 function escJs(v){return String(v??'').replaceAll('\\','\\\\').replaceAll("'","\\'")}
 function icon(name,extra){return '<svg class="icon'+(extra?' '+extra:'')+'"><use href="#i-'+name+'"/></svg>'}
 function iconBtn(name,tip,onclick,variant){return '<button type="button" class="icon-btn'+(variant?' '+variant:'')+'" data-tip="'+escapeHtml(tip)+'" aria-label="'+escapeHtml(tip)+'" onclick="'+onclick+'">'+icon(name,variant&&variant.includes('icon-btn-sm')?'icon-sm':'')+'</button>'}
+// Текст без разметки. DOMParser создаёт инертный документ — скрипты и картинки из HTML не выполняются.
+function richText(html){return new DOMParser().parseFromString(String(html||''),'text/html').body.textContent.trim()}
+// HTML из БД уже очищен сервером (белый список тегов).
+function richHtml(html){
+  if(!html)return '—';
+  return window.RichEditor&&RichEditor.renderHTML?RichEditor.renderHTML(html):'<div class="rich-text">'+html+'</div>';
+}
+function mountRich(root){if(window.RichEditor)RichEditor.mountAll(root||document)}
+function setRich(id,html){
+  const textarea=typeof id==='string'?el(id):id;
+  textarea.value=html||'';
+  if(window.RichEditor&&RichEditor.get(textarea))RichEditor.sync(textarea);
+}
+function textToRichHtml(text){return text?'<p>'+escapeHtml(text).replace(/\n/g,'<br>')+'</p>':''}
 function option(v,label,selected){return '<option value="'+escapeHtml(v)+'"'+(selected?' selected':'')+'>'+escapeHtml(label)+'</option>'}
 
 async function rpc(name,args){
@@ -207,6 +222,7 @@ function sourceOptionLabel(source){
 }
 
 function init(){
+  mountRich(document);
   initSidebar();
   initRouter();
   renderInitialShell();
@@ -222,6 +238,34 @@ function initSidebar(){
   try{collapsed=localStorage.getItem(SIDEBAR_STORAGE_KEY)==='1'}catch(error){}
   applySidebarState(collapsed);
   NARROW_SCREEN.addEventListener('change',()=>applySidebarState(document.body.classList.contains('sidebar-collapsed')));
+}
+
+const SIDEBAR_GROUPS_KEY='ats:sidebar-groups';
+
+function sidebarGroupsState(){
+  try{return JSON.parse(localStorage.getItem(SIDEBAR_GROUPS_KEY)||'{}')||{}}catch(error){return {}}
+}
+
+function toggleSidebarGroup(key){
+  const groups=sidebarGroupsState();
+  groups[key]=!(groups[key]===false?false:true);
+  try{localStorage.setItem(SIDEBAR_GROUPS_KEY,JSON.stringify(groups))}catch(error){}
+  applySidebarGroups();
+}
+
+// Свёрнутые группы-аккордеоны; в режиме «только иконки» видны все пункты,
+// а группа с активным пунктом всегда раскрыта.
+function applySidebarGroups(){
+  const groups=sidebarGroupsState();
+  const iconsOnly=document.body.classList.contains('sidebar-collapsed')||NARROW_SCREEN.matches;
+  document.querySelectorAll('.sidebar-group').forEach(group=>{
+    const key=group.dataset.group;
+    const hasActive=!!group.querySelector('.sidebar-link.active');
+    const expanded=iconsOnly||hasActive||groups[key]!==false;
+    group.querySelector('.sidebar-group-toggle').setAttribute('aria-expanded',String(expanded));
+    group.querySelector('.sidebar-group-items').hidden=!expanded;
+    group.classList.toggle('expanded',expanded);
+  });
 }
 
 function toggleSidebar(){
@@ -240,6 +284,7 @@ function applySidebarState(collapsed){
     if(iconsOnly)link.dataset.tip=link.textContent.trim();
     else delete link.dataset.tip;
   });
+  applySidebarGroups();
   const toggle=el('sidebarToggle');
   if(!toggle)return;
   const tip=collapsed?'Развернуть меню':'Свернуть меню';
@@ -254,7 +299,6 @@ function applySidebarState(collapsed){
 const ADMIN_ROUTES={
   'vacancies':{section:'vacancies',title:'Вакансии',description:'Вакансии и шаблоны интервью по этапам.'},
   'settings/sources':{section:'sources',title:'Источники вакансий',description:'Откуда приходят кандидаты.'},
-  'settings/responsibles':{section:'responsibles',title:'Ответственные',description:'Рекрутеры, HR и проф. интервьюверы с доступом к этапам.'},
   'settings/users':{section:'users',title:'Пользователи',description:'Войти может любой Google Account, работать в ATS — только тот, кому открыт доступ.',adminOnly:true}
 };
 
@@ -301,6 +345,7 @@ function applyRoute(){
     if(active)link.setAttribute('aria-current','page');
     else link.removeAttribute('aria-current');
   });
+  applySidebarGroups();
 
   if(route.page==='admin'){
     if(typeof showAdminSection==='function')showAdminSection(route.path);
@@ -316,7 +361,8 @@ function applyRoute(){
 function candidateById(id){
   return [
     ...state.candidates,
-    ...state.archivedCandidates
+    ...state.archivedCandidates,
+    ...(state.deletedCandidates||[])
   ].find(candidate=>
     String(candidate.ID)===
     String(id)
@@ -428,7 +474,9 @@ function applyBootstrapData(data){
     rejectedStatus:data.rejectedStatus||'Отказано',
     profInterviewStatus:data.profInterviewStatus||'Проф. интервью',
     rejectionReasons:data.rejectionReasons||{candidate:[],responsible:[]},
-    otherReason:data.otherReason||'Другое'
+    otherReason:data.otherReason||'Другое',
+    vacancyStatusTransitions:data.vacancyStatusTransitions||{},
+    trashRetentionDays:data.trashRetentionDays||30
   });
 
   state.loaded.references=true;
@@ -533,6 +581,31 @@ async function ensureArchivedCandidatesLoaded(force=false){
   return archivedCandidatesLoadPromise;
 }
 
+
+// Доска: активные кандидаты, архив или корзина (удалённые, 30 дней до окончательного удаления).
+function boardState(){return state.boardState||'active'}
+
+async function ensureDeletedCandidatesLoaded(force=false){
+  if(state.loaded.deletedCandidates&&!force)return state.deletedCandidates;
+  const data=await rpc('getDeletedCandidateData');
+  state.deletedCandidates=data.deletedCandidates||[];
+  state.loaded.deletedCandidates=true;
+  return state.deletedCandidates;
+}
+
+async function setBoardState(nextState){
+  state.boardState=nextState;
+  el('filterArchived').checked=nextState!=='active';
+  document.querySelectorAll('input[name="boardState"]').forEach(input=>input.checked=input.value===nextState);
+  try{
+    if(nextState==='archived')await ensureArchivedCandidatesLoaded(true);
+    if(nextState==='deleted')await ensureDeletedCandidatesLoaded(true);
+  }catch(error){
+    showToast(error&&error.message?error.message:String(error),'error');
+    return setBoardState('active');
+  }
+  renderBoard();
+}
 
 async function toggleArchivedFilter(){
   if(el('filterArchived').checked){
@@ -646,8 +719,8 @@ function applyCandidateDraft(draft){
       data.salary||''
     );
 
-  el('candidateComment').value=
-    data.comment||'';
+  // Комментарий из Intake API — обычный текст; станет первым комментарием кандидата.
+  setRich('candidateComment',textToRichHtml(data.comment||''));
 
   if(
     data.vacancyId &&
@@ -758,6 +831,8 @@ async function refreshReferences(){
   state.profInterviewStatus=data.profInterviewStatus||'Проф. интервью';
   state.rejectionReasons=data.rejectionReasons||{candidate:[],responsible:[]};
   state.otherReason=data.otherReason||'Другое';
+  state.vacancyStatusTransitions=data.vacancyStatusTransitions||{};
+  state.trashRetentionDays=data.trashRetentionDays||30;
   state.loaded.references=true;
   populateGlobalFilters();
   renderBoard();
@@ -995,13 +1070,12 @@ function filteredCandidates(){
   const source=
     value('filterSource');
 
-  const archived=
-    el('filterArchived').checked;
-
   const collection=
-    archived
-      ? state.archivedCandidates
-      : state.candidates;
+    boardState()==='deleted'
+      ? state.deletedCandidates||[]
+      : boardState()==='archived'
+        ? state.archivedCandidates
+        : state.candidates;
 
   return collection.filter(c=>{
     if(
@@ -1052,7 +1126,7 @@ function renderBoard(){
   )return;
 
   const archived=
-    el('filterArchived').checked;
+    boardState()!=='active';
 
   const candidates=
     filteredCandidates();
@@ -1089,7 +1163,7 @@ function renderBoard(){
     !statuses.length
   ){
     el('board').innerHTML=
-      '<div class="board-placeholder">Архив пуст.</div>';
+      '<div class="board-placeholder">'+(boardState()==='deleted'?'Корзина пуста.':'Архив пуст.')+'</div>';
     return;
   }
 
@@ -1204,7 +1278,7 @@ function renderCard(c){
     statusKey(c['Статус'])+' '+
     (pending?'candidate-pending':'')+
     '" draggable="'+
-    (!c.archived&&!pending)+
+    (c.state==='active'&&!c.archived&&!pending)+
     '" data-id="'+
     escapeHtml(c.ID)+
     '" ondragstart="dragStart(event)" '+
@@ -1272,15 +1346,67 @@ function renderCard(c){
 
     '<div class="card-actions">'+
       iconBtn('copy','Скопировать данные','event.stopPropagation();copyCandidatePreview(\''+escJs(c.ID)+'\',this)','icon-btn-sm')+
-      (
-        !c.archived&&!pending
-          ? iconBtn('archive','В архив','event.stopPropagation();archiveById(\''+escJs(c.ID)+'\',this)','icon-btn-sm icon-btn-danger')
-          : ''
-      )+
+      (pending?'':candidateLifecycleButtons(c,true))+
     '</div>'+
   '</article>';
 }
 
+
+// Действия жизненного цикла кандидата: архив → корзина (только администраторы) → восстановление.
+function candidateLifecycleButtons(c,small){
+  const size=small?'icon-btn-sm':'';
+  const call=action=>'event.stopPropagation();candidateLifecycle(\''+escJs(c.ID)+'\',\''+action+'\',this)';
+  const admin=isAdminUser();
+  if(c.state==='deleted'){
+    return admin?iconBtn('restore','Восстановить из корзины',call('restore'),size):'';
+  }
+  if(c.archived||c.state==='archived'){
+    return iconBtn('unarchive','Вернуть из архива',call('unarchive'),size)+
+      (admin?iconBtn('trash','Удалить (корзина, 30 дней)',call('delete'),(size+' icon-btn-danger').trim()):'');
+  }
+  return iconBtn('archive','В архив',call('archive'),(size+' icon-btn-danger').trim());
+}
+
+async function candidateLifecycle(id,action,button){
+  if(action==='archive')return archiveById(id,button);
+  if(action==='delete'){
+    const ok=await showConfirm('Удалить кандидата? Он будет в корзине 30 дней — за это время его можно восстановить. Потом кандидат, его интервью, комментарии и журнал удалятся из базы окончательно, а папка — в корзину Google Drive.','Удаление кандидата');
+    if(!ok)return;
+  }
+  const rpcName={unarchive:'unarchiveCandidate',delete:'deleteEntity',restore:'restoreEntity'}[action];
+  const args=action==='unarchive'?id:{type:'candidate',id};
+  const messages={unarchive:'Кандидат возвращён из архива.',delete:'Кандидат перемещён в корзину.',restore:'Кандидат восстановлен (в архив).'};
+  await runUiTask({button,label:'…'},async()=>{
+    await rpc(rpcName,args);
+    await Promise.all([
+      refreshCandidates(),
+      ensureArchivedCandidatesLoaded(true),
+      state.loaded.deletedCandidates||boardState()==='deleted'?ensureDeletedCandidatesLoaded(true):null
+    ]);
+    render();
+    if(currentCandidate&&String(currentCandidate.ID)===String(id)){
+      const fresh=candidateById(id);
+      if(fresh&&action!=='delete')openCandidateById(id,false);
+      else closeCandidate();
+    }
+    showToast(messages[action]);
+  }).catch(()=>{});
+}
+
+// Существующий кандидат: лента комментариев; новый: поле первого комментария.
+function renderCandidateComments(candidate){
+  el('candidateFirstCommentField').hidden=!!candidate;
+  if(candidateCommentThread){candidateCommentThread.destroy();candidateCommentThread=null}
+  el('candidateComments').innerHTML='';
+  if(candidate&&window.CommentThread){
+    candidateCommentThread=CommentThread.mount(el('candidateComments'),{
+      entityType:'candidate',
+      entityId:candidate.ID,
+      currentUser:state.currentUser,
+      readOnly:candidate.state==='deleted'
+    });
+  }
+}
 
 function candidateCardUrl(candidateId){
   return location.origin+
@@ -1611,7 +1737,8 @@ function openCandidate(candidate){
   el('candidateGithub').value=candidate?candidate['GitHub']||'':'';
   el('candidateLinkedin').value=candidate?candidate['LinkedIn']||'':'';
   el('candidateSalary').value=candidate?formatMoney(candidate['Зарплатные ожидания']):'';
-  el('candidateComment').value=candidate?candidate['Комментарий']||'':'';
+  if(!currentCandidateDraft)setRich('candidateComment','');
+  renderCandidateComments(candidate);
   el('candidateTitle').textContent=isNew?'Новый кандидат':fullNameOf(candidate);
   el('candidateNumberLabel').textContent=isNew?'':'№'+(candidate['№']||'—');
 
@@ -1645,7 +1772,11 @@ function openCandidate(candidate){
   renderCandidateRejectedInfo(candidate);
 
   el('shareCandidateButton').hidden=isNew;
-  el('archiveCandidateButton').hidden=isNew||candidate.archived;
+  el('candidateLifecycleActions').innerHTML=isNew?'':candidateLifecycleButtons(candidate,false);
+  // Кандидата в корзине нельзя изменить — только восстановить.
+  const readOnly=!!(candidate&&candidate.state==='deleted');
+  el('candidateModal').classList.toggle('is-readonly',readOnly);
+  document.querySelectorAll('#candidateModal .candidate-header-actions .icon-btn-primary').forEach(button=>button.hidden=readOnly);
 
   if(candidate){
     setCurrentInterviews(candidate.ID);
@@ -1722,12 +1853,12 @@ function renderCandidateRejectedInfo(candidate){
   const rows=[
     ['Кем отказано',candidate['Кем отказано']],
     ['Причина',candidate['Причина отказа']],
-    ['Комментарий',candidate['Комментарий к отказу']],
+    ['Комментарий',candidate['Комментарий к отказу'],true],
     ['Этап отказа',candidate.rejection.fromStatus],
     ['Дата',candidate['Дата отказа']]
   ].filter(([,text])=>text);
   root.innerHTML='<div class="rejected-info-title">'+icon('reject','icon-sm')+'<strong>Отказано</strong></div>'+
-    rows.map(([label,text])=>'<div class="rejected-info-row"><span>'+escapeHtml(label)+'</span><span>'+escapeHtml(text)+'</span></div>').join('');
+    rows.map(([label,text,rich])=>'<div class="rejected-info-row"><span>'+escapeHtml(label)+'</span><span>'+(rich?richHtml(text):escapeHtml(text))+'</span></div>').join('');
   root.hidden=false;
 }
 
@@ -2078,7 +2209,12 @@ async function saveCandidateForm(button){
       setLink('candidateFolderLink',saved['Папка кандидата'],'Открыть папку кандидата ↗');
       el('candidateNumberLabel').textContent='№'+(saved['№']||'—');
       el('shareCandidateButton').hidden=false;
-      el('archiveCandidateButton').hidden=!!saved.archived;
+      el('candidateLifecycleActions').innerHTML=candidateLifecycleButtons(saved,false);
+      // Первый комментарий уже в ленте: показываем её вместо поля ввода.
+      if(!candidateCommentThread||!el('candidateFirstCommentField').hidden){
+        setRich('candidateComment','');
+        renderCandidateComments(saved);
+      }
       history.replaceState(
         null,
         '',
@@ -2286,8 +2422,8 @@ function startTransition(id,toStatus){
     : option('','Без шаблона')+templates.map((t,i)=>option(t['Template ID'],'№'+(t['№']||'—')+' · '+t['Название'],i===0)).join('');
 
   el('transitionResponsibleDisplay').value=fullNameOf(nextResponsible);
-  el('transitionComment').value='';
-  el('transitionResult').value='';
+  setRich('transitionComment','');
+  setRich('transitionResult','');
   renderTransitionQuestions();
   el('transitionModal').classList.add('open');
 }
@@ -2315,7 +2451,7 @@ function openRejection(candidate){
     assigned.map(item=>option(item.id,item.label)).join('');
 
   document.querySelector('input[name="rejectionByType"][value="responsible"]').checked=true;
-  el('rejectionComment').value='';
+  setRich('rejectionComment','');
   renderRejectionForm();
   el('rejectionModal').classList.add('open');
 }
@@ -2353,7 +2489,7 @@ async function submitRejection(button){
     byType,
     responsibleId:byType==='responsible'?value('rejectionResponsible'):'',
     reason:value('rejectionReason'),
-    comment:value('rejectionComment').trim()
+    comment:richText(value('rejectionComment'))?value('rejectionComment'):''
   };
 
   if(byType==='responsible'&&!rejection.responsibleId){showToast('Выберите, кем отказано.','error');return}
@@ -2361,7 +2497,8 @@ async function submitRejection(button){
   if(rejection.reason===state.otherReason&&!rejection.comment){
     el('rejectionCommentHint').hidden=false;
     el('rejectionComment').classList.add('input-error');
-    el('rejectionComment').focus();
+    const rejectionEditor=window.RichEditor&&RichEditor.get(el('rejectionComment'));
+    if(rejectionEditor)rejectionEditor.focus();
     return;
   }
 
@@ -2382,7 +2519,7 @@ function openRestore(candidate,toStatus){
   pendingRestore={candidate,toStatus};
   el('restoreTitle').textContent=fullNameOf(candidate);
   el('restoreSubtitle').innerHTML=statusChip(candidate['Статус'],true)+' <span class="transition-arrow">→</span> '+statusChip(toStatus,true);
-  el('restoreComment').value='';
+  setRich('restoreComment','');
   el('restoreModal').classList.add('open');
 }
 
@@ -2395,7 +2532,7 @@ async function submitRestore(button){
   if(!pendingRestore)return;
   const {candidate,toStatus}=pendingRestore;
   await runUiTask({button,formId:'restoreForm',label:'Сохранение…'},async()=>{
-    const response=await rpc('transitionCandidate',{candidateId:candidate.ID,toStatus,comment:value('restoreComment').trim()});
+    const response=await rpc('transitionCandidate',{candidateId:candidate.ID,toStatus,comment:value('restoreComment')});
     applyTransitionResponse(candidate.ID,response);
     closeRestore();
     showToast('Кандидат возвращён на этап «'+toStatus+'».');
@@ -2441,22 +2578,29 @@ function renderTransitionQuestions(){
               '<button type="button" class="suggestion-chip" data-tip="Подставить ответ" onclick="applySuggestedAnswer(this)" data-answer="'+escapeHtml(answer)+'">'+escapeHtml(answer)+'</button>'
             ).join('')+'</div>'
           : '')+
-        '<textarea class="transition-answer" data-question="'+escapeHtml(text)+'" placeholder="Ответ кандидата" oninput="syncSuggestionState(this)"></textarea>'+
+        '<textarea class="transition-answer" data-rich data-question="'+escapeHtml(text)+'" placeholder="Ответ кандидата"></textarea>'+
       '</div></div>';
     }).join('')
     :'<div class="empty-state compact">Для этого этапа шаблон вопросов не выбран.</div>';
+  mountRich(el('transitionQuestions'));
+  el('transitionQuestions').querySelectorAll('.transition-answer').forEach(textarea=>{
+    const editor=window.RichEditor&&RichEditor.get(textarea);
+    if(editor&&editor.el)editor.el.addEventListener('input',()=>syncSuggestionState(textarea));
+  });
 }
 
 function applySuggestedAnswer(chip){
   const textarea=chip.closest('.interview-question').querySelector('.transition-answer');
-  textarea.value=chip.dataset.answer;
+  setRich(textarea,textToRichHtml(chip.dataset.answer));
   syncSuggestionState(textarea);
-  textarea.focus();
+  const editor=window.RichEditor&&RichEditor.get(textarea);
+  if(editor)editor.focus();
 }
 
 function syncSuggestionState(textarea){
+  const current=richText(textarea.value);
   textarea.closest('.interview-question').querySelectorAll('.suggestion-chip').forEach(chip=>{
-    chip.classList.toggle('active',chip.dataset.answer===textarea.value.trim());
+    chip.classList.toggle('active',chip.dataset.answer===current);
   });
 }
 
@@ -2469,7 +2613,7 @@ async function submitTransition(button){
       answer:x.value.trim()
     }));
 
-    const result=value('transitionResult').trim();
+    const result=richText(value('transitionResult'))?value('transitionResult'):'';
     const selectedTemplate=selectedTransitionTemplate();
 
     if(!result){
@@ -2487,7 +2631,7 @@ async function submitTransition(button){
         return;
       }
 
-      const missing=answers.filter(item=>!item.answer);
+      const missing=answers.filter(item=>!richText(item.answer));
       if(missing.length){
         showToast('Заполните все вопросы обязательного шаблона.','error');
         return;
@@ -2596,25 +2740,71 @@ async function loadCandidateInterviews(
   return interviewLoadPromises[key];
 }
 
+const interviewThreads={};
+
+function interviewLifecycleButtons(i){
+  const id=escJs(i['Interview ID']);
+  const call=action=>'interviewLifecycle(\''+id+'\',\''+action+'\',this)';
+  if(i.state==='archived'){
+    return iconBtn('unarchive','Вернуть из архива',call('unarchive'),'icon-btn-sm')+
+      (isAdminUser()?iconBtn('trash','Удалить (корзина, 30 дней)',call('delete'),'icon-btn-sm icon-btn-danger'):'');
+  }
+  return iconBtn('archive','В архив',call('archive'),'icon-btn-sm');
+}
+
 function renderInterviewHistory(){
+  Object.values(interviewThreads).forEach(thread=>thread.destroy());
+  Object.keys(interviewThreads).forEach(key=>delete interviewThreads[key]);
+
   el('interviewHistory').innerHTML=currentInterviews.length?currentInterviews.map(i=>
-    '<article class="history-card">'+
-      '<div class="history-title"><div>'+statusChip(i['From Status']||i['Этап']||'—',true)+' <span class="transition-arrow">→</span> '+statusChip(i['To Status']||'—',true)+'</div>'+
-      iconBtn('edit','Редактировать результат','editInterview(\''+escJs(i['Interview ID'])+'\')','icon-btn-sm')+'</div>'+
-      '<div class="muted history-meta">'+escapeHtml(i['Дата']||'')+' · '+escapeHtml(i['Шаблон']||'Без шаблона')+'</div>'+
-      (i.answers||[]).map((a,index)=>'<div class="qa"><strong>'+(index+1)+'. '+escapeHtml(a.question)+'</strong><div>'+escapeHtml(a.answer||'—')+'</div></div>').join('')+
-      '<div class="qa"><strong>Комментарий</strong><div>'+escapeHtml(i['Комментарий']||'—')+'</div></div>'+
-      '<div class="qa"><strong>Результат</strong><div>'+escapeHtml(i['Результат']||'—')+'</div></div>'+
+    '<article class="history-card'+(i.state==='archived'?' is-archived':'')+'">'+
+      '<div class="history-title"><div>'+statusChip(i['From Status']||i['Этап']||'—',true)+' <span class="transition-arrow">→</span> '+statusChip(i['To Status']||'—',true)+
+        (i.state==='archived'?' <span class="state-badge state-archived">В архиве</span>':'')+'</div>'+
+        '<div class="header-actions">'+
+          (i.state==='active'?iconBtn('edit','Редактировать результат','editInterview(\''+escJs(i['Interview ID'])+'\')','icon-btn-sm'):'')+
+          iconBtn('message','Комментарии','toggleInterviewComments(\''+escJs(i['Interview ID'])+'\')','icon-btn-sm')+
+          interviewLifecycleButtons(i)+
+        '</div></div>'+
+      '<div class="muted history-meta">'+escapeHtml(i['Дата']||'')+' · '+escapeHtml(i['Интервьюер']||'—')+' · '+escapeHtml(i['Шаблон']||'Без шаблона')+'</div>'+
+      (i.answers||[]).map((a,index)=>'<div class="qa"><strong>'+(index+1)+'. '+escapeHtml(a.question)+'</strong>'+richHtml(a.answer)+'</div>').join('')+
+      '<div class="qa"><strong>Результат</strong>'+richHtml(i['Результат'])+'</div>'+
+      '<div class="history-comments" id="interviewComments-'+escapeHtml(i['Interview ID'])+'" hidden></div>'+
     '</article>'
   ).join(''):'<div class="empty-state compact">Результатов интервью пока нет.</div>';
+}
+
+function toggleInterviewComments(id){
+  const container=el('interviewComments-'+id);
+  if(!container)return;
+  container.hidden=!container.hidden;
+  if(!container.hidden&&!interviewThreads[id]&&window.CommentThread){
+    const readOnly=!!(currentCandidate&&currentCandidate.state==='deleted');
+    interviewThreads[id]=CommentThread.mount(container,{entityType:'interview',entityId:id,currentUser:state.currentUser,readOnly,title:'Комментарии к результату'});
+  }
+}
+
+async function interviewLifecycle(id,action,button){
+  if(action==='delete'){
+    const ok=await showConfirm('Удалить результат интервью? Он будет в корзине 30 дней, потом удалится окончательно.','Удаление результата');
+    if(!ok)return;
+  }
+  const rpcName={archive:'archiveEntity',unarchive:'unarchiveEntity',delete:'deleteEntity'}[action];
+  await runUiTask({button,label:'…'},async()=>{
+    await rpc(rpcName,{type:'interview',id});
+    await loadCandidateInterviews(currentCandidate.ID,true);
+    showToast({archive:'Результат отправлен в архив.',unarchive:'Результат возвращён из архива.',delete:'Результат перемещён в корзину.'}[action]);
+  }).catch(()=>{});
 }
 
 function editInterview(id){
   editingInterview=currentInterviews.find(i=>i['Interview ID']===id);
   if(!editingInterview)return;
-  el('editInterviewQuestions').innerHTML=(editingInterview.answers||[]).map((a,index)=>'<div class="qa"><strong>'+(index+1)+'. '+escapeHtml(a.question)+'</strong><textarea class="edit-answer" data-question="'+escapeHtml(a.question)+'">'+escapeHtml(a.answer)+'</textarea></div>').join('');
-  el('editInterviewComment').value=editingInterview['Комментарий']||'';
-  el('editInterviewResult').value=editingInterview['Результат']||'';
+  el('editInterviewQuestions').innerHTML=(editingInterview.answers||[]).map((a,index)=>
+    '<div class="qa"><strong>'+(index+1)+'. '+escapeHtml(a.question)+'</strong><textarea class="edit-answer" data-rich data-question="'+escapeHtml(a.question)+'"></textarea></div>'
+  ).join('');
+  mountRich(el('editInterviewQuestions'));
+  el('editInterviewQuestions').querySelectorAll('.edit-answer').forEach((textarea,index)=>setRich(textarea,editingInterview.answers[index].answer||''));
+  setRich('editInterviewResult',editingInterview['Результат']||'');
   el('interviewEditModal').classList.add('open');
 }
 
@@ -2622,11 +2812,11 @@ function closeInterviewEdit(){el('interviewEditModal').classList.remove('open');
 
 async function saveInterviewEdit(button){
   if(!editingInterview)return;
+  if(!richText(value('editInterviewResult'))){showToast('Укажите результат интервью/этапа.','error');return}
   await runUiTask({button,formId:'interviewEditForm',label:'Сохранение…'},async()=>{
     const payload={
       id:editingInterview['Interview ID'],
       answers:[...document.querySelectorAll('.edit-answer')].map(x=>({question:x.dataset.question,answer:x.value})),
-      comment:value('editInterviewComment'),
       result:value('editInterviewResult')
     };
     const res=await rpc('updateInterview',payload);
@@ -2635,21 +2825,6 @@ async function saveInterviewEdit(button){
     closeInterviewEdit();
     setCurrentInterviews(currentCandidate.ID);
     showToast('Результат интервью обновлён.');
-  }).catch(()=>{});
-}
-
-async function softDeleteInterview(button){
-  if(!editingInterview)return;
-  const id=editingInterview['Interview ID'];
-  const ok=await showConfirm('Удалить результат интервью? Запись останется в базе как soft deleted.','Удаление интервью');
-  if(!ok)return;
-
-  await runUiTask({button,formId:'interviewEditForm',label:'Удаление…'},async()=>{
-    await rpc('deleteInterview',id);
-    state.interviews=state.interviews.filter(i=>i['Interview ID']!==id);
-    closeInterviewEdit();
-    setCurrentInterviews(currentCandidate.ID);
-    showToast('Интервью удалено.');
   }).catch(()=>{});
 }
 

@@ -2,6 +2,8 @@ import { APP_CONFIG } from '../config.js';
 import { db, transaction } from '../db/pool.js';
 import { fail } from '../lib/errors.js';
 import { clean, composeFullName, isUuid, optionalUuid } from '../lib/validation.js';
+import { richFromInput, richToText } from '../lib/richtext.js';
+import { insertComment } from './comments.js';
 import { toInterview } from './mappers.js';
 import { getTemplatesFor } from './references.js';
 import {
@@ -74,12 +76,13 @@ export async function getInterviewContext(input = {}) {
   };
 }
 
+// Ответ — форматированный текст (HTML после очистки).
 function normalizeAnswers(answers) {
   return Array.isArray(answers)
     ? answers
         .map(item => ({
           question: clean(item && item.question),
-          answer: clean(item && item.answer)
+          answer: richFromInput(item && item.answer)
         }))
         .filter(item => item.question || item.answer)
     : [];
@@ -133,7 +136,7 @@ async function saveStageInterview(tx, candidate, fromStatus, toStatus, input, re
     }
   }
 
-  const result = clean(input.result);
+  const result = richFromInput(input.result);
 
   if (!result) {
     fail('Укажите результат интервью/этапа.');
@@ -143,8 +146,8 @@ async function saveStageInterview(tx, candidate, fromStatus, toStatus, input, re
     `INSERT INTO interviews
        (candidate_id, vacancy_id, stage, from_status, to_status, template_id, template_name,
         responsible_id, interviewer_last_name, interviewer_first_name, interviewer_middle_name,
-        answers, comment, result)
-     VALUES ($1, $2, $4, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        answers, result)
+     VALUES ($1, $2, $4, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      RETURNING id`,
     [
       candidate.id,
@@ -158,7 +161,6 @@ async function saveStageInterview(tx, candidate, fromStatus, toStatus, input, re
       responsible.first_name,
       responsible.middle_name,
       JSON.stringify(answers),
-      clean(input.comment),
       result
     ]
   );
@@ -170,7 +172,7 @@ async function saveStageInterview(tx, candidate, fromStatus, toStatus, input, re
 async function validateRejection(tx, candidate, input = {}) {
   const byType = clean(input.byType);
   const reason = clean(input.reason);
-  const comment = clean(input.comment);
+  const comment = richFromInput(input.comment);
   let responsible = null;
 
   if (byType === APP_CONFIG.REJECTED_BY_RESPONSIBLE) {
@@ -185,7 +187,7 @@ async function validateRejection(tx, candidate, input = {}) {
       fail('Выберите, кем отказано: кандидатом или одним из его ответственных.');
     }
 
-    responsible = await tx.one('SELECT * FROM responsibles WHERE id = $1', [responsibleId]);
+    responsible = await tx.one('SELECT * FROM users WHERE id = $1', [responsibleId]);
   } else if (byType !== APP_CONFIG.REJECTED_BY_CANDIDATE) {
     fail('Укажите, кем отказано.');
   }
@@ -239,7 +241,7 @@ async function rejectCandidate(tx, candidate, input) {
     responsible: rejection.responsible,
     comment:
       `Отказано: ${byName}. Причина: ${rejection.reason}` +
-      (rejection.comment ? `. ${rejection.comment}` : ''),
+      (rejection.comment ? `. ${richToText(rejection.comment)}` : ''),
     details: {
       rejection: {
         byType: rejection.byType,
@@ -268,7 +270,7 @@ async function restoreCandidate(tx, candidate, toStatus, input) {
 
   return {
     responsible,
-    comment: clean(input.comment) || 'Возврат из «Отказано»'
+    comment: richToText(input.comment) || 'Возврат из «Отказано»'
   };
 }
 
@@ -318,7 +320,17 @@ export async function transitionCandidate(input, changedBy) {
         toStatus
       ]);
 
-      outcome = { responsible, comment: input.interview && input.interview.comment };
+      // Комментарий к переходу — первый в ленте комментариев этого результата.
+      const transitionComment = input.interview && input.interview.comment;
+      if (transitionComment) {
+        await insertComment(
+          tx,
+          { entityType: 'interview', entityId: interview['Interview ID'], bodyHtml: transitionComment },
+          changedBy
+        );
+      }
+
+      outcome = { responsible, comment: richToText(transitionComment) };
     }
 
     await appendTransitionLog(tx, {
@@ -346,16 +358,21 @@ export async function updateInterview(input) {
     fail('Не указан Interview ID.');
   }
 
+  const result = richFromInput(input.result);
+
+  if (!result) {
+    fail('Укажите результат интервью/этапа.');
+  }
+
   const saved = await db.one(
     `UPDATE interviews
-     SET answers = COALESCE($2::jsonb, answers), comment = $3, result = $4, updated_at = now()
+     SET answers = COALESCE($2::jsonb, answers), result = $3, updated_at = now()
      WHERE id = $1 AND deleted_at IS NULL
      RETURNING id`,
     [
       id,
       Array.isArray(input.answers) ? JSON.stringify(normalizeAnswers(input.answers)) : null,
-      clean(input.comment),
-      clean(input.result)
+      result
     ]
   );
 
@@ -366,22 +383,5 @@ export async function updateInterview(input) {
   return {
     ok: true,
     interview: toInterview(await db.one(INTERVIEW_SELECT + ' WHERE i.id = $1', [id]))
-  };
-}
-
-export async function deleteInterview(id) {
-  const saved = await db.one(
-    `UPDATE interviews SET deleted_at = now(), updated_at = now()
-     WHERE id = $1 AND deleted_at IS NULL RETURNING id`,
-    [optionalUuid(id, 'Запись не найдена.')]
-  );
-
-  if (!saved) {
-    fail('Запись не найдена.', 404);
-  }
-
-  return {
-    ok: true,
-    entity: toInterview(await db.one(INTERVIEW_SELECT + ' WHERE i.id = $1', [saved.id]))
   };
 }

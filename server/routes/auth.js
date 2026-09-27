@@ -177,6 +177,8 @@ export function authRouter() {
           subject: profile.sub,
           email: profile.email,
           fullName: profile.name,
+          givenName: profile.given_name,
+          familyName: profile.family_name,
           avatarUrl: profile.picture
         },
         req.session.returnTo

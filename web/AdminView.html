@@ -9,12 +9,16 @@
   </div>
 </div>
 
+<!-- ===================== Вакансии ===================== -->
 <section id="admin-vacancies" class="admin-page-section active">
   <div class="directory-layout vacancy-directory-layout">
     <div class="admin-list-card directory-table-card">
-      <div class="section-title-row">
+      <div class="section-title-row table-toolbar">
         <h3>Вакансии</h3>
-        <button class="icon-btn icon-btn-primary" data-tip="Новая вакансия" aria-label="Новая вакансия" onclick="resetVacancyForm()"><svg class="icon"><use href="#i-plus"/></svg></button>
+        <div class="header-actions">
+          <div class="segmented state-switch" data-table="vacancies"></div>
+          <button class="icon-btn icon-btn-primary" data-tip="Новая вакансия" aria-label="Новая вакансия" onclick="resetVacancyForm()"><svg class="icon"><use href="#i-plus"/></svg></button>
+        </div>
       </div>
       <div id="vacancyTable"></div>
     </div>
@@ -25,10 +29,11 @@
           <div class="eyebrow">Вакансия</div>
           <h3 id="vacancyFormTitle">Новая вакансия</h3>
         </div>
-        <button class="icon-btn" data-tip="Очистить форму" aria-label="Очистить форму" onclick="resetVacancyForm()"><svg class="icon"><use href="#i-reset"/></svg></button>
+        <div class="header-actions" id="vacancyFormActions"></div>
       </div>
 
       <input id="vacancyId" type="hidden">
+      <div id="vacancyLifecycleNote"></div>
 
       <div class="field">
         <label for="vacancyName">Название *</label>
@@ -36,24 +41,15 @@
         <small id="vacancyNameError" class="field-error" hidden></small>
       </div>
 
-      <div class="field">
-        <label for="vacancyStatus">Статус *</label>
-        <select id="vacancyStatus">
-          <option value="Открыта">Открыта</option>
-          <option value="На паузе">На паузе</option>
-          <option value="Закрыта">Закрыта</option>
-        </select>
+      <div class="field" id="vacancyStatusField" hidden>
+        <label>Статус</label>
+        <div class="status-row">
+          <span id="vacancyStatusChip"></span>
+          <span id="vacancyStatusActions" class="status-actions"></span>
+        </div>
       </div>
 
-      <div class="field">
-        <label for="vacancyComment">Комментарий</label>
-        <textarea id="vacancyComment" placeholder="Описание или примечание"></textarea>
-      </div>
-
-      <div class="actions">
-        <button id="vacancyDeleteButton" class="icon-btn icon-btn-danger left" data-tip="Удалить вакансию" aria-label="Удалить вакансию" onclick="deleteVacancyUi(value('vacancyId'), this)" hidden><svg class="icon"><use href="#i-trash"/></svg></button>
-        <button class="icon-btn icon-btn-primary" data-tip="Сохранить вакансию" aria-label="Сохранить вакансию" onclick="saveVacancyForm(this)"><svg class="icon"><use href="#i-save"/></svg></button>
-      </div>
+      <div id="vacancyComments" class="comments-host"></div>
     </aside>
 
     <aside class="directory-side-card">
@@ -62,7 +58,13 @@
           <div class="eyebrow">Шаблоны интервью</div>
           <h3>Вопросы по этапам <span id="vacancyTemplateCount" class="counter-badge">0</span></h3>
         </div>
-        <button id="templateAddButton" class="icon-btn icon-btn-primary" data-tip="Новый шаблон" aria-label="Новый шаблон" onclick="openTemplateModal()" disabled><svg class="icon"><use href="#i-plus"/></svg></button>
+        <div class="header-actions">
+          <label class="checkbox-line" data-tip="Показывать архивные и удалённые шаблоны">
+            <input id="templateShowAll" type="checkbox" onchange="loadVacancyTemplates()">
+            <span>Все</span>
+          </label>
+          <button id="templateAddButton" class="icon-btn icon-btn-primary" data-tip="Новый шаблон" aria-label="Новый шаблон" onclick="openTemplateModal()" disabled><svg class="icon"><use href="#i-plus"/></svg></button>
+        </div>
       </div>
 
       <div id="vacancyTemplateEmpty" class="empty-state compact">Сначала сохраните или выберите вакансию.</div>
@@ -71,12 +73,16 @@
   </div>
 </section>
 
+<!-- ===================== Источники ===================== -->
 <section id="admin-sources" class="admin-page-section">
   <div class="directory-layout">
     <div class="admin-list-card directory-table-card">
-      <div class="section-title-row">
+      <div class="section-title-row table-toolbar">
         <h3>Источники вакансий</h3>
-        <button class="icon-btn icon-btn-primary" data-tip="Новый источник" aria-label="Новый источник" onclick="resetSourceForm()"><svg class="icon"><use href="#i-plus"/></svg></button>
+        <div class="header-actions">
+          <div class="segmented state-switch" data-table="sources"></div>
+          <button class="icon-btn icon-btn-primary" data-tip="Новый источник" aria-label="Новый источник" onclick="resetSourceForm()"><svg class="icon"><use href="#i-plus"/></svg></button>
+        </div>
       </div>
       <div id="sourceTable"></div>
     </div>
@@ -87,10 +93,11 @@
           <div class="eyebrow">Источник</div>
           <h3 id="sourceFormTitle">Новый источник</h3>
         </div>
-        <button class="icon-btn" data-tip="Очистить форму" aria-label="Очистить форму" onclick="resetSourceForm()"><svg class="icon"><use href="#i-reset"/></svg></button>
+        <div class="header-actions" id="sourceFormActions"></div>
       </div>
 
       <input id="sourceId" type="hidden">
+      <div id="sourceLifecycleNote"></div>
 
       <div class="field">
         <label for="sourceName">Название *</label>
@@ -99,87 +106,20 @@
           <input id="sourceName" placeholder="LinkedIn" oninput="renderSourceFormIcon()">
         </div>
       </div>
-
-      <div class="actions">
-        <button id="sourceDeleteButton" class="icon-btn icon-btn-danger left" data-tip="Удалить источник" aria-label="Удалить источник" onclick="deleteSourceUi(value('sourceId'), this)" hidden><svg class="icon"><use href="#i-trash"/></svg></button>
-        <button class="icon-btn icon-btn-primary" data-tip="Сохранить источник" aria-label="Сохранить источник" onclick="saveSourceForm(this)"><svg class="icon"><use href="#i-save"/></svg></button>
-      </div>
     </aside>
   </div>
 </section>
 
-<section id="admin-responsibles" class="admin-page-section">
-  <div class="directory-layout">
-    <div class="admin-list-card directory-table-card">
-      <div class="section-title-row">
-        <h3>Ответственные</h3>
-        <button class="icon-btn icon-btn-primary" data-tip="Новый ответственный" aria-label="Новый ответственный" onclick="resetResponsibleForm()"><svg class="icon"><use href="#i-plus"/></svg></button>
-      </div>
-      <div id="responsibleTable"></div>
-    </div>
-
-    <aside id="responsibleForm" class="admin-form-card directory-form-card">
-      <div class="section-title-row">
-        <div>
-          <div class="eyebrow">Ответственный</div>
-          <h3 id="responsibleFormTitle">Новый ответственный</h3>
-        </div>
-        <button class="icon-btn" data-tip="Очистить форму" aria-label="Очистить форму" onclick="resetResponsibleForm()"><svg class="icon"><use href="#i-reset"/></svg></button>
-      </div>
-
-      <input id="responsibleId" type="hidden">
-
-      <div class="form-grid form-grid-3">
-        <div class="field">
-          <label for="responsibleLastName">Фамилия *</label>
-          <input id="responsibleLastName">
-        </div>
-        <div class="field">
-          <label for="responsibleFirstName">Имя *</label>
-          <input id="responsibleFirstName">
-        </div>
-        <div class="field">
-          <label for="responsibleMiddleName">Отчество</label>
-          <input id="responsibleMiddleName">
-        </div>
-      </div>
-
-      <div class="field">
-        <label for="responsibleEmail">Email</label>
-        <input
-          id="responsibleEmail"
-          type="email"
-          placeholder="name@example.com"
-          oninput="normalizeEmailInput(this)"
-          onblur="validateEmailField(this)"
-        >
-      </div>
-
-      <div class="field">
-        <label for="responsibleUserId">Пользователь</label>
-        <select id="responsibleUserId"></select>
-        <div class="field-hint">Привязка необязательная. Один пользователь может быть привязан только к одному ответственному.</div>
-      </div>
-
-      <div class="field">
-        <label>Доступные этапы *</label>
-        <div id="responsibleStages" class="stage-multiselect"></div>
-      </div>
-
-      <div class="actions">
-        <button id="responsibleDeleteButton" class="icon-btn icon-btn-danger left" data-tip="Удалить ответственного" aria-label="Удалить ответственного" onclick="deleteResponsibleUi(value('responsibleId'), this)" hidden><svg class="icon"><use href="#i-trash"/></svg></button>
-        <button class="icon-btn icon-btn-primary" data-tip="Сохранить ответственного" aria-label="Сохранить ответственного" onclick="saveResponsibleForm(this)"><svg class="icon"><use href="#i-save"/></svg></button>
-      </div>
-    </aside>
-  </div>
-</section>
-
+<!-- ===================== Пользователи (они же ответственные) ===================== -->
 <section id="admin-users" class="admin-page-section">
   <div class="directory-layout">
     <div class="admin-list-card directory-table-card">
-      <div class="section-title-row">
+      <div class="section-title-row table-toolbar">
         <h3>Пользователи</h3>
-        <button class="icon-btn icon-btn-primary" data-tip="Добавить пользователя" aria-label="Добавить пользователя" onclick="resetUserForm()"><svg class="icon"><use href="#i-plus"/></svg></button>
+        <div class="header-actions">
+          <div class="segmented state-switch" data-table="users"></div>
+          <button class="icon-btn icon-btn-primary" data-tip="Добавить пользователя" aria-label="Добавить пользователя" onclick="resetUserForm()"><svg class="icon"><use href="#i-plus"/></svg></button>
+        </div>
       </div>
       <div id="userTable"></div>
     </div>
@@ -190,37 +130,50 @@
           <div class="eyebrow">Пользователь</div>
           <h3 id="userFormTitle">Новый пользователь</h3>
         </div>
-        <button class="icon-btn" data-tip="Очистить форму" aria-label="Очистить форму" onclick="resetUserForm()"><svg class="icon"><use href="#i-reset"/></svg></button>
+        <div class="header-actions" id="userFormActions"></div>
       </div>
 
       <input id="userId" type="hidden">
+      <div id="userLifecycleNote"></div>
+
+      <div class="form-grid form-grid-3">
+        <div class="field">
+          <label for="userLastName">Фамилия *</label>
+          <input id="userLastName" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="userFirstName">Имя *</label>
+          <input id="userFirstName" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="userMiddleName">Отчество</label>
+          <input id="userMiddleName" autocomplete="off">
+        </div>
+      </div>
 
       <div class="field">
         <label for="userEmail">Email Google Account *</label>
         <input id="userEmail" type="email" placeholder="name@company.com" oninput="normalizeEmailInput(this)">
-        <small class="field-hint">Любой домен. Пользователь войдёт через Google с этим адресом.</small>
+        <small id="userEmailHint" class="field-hint">Любой домен. Человек войдёт через Google с этим адресом.</small>
       </div>
 
       <div class="field">
-        <label for="userFullName">ФИО</label>
-        <input id="userFullName" placeholder="Подставится из Google при первом входе">
+        <label>Ответственный за этапы</label>
+        <div id="userStages" class="stage-checks"></div>
+        <small class="field-hint">Отмеченные этапы делают пользователя ответственным: его можно назначить рекрутером (все этапы), HR или проф. интервьювером кандидата. Доступ в ATS для этого не обязателен.</small>
       </div>
 
-      <label class="checkbox-line">
-        <input id="userActive" type="checkbox" checked onchange="syncUserAdminCheckbox()">
-        <span>Доступ открыт</span>
+      <label class="checkbox-line" id="userNewAccessField">
+        <input id="userActive" type="checkbox" checked>
+        <span>Открыть доступ в ATS</span>
       </label>
 
       <label class="checkbox-line">
-        <input id="userAdmin" type="checkbox" onchange="syncUserAdminCheckbox()">
-        <span>Администратор — управляет доступом пользователей</span>
+        <input id="userAdmin" type="checkbox">
+        <span>Администратор — управляет пользователями и корзиной</span>
       </label>
 
       <div id="userMeta" class="user-meta" hidden></div>
-
-      <div class="actions">
-        <button class="icon-btn icon-btn-primary" data-tip="Сохранить" aria-label="Сохранить" onclick="saveUserForm(this)"><svg class="icon"><use href="#i-save"/></svg></button>
-      </div>
     </aside>
   </div>
 </section>
@@ -234,7 +187,7 @@
         <h2 id="templateModalTitle">Новый шаблон</h2>
         <div id="templateModalVacancy" class="muted"></div>
       </div>
-      <button class="icon-btn" data-tip="Закрыть" aria-label="Закрыть" onclick="closeTemplateModal()"><svg class="icon"><use href="#i-close"/></svg></button>
+      <div class="header-actions" id="templateFormActions"></div>
     </div>
 
     <section id="templateForm" class="form-card form-card-flat">
@@ -264,11 +217,6 @@
           <button class="icon-btn icon-btn-sm" type="button" data-tip="Добавить вопрос" aria-label="Добавить вопрос" onclick="addTemplateQuestion()"><svg class="icon icon-sm"><use href="#i-plus"/></svg></button>
         </div>
         <div id="templateQuestionsList" class="question-list"></div>
-      </div>
-
-      <div class="actions">
-        <button id="templateDeleteButton" class="icon-btn icon-btn-danger left" data-tip="Удалить шаблон" aria-label="Удалить шаблон" onclick="deleteTemplateUi(value('templateId'), this)" hidden><svg class="icon"><use href="#i-trash"/></svg></button>
-        <button class="icon-btn icon-btn-primary" data-tip="Сохранить шаблон" aria-label="Сохранить шаблон" onclick="saveTemplateForm(this)"><svg class="icon"><use href="#i-save"/></svg></button>
       </div>
     </section>
   </div>

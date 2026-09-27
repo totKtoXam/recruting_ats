@@ -1,0 +1,67 @@
+<style>
+/* Стили компонентов приложения поверх дизайн-системы Styles.html.
+   Используются только токены (var(--…)), поэтому работают в светлой и тёмной теме. */
+
+/* ---------- Состояния записей: архив и корзина ---------- */
+.state-badge{
+  display:inline-flex;align-items:center;gap:4px;
+  height:20px;padding:0 8px;border-radius:999px;
+  font-size:11px;font-weight:600;white-space:nowrap;
+  background:var(--surface-3);color:var(--muted)
+}
+.state-badge.state-archived{background:var(--warning-tint);color:var(--text-2)}
+.state-badge.state-deleted{background:var(--danger-tint);color:var(--danger)}
+
+.row-actions{display:flex;gap:2px;justify-content:flex-end;align-items:center}
+tr.row-archived td,tr.row-deleted td{color:var(--muted)}
+
+/* Переключатель «Активные / Архив / Корзина» над таблицами. */
+.table-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.state-switch{display:inline-flex}
+
+/* ---------- Переключатель (switch) ---------- */
+.switch{position:relative;display:inline-flex;align-items:center;cursor:pointer;flex:0 0 auto}
+.switch input{position:absolute;opacity:0;width:1px;height:1px}
+.switch-track{
+  width:32px;height:18px;border-radius:999px;
+  background:var(--line-strong);position:relative;
+  transition:background-color .12s
+}
+.switch-track::after{
+  content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;
+  background:var(--surface);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .12s
+}
+.switch input:checked+.switch-track{background:var(--primary)}
+.switch input:checked+.switch-track::after{transform:translateX(14px)}
+.switch input:focus-visible+.switch-track{box-shadow:0 0 0 2px var(--primary-ring)}
+.switch input:disabled+.switch-track{opacity:.5;cursor:not-allowed}
+
+/* ---------- Статусы вакансии: кнопки перехода ---------- */
+.status-actions{display:inline-flex;gap:4px;flex-wrap:wrap}
+.status-action{
+  display:inline-flex;align-items:center;gap:4px;
+  height:24px;padding:0 8px;border-radius:999px;
+  border:1px solid var(--line);background:var(--surface);
+  color:var(--text-2);font-size:12px;cursor:pointer;white-space:nowrap
+}
+.status-action:hover:not(:disabled){border-color:var(--primary);color:var(--primary)}
+.status-action:disabled{opacity:.5;cursor:not-allowed}
+.status-action .icon{width:12px;height:12px}
+
+/* ---------- Карточка кандидата: комментарии ---------- */
+.comments-host{margin-top:8px;border-top:1px solid var(--line-soft);padding-top:8px}
+.comments-host:empty{display:none}
+
+.lifecycle-note{
+  display:flex;align-items:center;gap:8px;
+  padding:8px 10px;margin:0 0 8px;border-radius:var(--radius);
+  background:var(--warning-tint);color:var(--text-2);font-size:12px
+}
+.lifecycle-note.deleted{background:var(--danger-tint);color:var(--danger)}
+
+/* Этапы ответственного в форме пользователя. */
+.stage-checks{display:flex;flex-wrap:wrap;gap:4px 12px}
+
+/* Результат интервью: блок комментариев раскрывается по кнопке. */
+.history-comments{margin-top:6px}
+</style>

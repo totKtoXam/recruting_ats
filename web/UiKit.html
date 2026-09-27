@@ -1,4 +1,92 @@
 <script>
+/* ThemeManager: 'system' | 'light' | 'dark', persisted in localStorage['ats:theme'].
+   system -> no data-theme attribute (CSS follows prefers-color-scheme);
+   light/dark -> <html data-theme="...">. Applied immediately on load.
+   Toggle buttons: any element with [data-theme-toggle] gets data-tip/aria-label
+   and its inner <use href> synced to the current mode (wire onclick="ThemeManager.cycle()"). */
+(function(){
+  if(window.ThemeManager){return;}
+  var KEY='ats:theme';
+  var MODES=['system','light','dark'];
+  var LABELS={system:'Тема: системная',light:'Тема: светлая',dark:'Тема: тёмная'};
+  var ICONS={system:'#i-monitor',light:'#i-sun',dark:'#i-moon'};
+  var root=document.documentElement;
+  var mq=null;
+  try{mq=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark)'):null;}catch(e){}
+  var mode='system';
+  var bound=false;
+
+  function valid(m){return MODES.indexOf(m)>=0;}
+  function read(){
+    try{var v=window.localStorage.getItem(KEY);return valid(v)?v:'system';}catch(e){return 'system';}
+  }
+  function write(m){
+    try{window.localStorage.setItem(KEY,m);}catch(e){}
+  }
+  function effective(){
+    if(mode!=='system'){return mode;}
+    return mq&&mq.matches?'dark':'light';
+  }
+  function syncToggles(){
+    var nodes;
+    try{nodes=document.querySelectorAll('[data-theme-toggle]');}catch(e){return;}
+    for(var i=0;i<nodes.length;i++){
+      var el=nodes[i];
+      if(el.getAttribute('data-theme-mode')===mode){continue;}
+      el.setAttribute('data-theme-mode',mode);
+      el.setAttribute('data-tip',LABELS[mode]);
+      el.setAttribute('aria-label',LABELS[mode]);
+      var use=el.querySelector('use');
+      if(use){
+        use.setAttribute('href',ICONS[mode]);
+        if(use.hasAttribute('xlink:href')){use.setAttribute('xlink:href',ICONS[mode]);}
+      }
+    }
+  }
+  function apply(){
+    if(mode==='system'){root.removeAttribute('data-theme');}
+    else{root.setAttribute('data-theme',mode);}
+    syncToggles();
+  }
+  function emit(){
+    try{window.dispatchEvent(new CustomEvent('themechange',{detail:{mode:mode,effective:effective()}}));}catch(e){}
+  }
+  function onSystemChange(){
+    if(mode==='system'){emit();}
+  }
+
+  window.ThemeManager={
+    init:function(){
+      mode=read();
+      apply();
+      if(!bound&&mq){
+        bound=true;
+        if(mq.addEventListener){mq.addEventListener('change',onSystemChange);}
+        else if(mq.addListener){mq.addListener(onSystemChange);}
+      }
+      if(document.readyState==='loading'){
+        document.addEventListener('DOMContentLoaded',syncToggles);
+      }
+      return mode;
+    },
+    get:function(){return mode;},
+    effective:effective,
+    set:function(m){
+      if(!valid(m)){m='system';}
+      mode=m;
+      write(m);
+      apply();
+      emit();
+      return mode;
+    },
+    cycle:function(){
+      return window.ThemeManager.set(MODES[(MODES.indexOf(mode)+1)%MODES.length]);
+    },
+    sync:syncToggles
+  };
+  window.ThemeManager.init();
+})();
+
 /* UiKit: global tooltip for any element with data-tip="Текст".
    One position:fixed element on <body>, delegated listeners -> never clipped by overflow/modals. */
 (function(){
@@ -7,10 +95,8 @@
 
   var GAP=6;
   var MARGIN=6;
-  var HOVER_DELAY=250;
   var tip=null;
   var current=null;
-  var timer=null;
 
   function ensureTip(){
     if(!tip){
@@ -59,7 +145,6 @@
   }
 
   function show(el){
-    clearTimeout(timer);
     var text=el.getAttribute('data-tip');
     if(!text||!el.isConnected){hide();return;}
     labelIfIconOnly(el);
@@ -73,22 +158,15 @@
   }
 
   function hide(){
-    clearTimeout(timer);
     if(tip){tip.classList.remove('tooltip-visible');}
     current=null;
-  }
-
-  function schedule(el){
-    clearTimeout(timer);
-    if(current){show(el);return;}
-    timer=setTimeout(function(){show(el);},HOVER_DELAY);
   }
 
   document.addEventListener('mouseover',function(e){
     var el=findTarget(e.target);
     if(el===current&&el){return;}
-    if(el){schedule(el);}
-    else if(current||timer){hide();}
+    if(el){show(el);}   /* instant: no hover delay */
+    else if(current){hide();}
   });
 
   document.addEventListener('mouseout',function(e){
@@ -122,7 +200,7 @@
   function queueLabel(){
     if(pending){return;}
     pending=true;
-    (window.requestAnimationFrame||setTimeout)(function(){pending=false;labelAll();});
+    (window.requestAnimationFrame||setTimeout)(function(){pending=false;labelAll();if(window.ThemeManager){window.ThemeManager.sync();}});
   }
   if(window.MutationObserver){
     new MutationObserver(function(){
