@@ -1,17 +1,25 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
   <base target="_top">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recruiting ATS</title>
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#161a21" media="(prefers-color-scheme: dark)">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
   <?!= include('Styles'); ?>
   <?!= include('AppStyles'); ?>
 </head>
 <body>
+  <a class="skip-link" href="#" onclick="event.preventDefault();UiKit.focusMain()">Перейти к содержимому</a>
   <?!= include('Icons'); ?>
   <header class="topbar">
     <div class="brand">
-      <div class="brand-mark">R</div>
+      <div class="brand-mark" aria-hidden="true">R</div>
       <div>
         <h1>Recruiting ATS</h1>
         <div class="subtitle">Кандидаты и процесс найма</div>
@@ -61,7 +69,7 @@
       <button id="sidebarToggle" class="icon-btn sidebar-toggle" data-tip="Свернуть меню" aria-label="Свернуть меню" onclick="toggleSidebar()"><svg class="icon"><use href="#i-chevrons-left"/></svg></button>
     </aside>
 
-    <div class="app-content">
+    <div class="app-content" id="appContent">
   <main id="viewCandidates" class="page app-view">
     <div class="page-header">
       <div>
@@ -70,15 +78,19 @@
       </div>
 
       <div class="page-actions">
+        <button type="button" id="filtersToggle" class="icon-btn filters-toggle" aria-controls="candidateFilters" aria-expanded="false" data-tip="Фильтры" aria-label="Фильтры" onclick="toggleCandidateFilters()"><svg class="icon"><use href="#i-filter"/></svg><span id="filtersBadge" class="filters-badge" hidden></span></button>
         <button class="icon-btn" data-tip="Обновить" aria-label="Обновить" onclick="refreshCandidatesPage(this)"><svg class="icon"><use href="#i-refresh"/></svg></button>
-        <button class="icon-btn icon-btn-primary" data-tip="Новый кандидат" aria-label="Новый кандидат" onclick="openCandidate()"><svg class="icon"><use href="#i-plus"/></svg></button>
+        <button type="button" class="button button-primary" onclick="openCandidate()"><svg class="icon"><use href="#i-plus"/></svg><span class="btn-label">Новый кандидат</span></button>
       </div>
     </div>
 
-    <section class="surface filters">
+    <section id="candidateFilters" class="surface filters">
       <div class="field compact search-field">
-        <label>Поиск</label>
-        <input id="filterSearch" type="search" placeholder="Фамилия, имя, телефон, email, Telegram..." oninput="renderBoard()">
+        <label for="filterSearch">Поиск</label>
+        <div class="input-with-icon">
+          <svg class="icon icon-sm"><use href="#i-search"/></svg>
+          <input id="filterSearch" type="search" autocomplete="off" placeholder="Фамилия, имя, телефон, email, Telegram…" oninput="renderBoard()">
+        </div>
       </div>
 
       <div class="field compact">
@@ -97,8 +109,8 @@
       </div>
 
       <div class="field compact">
-        <label>Показать</label>
-        <div class="segmented" id="boardStateSwitch">
+        <span class="field-label" id="boardStateLabel">Показать</span>
+        <div class="segmented" id="boardStateSwitch" role="radiogroup" aria-labelledby="boardStateLabel">
           <label class="segmented-option"><input type="radio" name="boardState" value="active" checked onchange="setBoardState(this.value)"><span>Активные</span></label>
           <label class="segmented-option"><input type="radio" name="boardState" value="archived" onchange="setBoardState(this.value)"><span>Архив</span></label>
           <label class="segmented-option"><input type="radio" name="boardState" value="deleted" onchange="setBoardState(this.value)"><span>Корзина</span></label>
@@ -191,8 +203,9 @@
           <button id="watchCandidateButton" class="icon-btn" data-tip="Следить за кандидатом" aria-label="Следить за кандидатом" aria-pressed="false" onclick="toggleCandidateWatch(this)" hidden><svg class="icon"><use href="#i-eye"/></svg></button>
           <button id="shareCandidateButton" class="icon-btn" data-tip="Скопировать ссылку" aria-label="Скопировать ссылку" onclick="copyCandidateLink(this)" hidden><svg class="icon"><use href="#i-share"/></svg></button>
           <span id="candidateLifecycleActions" class="header-actions"></span>
-          <button class="icon-btn icon-btn-primary" data-tip="Сохранить" aria-label="Сохранить" onclick="saveCandidateForm(this)"><svg class="icon"><use href="#i-save"/></svg></button>
-          <button class="icon-btn" data-tip="Закрыть" aria-label="Закрыть" onclick="closeCandidate()"><svg class="icon"><use href="#i-close"/></svg></button>
+          <button type="button" id="candidateSaveButton" class="button button-primary" onclick="saveCandidateForm(this)"><svg class="icon"><use href="#i-save"/></svg><span>Сохранить</span></button>
+          <span class="toolbar-divider" aria-hidden="true"></span>
+          <button type="button" class="icon-btn" data-modal-close data-tip="Закрыть (Esc)" aria-label="Закрыть" onclick="closeCandidate()"><svg class="icon"><use href="#i-close"/></svg></button>
         </div>
       </div>
 
@@ -250,7 +263,7 @@
             <div class="field">
               <label>Источник</label>
               <div class="select-with-brand">
-                <span id="candidateSourceIcon" class="brand-icon brand-generic">•</span>
+                <span id="candidateSourceIcon" class="brand-icon brand-generic" aria-hidden="true"><svg class="icon"><use href="#i-globe"/></svg></span>
                 <select id="candidateSource" onchange="renderCandidateSourceIcon()"></select>
               </div>
             </div>
@@ -293,19 +306,19 @@
 
             <div class="social-grid">
               <div class="field">
-                <label><span class="social-icon telegram">✈</span> Telegram</label>
+                <label><span class="social-icon telegram" aria-hidden="true"><svg class="icon"><use href="#i-send"/></svg></span>Telegram</label>
                 <input id="candidateTelegram" oninput="renderSocialPreviews()" placeholder="@username">
                 <a id="telegramPreview" class="preview-link" target="_blank" rel="noopener"></a>
               </div>
 
               <div class="field">
-                <label><span class="social-icon github">GH</span> GitHub</label>
+                <label><span class="social-icon github" aria-hidden="true"><svg class="icon"><use href="#i-github"/></svg></span>GitHub</label>
                 <input id="candidateGithub" oninput="renderSocialPreviews()" placeholder="username или URL">
                 <a id="githubPreview" class="preview-link" target="_blank" rel="noopener"></a>
               </div>
 
               <div class="field">
-                <label><span class="social-icon linkedin">in</span> LinkedIn</label>
+                <label><span class="social-icon linkedin" aria-hidden="true"><svg class="icon"><use href="#i-linkedin"/></svg></span>LinkedIn</label>
                 <input id="candidateLinkedin" oninput="renderSocialPreviews()" placeholder="username или URL">
                 <a id="linkedinPreview" class="preview-link" target="_blank" rel="noopener"></a>
               </div>
@@ -324,7 +337,7 @@
           <div class="field">
             <label>Резюме *</label>
             <label class="file-drop">
-              <input
+              <input class="sr-only"
                 id="candidateResumeFile"
                 type="file"
                 accept=".pdf,.doc,.docx"
@@ -384,8 +397,8 @@
           <div id="transitionTitle" class="muted"></div>
         </div>
         <div class="header-actions">
-          <button type="button" class="icon-btn icon-btn-primary" data-tip="Сохранить и перейти" aria-label="Сохранить и перейти" onclick="submitTransition(this)"><svg class="icon"><use href="#i-check"/></svg></button>
-          <button type="button" class="icon-btn" data-tip="Отмена" aria-label="Отмена" onclick="closeTransition()"><svg class="icon"><use href="#i-close"/></svg></button>
+          <button type="button" class="button button-primary" onclick="submitTransition(this)"><svg class="icon"><use href="#i-check"/></svg><span>Сохранить и перейти</span></button>
+          <button type="button" class="icon-btn" data-modal-close data-tip="Отмена (Esc)" aria-label="Отмена" onclick="closeTransition()"><svg class="icon"><use href="#i-close"/></svg></button>
         </div>
       </div>
 
@@ -422,8 +435,8 @@
       <div class="panel-header">
         <h2>Редактирование результата</h2>
         <div class="header-actions">
-          <button type="button" class="icon-btn icon-btn-primary" data-tip="Сохранить" aria-label="Сохранить" onclick="saveInterviewEdit(this)"><svg class="icon"><use href="#i-save"/></svg></button>
-          <button type="button" class="icon-btn" data-tip="Отмена" aria-label="Отмена" onclick="closeInterviewEdit()"><svg class="icon"><use href="#i-close"/></svg></button>
+          <button type="button" class="button button-primary" onclick="saveInterviewEdit(this)"><svg class="icon"><use href="#i-save"/></svg><span>Сохранить</span></button>
+          <button type="button" class="icon-btn" data-modal-close data-tip="Отмена (Esc)" aria-label="Отмена" onclick="closeInterviewEdit()"><svg class="icon"><use href="#i-close"/></svg></button>
         </div>
       </div>
 
@@ -447,8 +460,8 @@
           <div id="rejectionSubtitle" class="muted"></div>
         </div>
         <div class="header-actions">
-          <button type="button" class="icon-btn icon-btn-danger" data-tip="Отказать" aria-label="Отказать" onclick="submitRejection(this)"><svg class="icon"><use href="#i-reject"/></svg></button>
-          <button type="button" class="icon-btn" data-tip="Отмена" aria-label="Отмена" onclick="closeRejection()"><svg class="icon"><use href="#i-close"/></svg></button>
+          <button type="button" class="button button-danger" onclick="submitRejection(this)"><svg class="icon"><use href="#i-reject"/></svg><span>Отказать</span></button>
+          <button type="button" class="icon-btn" data-modal-close data-tip="Отмена (Esc)" aria-label="Отмена" onclick="closeRejection()"><svg class="icon"><use href="#i-close"/></svg></button>
         </div>
       </div>
 
@@ -495,8 +508,8 @@
           <div id="restoreSubtitle" class="muted"></div>
         </div>
         <div class="header-actions">
-          <button type="button" class="icon-btn icon-btn-primary" data-tip="Вернуть на этап" aria-label="Вернуть на этап" onclick="submitRestore(this)"><svg class="icon"><use href="#i-restore"/></svg></button>
-          <button type="button" class="icon-btn" data-tip="Отмена" aria-label="Отмена" onclick="closeRestore()"><svg class="icon"><use href="#i-close"/></svg></button>
+          <button type="button" class="button button-primary" onclick="submitRestore(this)"><svg class="icon"><use href="#i-restore"/></svg><span>Вернуть на этап</span></button>
+          <button type="button" class="icon-btn" data-modal-close data-tip="Отмена (Esc)" aria-label="Отмена" onclick="closeRestore()"><svg class="icon"><use href="#i-close"/></svg></button>
         </div>
       </div>
 
@@ -511,15 +524,17 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <div id="confirmModal" class="modal modal-top">
+  <div id="confirmModal" class="modal modal-top" data-alert data-backdrop-close>
     <div class="panel confirm-panel">
-      <div class="confirm-icon">!</div>
-      <h2 id="confirmTitle">Подтверждение</h2>
-      <p id="confirmMessage"></p>
+      <div id="confirmIcon" class="confirm-icon" aria-hidden="true"><svg class="icon"><use href="#i-alert"/></svg></div>
+      <div class="confirm-body">
+        <h2 id="confirmTitle">Подтверждение</h2>
+        <p id="confirmMessage" data-modal-desc></p>
+      </div>
 
       <div class="actions">
-        <button class="icon-btn" data-tip="Отмена" aria-label="Отмена" onclick="closeConfirm(false)"><svg class="icon"><use href="#i-close"/></svg></button>
-        <button id="confirmActionButton" class="icon-btn icon-btn-danger" data-tip="Подтвердить" aria-label="Подтвердить" onclick="closeConfirm(true)"><svg class="icon"><use href="#i-check"/></svg></button>
+        <button type="button" class="button button-secondary" data-modal-close data-autofocus onclick="closeConfirm(false)">Отмена</button>
+        <button type="button" id="confirmActionButton" class="button button-danger" onclick="closeConfirm(true)"><span>Подтвердить</span></button>
       </div>
     </div>
   </div>

@@ -222,4 +222,266 @@
   window.UiKit.hideTooltip=hide;
   window.UiKit.icon=iconHtml;
 })();
+
+/* UiKit a11y layer — applied to static and dynamically rendered markup.
+   - decorative <svg class="icon"> are hidden from assistive tech;
+   - .field labels get for=<control id>; a trailing "*" becomes <span class="req">
+     and the control gets aria-required="true";
+   - .modal dialogs: role/aria-modal/aria-labelledby, initial focus, Tab trap,
+     Esc (clicks the [data-modal-close] control), focus returns to the opener;
+   - UiKit.showFieldErrors(): errors under the fields, first invalid gets focus. */
+(function(){
+  if(window.__uiKitA11y){return;}
+  window.__uiKitA11y=true;
+
+  var CONTROL='input:not([type=hidden]):not([type=checkbox]):not([type=radio]),select,textarea';
+  var FOCUSABLE='a[href],button:not([disabled]),input:not([disabled]):not([type=hidden]),select:not([disabled]),textarea:not([disabled]),[contenteditable="true"],summary,[tabindex]:not([tabindex="-1"])';
+  var uid=0;
+
+  function visible(node){return !!(node.offsetWidth||node.offsetHeight||node.getClientRects().length);}
+
+  function hideDecorativeIcons(root){
+    var nodes=root.querySelectorAll('svg.icon:not([aria-hidden])');
+    for(var i=0;i<nodes.length;i++){
+      if(nodes[i].hasAttribute('aria-label')||nodes[i].hasAttribute('role')){continue;}
+      nodes[i].setAttribute('aria-hidden','true');
+      nodes[i].setAttribute('focusable','false');
+    }
+  }
+
+  function fieldControl(field,label){
+    var nodes=field.querySelectorAll(CONTROL);
+    for(var i=0;i<nodes.length;i++){
+      if(!label.contains(nodes[i])){return nodes[i];}
+    }
+    return null;
+  }
+
+  /* Labels may be re-rendered with textContent (e.g. "Опишите причину *"),
+     so the check is repeated on every scan and is idempotent. */
+  function markRequired(label,control){
+    if(label.querySelector('.req')){return;}
+    var last=label.lastChild;
+    while(last&&last.nodeType===3&&!last.nodeValue.trim()){last=last.previousSibling;}
+    if(!last||last.nodeType!==3||!/\*\s*$/.test(last.nodeValue)){
+      if(control&&control.__autoRequired){control.removeAttribute('aria-required');control.__autoRequired=false;}
+      return;
+    }
+    last.nodeValue=last.nodeValue.replace(/\s*\*\s*$/,'');
+    var star=document.createElement('span');
+    star.className='req';
+    star.setAttribute('aria-hidden','true');
+    star.textContent='*';
+    label.appendChild(star);
+    if(control){control.setAttribute('aria-required','true');control.__autoRequired=true;}
+  }
+
+  function enhanceFields(root){
+    var labels=root.querySelectorAll('.field > label, .field > .field-header > label');
+    for(var i=0;i<labels.length;i++){
+      var label=labels[i];
+      if(label.classList.contains('file-drop')||label.querySelector('input,select,textarea')){continue;}
+      var field=label.closest('.field');
+      var control=field?fieldControl(field,label):null;
+      if(control&&!label.htmlFor&&!control.hasAttribute('data-rich')){
+        if(!control.id){control.id='fld-'+(++uid);}
+        label.htmlFor=control.id;
+      }
+      markRequired(label,control);
+    }
+  }
+
+  /* ---------- Modals ---------- */
+  var modalStack=[];
+
+  function topModal(){return modalStack.length?modalStack[modalStack.length-1]:null;}
+  function focusables(root){return Array.prototype.filter.call(root.querySelectorAll(FOCUSABLE),visible);}
+
+  function prepareModal(modal){
+    var panel=modal.querySelector('.panel')||modal;
+    if(panel.__modalReady){return panel;}
+    panel.__modalReady=true;
+    panel.setAttribute('role',modal.hasAttribute('data-alert')?'alertdialog':'dialog');
+    panel.setAttribute('aria-modal','true');
+    panel.setAttribute('tabindex','-1');
+    var heading=panel.querySelector('h2,h3');
+    if(heading){
+      if(!heading.id){heading.id='dlg-title-'+(++uid);}
+      panel.setAttribute('aria-labelledby',heading.id);
+    }
+    var desc=panel.querySelector('[data-modal-desc]');
+    if(desc){
+      if(!desc.id){desc.id='dlg-desc-'+(++uid);}
+      panel.setAttribute('aria-describedby',desc.id);
+    }
+    return panel;
+  }
+
+  function onOpen(modal){
+    if(modalStack.indexOf(modal)>=0){return;}
+    var panel=prepareModal(modal);
+    var active=document.activeElement;
+    modal.__returnFocus=active&&active!==document.body&&!modal.contains(active)?active:null;
+    modalStack.push(modal);
+    if(window.UiKit&&window.UiKit.hideTooltip){window.UiKit.hideTooltip();}
+    (window.requestAnimationFrame||setTimeout)(function(){
+      if(modalStack.indexOf(modal)<0||panel.contains(document.activeElement)){return;}
+      var target=modal.querySelector('[data-autofocus]')||panel;
+      try{target.focus({preventScroll:true});}catch(e){target.focus();}
+    });
+  }
+
+  function onClose(modal){
+    var index=modalStack.indexOf(modal);
+    if(index<0){return;}
+    modalStack.splice(index,1);
+    var back=modal.__returnFocus;
+    modal.__returnFocus=null;
+    if(back&&back.isConnected&&visible(back)){
+      try{back.focus({preventScroll:true});}catch(e){}
+    }
+  }
+
+  function requestClose(modal){
+    var closer=modal.querySelector('[data-modal-close]');
+    if(closer){closer.click();}
+  }
+
+  function watchModal(modal){
+    if(modal.__modalWatched){return;}
+    modal.__modalWatched=true;
+    prepareModal(modal);
+    if(modal.classList.contains('open')){onOpen(modal);}
+    new MutationObserver(function(){
+      if(modal.classList.contains('open')){onOpen(modal);}else{onClose(modal);}
+    }).observe(modal,{attributes:true,attributeFilter:['class']});
+  }
+
+  document.addEventListener('keydown',function(e){
+    var modal=topModal();
+    if(!modal){return;}
+    if(e.key==='Escape'){
+      /* Popovers inside the dialog (link editor, emoji picker) close first. */
+      if(e.defaultPrevented){return;}
+      e.preventDefault();
+      requestClose(modal);
+      return;
+    }
+    if(e.key!=='Tab'){return;}
+    var panel=modal.querySelector('.panel')||modal;
+    var items=focusables(panel);
+    if(!items.length){e.preventDefault();panel.focus();return;}
+    var first=items[0],last=items[items.length-1],active=document.activeElement;
+    if(!panel.contains(active)){e.preventDefault();first.focus();return;}
+    if(e.shiftKey&&(active===first||active===panel)){e.preventDefault();last.focus();}
+    else if(!e.shiftKey&&active===last){e.preventDefault();first.focus();}
+  });
+
+  /* ---------- Inline field errors ---------- */
+  function resolve(node){return typeof node==='string'?document.getElementById(node):node;}
+
+  function clearFieldError(control){
+    control=resolve(control);
+    if(!control){return;}
+    control.classList.remove('input-error');
+    control.removeAttribute('aria-invalid');
+    var msg=control.__errorNode;
+    if(msg&&msg.parentNode){msg.parentNode.removeChild(msg);}
+    control.__errorNode=null;
+    var ids=(control.getAttribute('aria-describedby')||'').split(' ').filter(function(id){return id&&(!msg||id!==msg.id);});
+    if(ids.length){control.setAttribute('aria-describedby',ids.join(' '));}
+    else{control.removeAttribute('aria-describedby');}
+  }
+
+  function showFieldError(control,message){
+    control=resolve(control);
+    if(!control){return null;}
+    clearFieldError(control);
+    control.classList.add('input-error');
+    control.setAttribute('aria-invalid','true');
+    var field=control.closest('.field')||control.parentNode;
+    var msg=document.createElement('small');
+    msg.className='field-error';
+    msg.id='err-'+(++uid);
+    msg.textContent=message;
+    field.appendChild(msg);
+    control.__errorNode=msg;
+    control.setAttribute('aria-describedby',((control.getAttribute('aria-describedby')||'')+' '+msg.id).trim());
+    if(!control.__errorBound){
+      control.__errorBound=true;
+      var clear=function(){if(control.__errorNode){clearFieldError(control);}};
+      control.addEventListener('input',clear);
+      control.addEventListener('change',clear);
+    }
+    return msg;
+  }
+
+  /* errors: [{field: element|id, message}] -> true when the list is empty. */
+  function showFieldErrors(errors){
+    var first=null;
+    (errors||[]).forEach(function(item){
+      var control=resolve(item.field);
+      if(!control){return;}
+      showFieldError(control,item.message);
+      if(!first){first=control;}
+    });
+    if(!first){return true;}
+    /* Deferred: validation often runs inside runUiTask while the form is still
+       disabled; focus lands after the form is re-enabled. */
+    setTimeout(function(){
+      var target=first;
+      if(!visible(target)){
+        var wrap=target.closest('.field');
+        var area=wrap&&wrap.querySelector('[contenteditable="true"]');
+        if(area){target=area;}
+      }
+      var reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if(target.scrollIntoView){target.scrollIntoView({block:'center',behavior:reduce?'auto':'smooth'});}
+      try{target.focus({preventScroll:true});}catch(e){}
+    },0);
+    return false;
+  }
+
+  function clearFieldErrors(scope){
+    scope=resolve(scope)||document;
+    var nodes=scope.querySelectorAll('[aria-invalid="true"]');
+    for(var i=0;i<nodes.length;i++){clearFieldError(nodes[i]);}
+  }
+
+  /* ---------- Main content focus (skip link, route change) ---------- */
+  function focusMain(){
+    var view=document.querySelector('.app-view:not([hidden])');
+    var target=view&&(view.querySelector('.page-header h2')||view);
+    if(!target){return;}
+    if(!target.hasAttribute('tabindex')){target.setAttribute('tabindex','-1');}
+    try{target.focus({preventScroll:true});}catch(e){target.focus();}
+  }
+
+  function scan(root){
+    hideDecorativeIcons(root);
+    enhanceFields(root);
+    var modals=root.querySelectorAll('.modal');
+    for(var i=0;i<modals.length;i++){watchModal(modals[i]);}
+  }
+
+  var queued=false;
+  function queueScan(){
+    if(queued){return;}
+    queued=true;
+    (window.requestAnimationFrame||setTimeout)(function(){queued=false;scan(document);});
+  }
+  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',function(){scan(document);});}
+  else{scan(document);}
+  if(window.MutationObserver){
+    new MutationObserver(queueScan).observe(document.documentElement,{childList:true,subtree:true});
+  }
+
+  window.UiKit=window.UiKit||{};
+  window.UiKit.showFieldErrors=showFieldErrors;
+  window.UiKit.showFieldError=showFieldError;
+  window.UiKit.clearFieldError=clearFieldError;
+  window.UiKit.clearFieldErrors=clearFieldErrors;
+  window.UiKit.focusMain=focusMain;
+  window.UiKit.isModalOpen=function(){return modalStack.length>0;};
+})();
 </script>

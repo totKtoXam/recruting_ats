@@ -41,7 +41,12 @@ function el(id){return document.getElementById(id)}
 function value(id){return el(id).value}
 function escapeHtml(v){return String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&#039;")}
 function escJs(v){return String(v??'').replaceAll('\\','\\\\').replaceAll("'","\\'")}
-function icon(name,extra){return '<svg class="icon'+(extra?' '+extra:'')+'"><use href="#i-'+name+'"/></svg>'}
+function icon(name,extra){return '<svg class="icon'+(extra?' '+extra:'')+'" aria-hidden="true" focusable="false"><use href="#i-'+name+'"/></svg>'}
+// Кнопка с подписью — для главного действия экрана/формы (Сохранить, Отказать…):
+// иконка без текста для основного действия плохо считывается.
+function textBtn(name,label,onclick,variant='button-primary'){return '<button type="button" class="button '+variant+'" onclick="'+onclick+'">'+icon(name)+'<span>'+escapeHtml(label)+'</span></button>'}
+// Иконка «откроется в новой вкладке» + пояснение для скринридера.
+function externalMark(){return icon('external','icon-sm external-mark')+'<span class="sr-only"> (откроется в новой вкладке)</span>'}
 function iconBtn(name,tip,onclick,variant){return '<button type="button" class="icon-btn'+(variant?' '+variant:'')+'" data-tip="'+escapeHtml(tip)+'" aria-label="'+escapeHtml(tip)+'" onclick="'+onclick+'">'+icon(name,variant&&variant.includes('icon-btn-sm')?'icon-sm':'')+'</button>'}
 // Текст без разметки. DOMParser создаёт инертный документ — скрипты и картинки из HTML не выполняются.
 function richText(html){return new DOMParser().parseFromString(String(html||''),'text/html').body.textContent.trim()}
@@ -128,11 +133,31 @@ function hideToast(){
   if(toast)toast.className='toast';
 }
 
-function showConfirm(message,title='Подтверждение'){
+// options: {confirmLabel, danger=true}. Кнопка действия подписана, фокус — на «Отмена».
+function showConfirm(message,title='Подтверждение',options={}){
+  const danger=options.danger!==false;
   el('confirmTitle').textContent=title;
   el('confirmMessage').textContent=message;
+  el('confirmIcon').className='confirm-icon'+(danger?'':' confirm-icon-info');
+  el('confirmIcon').innerHTML=icon(danger?'alert':'info');
+  const action=el('confirmActionButton');
+  action.className='button '+(danger?'button-danger':'button-primary');
+  action.querySelector('span').textContent=options.confirmLabel||confirmLabelFor(title,danger);
+  if(confirmResolver){confirmResolver(false);confirmResolver=null}
   el('confirmModal').classList.add('open');
   return new Promise(resolve=>confirmResolver=resolve);
+}
+
+// Подпись кнопки по заголовку диалога: «Удаление…» -> «Удалить» и т.п.
+function confirmLabelFor(title,danger){
+  const t=String(title||'').toLowerCase();
+  if(t.startsWith('удален'))return 'Удалить';
+  if(t.startsWith('архив'))return 'В архив';
+  if(t.startsWith('закрытие доступа'))return 'Закрыть доступ';
+  if(t.startsWith('отвязать'))return 'Отвязать';
+  if(t.startsWith('сбросить'))return 'Сбросить';
+  if(t.startsWith('несохран'))return 'Закрыть без сохранения';
+  return danger?'Подтвердить':'Продолжить';
 }
 
 function closeConfirm(result){
@@ -149,6 +174,7 @@ function setButtonLoading(button,busy,label='Загрузка…'){
     if(!button.dataset.originalHtml)button.dataset.originalHtml=button.innerHTML;
     button.disabled=true;
     button.classList.add('is-loading');
+    button.setAttribute('aria-busy','true');
     // Иконочная кнопка квадратная: вместо подписи — только спиннер.
     button.innerHTML=button.classList.contains('icon-btn')
       ? '<span class="spinner"></span>'
@@ -156,6 +182,7 @@ function setButtonLoading(button,busy,label='Загрузка…'){
   }else{
     button.disabled=false;
     button.classList.remove('is-loading');
+    button.removeAttribute('aria-busy');
     if(button.dataset.originalHtml){
       button.innerHTML=button.dataset.originalHtml;
       delete button.dataset.originalHtml;
@@ -228,10 +255,10 @@ function vacancyStatusChip(status){
 }
 
 function syncIcon(sync){
-  if(sync==='pending')return '<span class="sync-cell pending" title="Синхронизация"><span class="spinner spinner-dark"></span></span>';
-  if(sync==='success')return '<span class="sync-cell success" title="Сохранено">✓</span>';
-  if(sync==='error')return '<span class="sync-cell error" title="Ошибка">!</span>';
-  return '<span class="sync-cell idle">•</span>';
+  if(sync==='pending')return '<span class="sync-cell pending" role="img" aria-label="Синхронизация" data-tip="Синхронизация"><span class="spinner spinner-dark"></span></span>';
+  if(sync==='success')return '<span class="sync-cell success" role="img" aria-label="Сохранено" data-tip="Сохранено">'+icon('check')+'</span>';
+  if(sync==='error')return '<span class="sync-cell error" role="img" aria-label="Ошибка синхронизации" data-tip="Ошибка синхронизации">'+icon('alert')+'</span>';
+  return '';
 }
 
 function fullNameOf(item){
@@ -240,23 +267,25 @@ function fullNameOf(item){
 
 function sourceBrand(name){
   const value=String(name||'').toLowerCase();
-  if(value.includes('linkedin'))return {key:'linkedin',text:'in'};
-  if(value.includes('github'))return {key:'github',text:'GH'};
-  if(value.includes('telegram'))return {key:'telegram',text:'✈'};
+  if(value.includes('linkedin'))return {key:'linkedin',icon:'linkedin'};
+  if(value.includes('github'))return {key:'github',icon:'github'};
+  if(value.includes('telegram'))return {key:'telegram',icon:'send'};
   if(value.includes('hh')||value.includes('headhunter'))return {key:'hh',text:'hh'};
-  if(value.includes('рекоменд')||value.includes('referr'))return {key:'referral',text:'★'};
-  if(value.includes('внутрен')||value.includes('internal'))return {key:'internal',text:'⌂'};
-  return {key:'generic',text:'•'};
+  if(value.includes('рекоменд')||value.includes('referr'))return {key:'referral',icon:'star'};
+  if(value.includes('внутрен')||value.includes('internal'))return {key:'internal',icon:'house'};
+  return {key:'generic',icon:'globe'};
 }
+
+function brandInnerHtml(brand){return brand.icon?icon(brand.icon):escapeHtml(brand.text)}
 
 function sourceIconHtml(name){
   const brand=sourceBrand(name);
-  return '<span class="brand-icon brand-'+brand.key+'">'+escapeHtml(brand.text)+'</span>';
+  return '<span class="brand-icon brand-'+brand.key+'" aria-hidden="true">'+brandInnerHtml(brand)+'</span>';
 }
 
+// В <option> нельзя вставить SVG — только название.
 function sourceOptionLabel(source){
-  const brand=sourceBrand(source['Название']);
-  return brand.text+'  '+source['Название'];
+  return source['Название'];
 }
 
 function init(){
@@ -384,8 +413,12 @@ function navigateTo(route){
   location.hash='#/'+(route==='admin'?'vacancies':route);
 }
 
+let routeApplied=false;
+
 function applyRoute(){
   const route=getRoute();
+  const pageTitle=route.page==='profile'?'Профиль':route.page==='admin'?(ADMIN_ROUTES[route.path]||{}).title:'Кандидаты';
+  document.title=(pageTitle?pageTitle+' · ':'')+'Recruiting ATS';
   el('viewCandidates').hidden=route.page!=='candidates';
   el('viewAdmin').hidden=route.page!=='admin';
   el('viewProfile').hidden=route.page!=='profile';
@@ -408,6 +441,9 @@ function applyRoute(){
   }
 
   maybeOpenCandidateFromRoute();
+  // Для скринридера и клавиатуры: после перехода фокус — на заголовке раздела.
+  if(routeApplied&&!route.candidateId&&!UiKit.isModalOpen())UiKit.focusMain();
+  routeApplied=true;
 }
 
 function candidateById(id){
@@ -513,7 +549,10 @@ function renderCurrentUser(){
 
 function renderInitialShell(){
   el('stats').innerHTML='<div class="stat skeleton-card"><span>Загрузка</span><b>…</b></div>';
-  el('board').innerHTML='<div class="board-placeholder">Кандидаты загружаются в фоне…</div>';
+  // Скелетон доски вместо текста: сохраняет раскладку, пока данные грузятся.
+  const skeletonColumn=cards=>'<div class="skeleton-column" aria-hidden="true"><div class="skeleton skeleton-title"></div>'+
+    '<div class="skeleton skeleton-candidate"></div>'.repeat(cards)+'</div>';
+  el('board').innerHTML='<span class="sr-only" role="status">Кандидаты загружаются…</span>'+[2,1,1,0,0].map(skeletonColumn).join('');
   updateSyncStatus();
 }
 
@@ -1179,7 +1218,28 @@ function filteredCandidates(){
   });
 }
 
+// Телефон: поиск виден всегда, остальные фильтры раскрываются кнопкой.
+function toggleCandidateFilters(force){
+  const root=el('candidateFilters');
+  const open=typeof force==='boolean'?force:!root.classList.contains('filters-open');
+  root.classList.toggle('filters-open',open);
+  el('filtersToggle').setAttribute('aria-expanded',String(open));
+}
+
+function updateFiltersBadge(){
+  const badge=el('filtersBadge');
+  if(!badge)return;
+  const active=['filterVacancy','filterResponsible','filterSource'].filter(id=>el(id)&&el(id).value).length+
+    (boardState()!=='active'?1:0);
+  badge.hidden=!active;
+  badge.textContent=String(active);
+  const label=active?'Фильтры: активных '+active:'Фильтры';
+  el('filtersToggle').setAttribute('aria-label',label);
+  el('filtersToggle').dataset.tip=label;
+}
+
 function renderBoard(){
+  updateFiltersBadge();
   if(
     !state.loaded.candidates ||
     !state.loaded.references
@@ -1272,7 +1332,7 @@ function renderResumeHistoryPopover(candidate){
   }
 
   return '<details class="card-resume-history" onclick="event.stopPropagation()">'+
-    '<summary title="История резюме">◷</summary>'+
+    '<summary data-tip="История резюме" aria-label="История резюме">'+icon('history','icon-sm')+'</summary>'+
     '<div class="card-resume-history-popover">'+
       '<div class="card-resume-history-title">Версии резюме</div>'+
       versions.map((version,index)=>
@@ -1323,7 +1383,7 @@ function renderCard(c){
         escapeHtml(latest.url)+
         '" target="_blank" rel="noopener" '+
         'onclick="event.stopPropagation()">'+
-        'Последнее резюме ↗</a>'+
+        icon('file','icon-sm')+'<span>Последнее резюме</span>'+externalMark()+'</a>'+
         renderResumeHistoryPopover(c)+
         '</div>'
       : '<span class="muted">'+
@@ -1352,41 +1412,41 @@ function renderCard(c){
     '">'+
 
     '<div class="candidate-card-top">'+
-      '<div>'+
+      '<div class="candidate-card-heading">'+
         '<div class="candidate-number">№'+
         escapeHtml(c['№']||'—')+
         ' '+syncIcon(c._sync)+
         '</div>'+
-        '<div class="candidate-name">'+
+        '<button type="button" class="candidate-name"'+(pending?' disabled':'')+
+        ' aria-label="Открыть карточку: '+escapeHtml(fullNameOf(c))+'">'+
         escapeHtml(fullNameOf(c))+
-        '</div>'+
+        '</button>'+
       '</div>'+
-      statusChip(c['Статус'],true)+
     '</div>'+
 
-    '<div class="candidate-meta-row"><span>☎</span><span>'+
+    '<div class="candidate-meta-row">'+icon('phone','icon-sm')+'<span class="tabular">'+
     escapeHtml(c['Телефон']||'—')+
     '</span></div>'+
 
-    '<div class="candidate-meta-row"><span>◫</span><span>'+
+    '<div class="candidate-meta-row">'+icon('briefcase','icon-sm')+'<span>'+
     escapeHtml(c['Вакансия']||'—')+
     '</span></div>'+
 
-    '<div class="candidate-meta-row"><span>●</span><span><strong>Рекрутер:</strong> '+
+    '<div class="candidate-meta-row">'+icon('user-search','icon-sm')+'<span><strong>Рекрутер:</strong> '+
     escapeHtml(c['Ответственный']||'—')+
     '</span></div>'+
-    '<div class="candidate-meta-row"><span>H</span><span><strong>HR:</strong> '+
+    '<div class="candidate-meta-row">'+icon('handshake','icon-sm')+'<span><strong>HR:</strong> '+
     escapeHtml(c['Ответственный HR']||'—')+
     '</span></div>'+
-    '<div class="candidate-meta-row"><span>П</span><span><strong>Проф. интервью:</strong> '+
+    '<div class="candidate-meta-row">'+icon('laptop','icon-sm')+'<span><strong>Проф. интервью:</strong> '+
     escapeHtml(c['Ответственный проф. интервьювер']||'—')+
     '</span></div>'+
 
     (
       c['Источник']
-        ? '<div class="candidate-meta-row"><span>'+
+        ? '<div class="candidate-meta-row">'+
           sourceIconHtml(c['Источник'])+
-          '</span><span>'+
+          '<span>'+
           escapeHtml(c['Источник'])+
           '</span></div>'
         : ''
@@ -1669,7 +1729,7 @@ function renderCandidateSourceIcon(){
   const node=el('candidateSourceIcon');
   const brand=sourceBrand(source?source['Название']:'');
   node.className='brand-icon brand-'+brand.key;
-  node.textContent=brand.text;
+  node.innerHTML=brandInnerHtml(brand);
 }
 
 async function loadCandidateDetails(
@@ -1824,7 +1884,7 @@ function openCandidate(candidate){
   el('candidateResumeFile').value='';
   renderSelectedResumeFile();
   renderResumeVersions(candidate?candidate.resumeVersions||[]:[]);
-  setLink('candidateFolderLink',candidate&&candidate['Папка кандидата'],'Открыть папку кандидата ↗');
+  setLink('candidateFolderLink',candidate&&candidate['Папка кандидата'],'Открыть папку кандидата');
   renderCandidateLinks(candidate?candidate.links||[]:[]);
   renderSocialPreviews();
   renderCandidateSourceIcon();
@@ -1837,7 +1897,8 @@ function openCandidate(candidate){
   // Кандидата в корзине нельзя изменить — только восстановить.
   const readOnly=!!(candidate&&candidate.state==='deleted');
   el('candidateModal').classList.toggle('is-readonly',readOnly);
-  document.querySelectorAll('#candidateModal .candidate-header-actions .icon-btn-primary').forEach(button=>button.hidden=readOnly);
+  document.querySelectorAll('#candidateModal .candidate-header-actions :is(.icon-btn-primary,.button-primary)').forEach(button=>button.hidden=readOnly);
+  UiKit.clearFieldErrors('candidateWorkspace');
 
   if(candidate){
     setCurrentInterviews(candidate.ID);
@@ -1885,7 +1946,7 @@ function closeCandidate(){
 function setLink(id,url,label){
   const a=el(id);
   a.href=url||'';
-  a.textContent=url?label:'';
+  a.innerHTML=url?icon('folder','icon-sm')+'<span>'+escapeHtml(label)+'</span>'+externalMark():'';
 }
 
 function renderTransitions(){
@@ -1950,7 +2011,7 @@ function renderSelectedResumeFile(
           draftResume.url||'#'
         )+
         '" target="_blank" rel="noopener">'+
-          '<span class="resume-ok">✓</span>'+
+          '<span class="resume-ok">'+icon('check')+'</span>'+
           '<div>'+
             '<strong>'+
             escapeHtml(
@@ -1960,7 +2021,7 @@ function renderSelectedResumeFile(
             '</strong>'+
             '<small>Из API · будет добавлено при сохранении кандидата</small>'+
           '</div>'+
-          '<span class="resume-open">↗</span>'+
+          '<span class="resume-open">'+externalMark()+'</span>'+
         '</a>';
 
       return;
@@ -1975,7 +2036,7 @@ function renderSelectedResumeFile(
       (
         uploading
           ? '<span class="spinner spinner-dark"></span>'
-          : '<span class="resume-ok">✓</span>'
+          : '<span class="resume-ok">'+icon('check')+'</span>'
       )+
       '<div><strong>'+
         escapeHtml(file.name)+
@@ -2005,9 +2066,9 @@ function renderResumeVersions(versions){
   root.innerHTML='<div class="resume-versions-title">История версий</div>'+
     versions.map((v,index)=>
       '<a class="resume-version" href="'+escapeHtml(v.url||'#')+'" target="_blank" rel="noopener">'+
-        '<span class="resume-version-index">'+(index===0?'NEW':String(versions.length-index))+'</span>'+
-        '<div><strong>'+escapeHtml(v.name||'Резюме')+'</strong><small>'+escapeHtml(v.uploadedAt||'Дата не указана')+'</small></div>'+
-        '<span class="resume-open">↗</span>'+
+        '<span class="resume-version-index'+(index===0?' is-current':'')+'">v'+String(versions.length-index)+'</span>'+
+        '<div><strong>'+escapeHtml(v.name||'Резюме')+'</strong><small>'+(index===0?'Текущая · ':'')+escapeHtml(v.uploadedAt||'Дата не указана')+'</small></div>'+
+        '<span class="resume-open">'+externalMark()+'</span>'+
       '</a>'
     ).join('');
 }
@@ -2098,7 +2159,7 @@ async function saveCandidateForm(button){
 
   const salary=Number(String(value('candidateSalary')).replace(/\D/g,''))||0;
   if(salary>10000000){
-    showToast('ЗП ожидания не может превышать 10 000 000.','error');
+    UiKit.showFieldErrors([{field:'candidateSalary',message:'Не больше 10 000 000.'}]);
     return;
   }
 
@@ -2166,16 +2227,19 @@ async function saveCandidateForm(button){
       resumeFile
     };
 
-    if(
-      !payload.lastName||
-      !payload.firstName||
-      !payload.vacancyId||
-      !payload.phone||
-      !payload.recruiterId||
-      !payload.hrResponsibleId||
-      !payload.techInterviewerId
-    ){
-      showToast('Заполните обязательные поля, включая рекрутера, HR и проф. интервьювера.','error');
+    // Ошибки показываются под полями; фокус — на первом незаполненном.
+    const phoneDigits=String(payload.phone||'').replace(/\D/g,'');
+    const missing=[
+      [!payload.lastName,'candidateLastName','Укажите фамилию.'],
+      [!payload.firstName,'candidateFirstName','Укажите имя.'],
+      [!payload.vacancyId,'candidateVacancy','Выберите вакансию.'],
+      [!payload.recruiterId,'candidateRecruiter','Выберите рекрутера.'],
+      [!payload.hrResponsibleId,'candidateHrResponsible','Выберите ответственного HR.'],
+      [!payload.techInterviewerId,'candidateTechInterviewer','Выберите проф. интервьювера.'],
+      [phoneDigits.length<=1,'candidatePhone','Укажите телефон в формате +7 7XX XXX XX XX.']
+    ].filter(([bad])=>bad).map(([,field,message])=>({field,message}));
+    if(!UiKit.showFieldErrors(missing)){
+      showToast(missing.length===1?missing[0].message:'Заполните обязательные поля: '+missing.length+'.','error');
       return;
     }
 
@@ -2267,7 +2331,7 @@ async function saveCandidateForm(button){
       el('candidateResumeFile').value='';
       renderSelectedResumeFile();
       renderResumeVersions(saved.resumeVersions||[]);
-      setLink('candidateFolderLink',saved['Папка кандидата'],'Открыть папку кандидата ↗');
+      setLink('candidateFolderLink',saved['Папка кандидата'],'Открыть папку кандидата');
       el('candidateNumberLabel').textContent='№'+(saved['№']||'—');
       el('shareCandidateButton').hidden=false;
       if(typeof refreshCandidateWatch==='function')refreshCandidateWatch(saved);
@@ -2471,7 +2535,7 @@ function startTransition(id,toStatus){
     nextResponsible
   };
 
-  el('transitionTitle').innerHTML=statusChip(candidate['Статус'],true)+' <span class="transition-arrow">→</span> '+statusChip(toStatus,true);
+  el('transitionTitle').innerHTML=statusChip(candidate['Статус'],true)+' <span class="transition-arrow">'+icon('arrow-right','icon-sm')+'</span> '+statusChip(toStatus,true);
 
   const templateSelect=el('transitionTemplate');
   templateSelect.disabled=!!requiredTemplate;
@@ -2497,7 +2561,7 @@ let pendingRejection=null;
 function openRejection(candidate){
   pendingRejection={candidate};
   el('rejectionTitle').textContent=fullNameOf(candidate);
-  el('rejectionSubtitle').innerHTML=statusChip(candidate['Статус'],true)+' <span class="transition-arrow">→</span> '+statusChip(state.rejectedStatus,true);
+  el('rejectionSubtitle').innerHTML=statusChip(candidate['Статус'],true)+' <span class="transition-arrow">'+icon('arrow-right','icon-sm')+'</span> '+statusChip(state.rejectedStatus,true);
 
   // «Кем отказано» — только назначенные кандидату ответственные.
   const assigned=[
@@ -2554,8 +2618,11 @@ async function submitRejection(button){
     comment:richText(value('rejectionComment'))?value('rejectionComment'):''
   };
 
-  if(byType==='responsible'&&!rejection.responsibleId){showToast('Выберите, кем отказано.','error');return}
-  if(!rejection.reason){showToast('Выберите причину отказа.','error');return}
+  const rejectionErrors=[
+    [byType==='responsible'&&!rejection.responsibleId,'rejectionResponsible','Выберите, кем отказано.'],
+    [!rejection.reason,'rejectionReason','Выберите причину отказа.']
+  ].filter(([bad])=>bad).map(([,field,message])=>({field,message}));
+  if(!UiKit.showFieldErrors(rejectionErrors))return;
   if(rejection.reason===state.otherReason&&!rejection.comment){
     el('rejectionCommentHint').hidden=false;
     el('rejectionComment').classList.add('input-error');
@@ -2580,7 +2647,7 @@ let pendingRestore=null;
 function openRestore(candidate,toStatus){
   pendingRestore={candidate,toStatus};
   el('restoreTitle').textContent=fullNameOf(candidate);
-  el('restoreSubtitle').innerHTML=statusChip(candidate['Статус'],true)+' <span class="transition-arrow">→</span> '+statusChip(toStatus,true);
+  el('restoreSubtitle').innerHTML=statusChip(candidate['Статус'],true)+' <span class="transition-arrow">'+icon('arrow-right','icon-sm')+'</span> '+statusChip(toStatus,true);
   setRich('restoreComment','');
   el('restoreModal').classList.add('open');
 }
@@ -2679,7 +2746,7 @@ async function submitTransition(button){
     const selectedTemplate=selectedTransitionTemplate();
 
     if(!result){
-      showToast('Укажите результат интервью/этапа.','error');
+      UiKit.showFieldErrors([{field:'transitionResult',message:'Опишите итог этапа.'}]);
       return;
     }
 
@@ -2693,11 +2760,10 @@ async function submitTransition(button){
         return;
       }
 
-      const missing=answers.filter(item=>!richText(item.answer));
-      if(missing.length){
-        showToast('Заполните все вопросы обязательного шаблона.','error');
-        return;
-      }
+      const missingAnswers=[...document.querySelectorAll('.transition-answer')]
+        .filter(node=>!richText(node.value.trim()))
+        .map(node=>({field:node,message:'Ответ обязателен для этого шаблона.'}));
+      if(!UiKit.showFieldErrors(missingAnswers))return;
     }
 
     const payload={
@@ -2820,7 +2886,7 @@ function renderInterviewHistory(){
 
   el('interviewHistory').innerHTML=currentInterviews.length?currentInterviews.map(i=>
     '<article class="history-card'+(i.state==='archived'?' is-archived':'')+'">'+
-      '<div class="history-title"><div>'+statusChip(i['From Status']||i['Этап']||'—',true)+' <span class="transition-arrow">→</span> '+statusChip(i['To Status']||'—',true)+
+      '<div class="history-title"><div>'+statusChip(i['From Status']||i['Этап']||'—',true)+' <span class="transition-arrow">'+icon('arrow-right','icon-sm')+'</span> '+statusChip(i['To Status']||'—',true)+
         (i.state==='archived'?' <span class="state-badge state-archived">В архиве</span>':'')+'</div>'+
         '<div class="header-actions">'+
           (i.state==='active'?iconBtn('edit','Редактировать результат','editInterview(\''+escJs(i['Interview ID'])+'\')','icon-btn-sm'):'')+
@@ -2874,7 +2940,7 @@ function closeInterviewEdit(){el('interviewEditModal').classList.remove('open');
 
 async function saveInterviewEdit(button){
   if(!editingInterview)return;
-  if(!richText(value('editInterviewResult'))){showToast('Укажите результат интервью/этапа.','error');return}
+  if(!richText(value('editInterviewResult'))){UiKit.showFieldErrors([{field:'editInterviewResult',message:'Опишите итог этапа.'}]);return}
   await runUiTask({button,formId:'interviewEditForm',label:'Сохранение…'},async()=>{
     const payload={
       id:editingInterview['Interview ID'],

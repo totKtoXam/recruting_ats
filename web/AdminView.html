@@ -17,7 +17,7 @@
         <h3>Вакансии</h3>
         <div class="header-actions">
           <div class="segmented state-switch" data-table="vacancies"></div>
-          <button class="icon-btn icon-btn-primary" data-tip="Новая вакансия" aria-label="Новая вакансия" onclick="resetVacancyForm()"><svg class="icon"><use href="#i-plus"/></svg></button>
+          <button type="button" class="button button-primary" onclick="resetVacancyForm()"><svg class="icon"><use href="#i-plus"/></svg><span class="btn-label">Новая вакансия</span></button>
         </div>
       </div>
       <div id="vacancyTable"></div>
@@ -89,7 +89,7 @@
         <h3>Источники вакансий</h3>
         <div class="header-actions">
           <div class="segmented state-switch" data-table="sources"></div>
-          <button class="icon-btn icon-btn-primary" data-tip="Новый источник" aria-label="Новый источник" onclick="resetSourceForm()"><svg class="icon"><use href="#i-plus"/></svg></button>
+          <button type="button" class="button button-primary" onclick="resetSourceForm()"><svg class="icon"><use href="#i-plus"/></svg><span class="btn-label">Новый источник</span></button>
         </div>
       </div>
       <div id="sourceTable"></div>
@@ -115,7 +115,7 @@
         <div class="field">
           <label for="sourceName">Название *</label>
           <div class="input-with-brand">
-            <span id="sourceFormIcon" class="brand-icon brand-generic">•</span>
+            <span id="sourceFormIcon" class="brand-icon brand-generic" aria-hidden="true"><svg class="icon"><use href="#i-globe"/></svg></span>
             <input id="sourceName" placeholder="LinkedIn" oninput="renderSourceFormIcon()">
           </div>
         </div>
@@ -132,7 +132,7 @@
         <h3>Пользователи</h3>
         <div class="header-actions">
           <div class="segmented state-switch" data-table="users"></div>
-          <button class="icon-btn icon-btn-primary" data-tip="Добавить пользователя" aria-label="Добавить пользователя" onclick="resetUserForm()"><svg class="icon"><use href="#i-plus"/></svg></button>
+          <button type="button" class="button button-primary" onclick="resetUserForm()"><svg class="icon"><use href="#i-plus"/></svg><span class="btn-label">Добавить пользователя</span></button>
         </div>
       </div>
       <div id="userTable"></div>

@@ -3,7 +3,7 @@
    CommentThread — comments with replies, reactions, rich text.
    Only design tokens are used, so light/dark themes work.
    ===================================================================== */
-.cmt{display:flex;flex-direction:column;font-size:13px;color:var(--text);min-width:0}
+.cmt{display:flex;flex-direction:column;font-size:14px;color:var(--text);min-width:0}
 .cmt-head{
   display:flex;align-items:center;gap:6px;
   min-height:32px;padding:0 0 2px;
@@ -16,7 +16,7 @@
   min-width:18px;height:18px;padding:0 5px;
   border-radius:9px;
   background:var(--surface-3);color:var(--muted);
-  font-size:11px;font-weight:600;line-height:1
+  font-size:12px;font-weight:600;line-height:1
 }
 .cmt-count[hidden]{display:none}
 .cmt-spacer{flex:1 1 auto}
@@ -39,7 +39,7 @@
   display:inline-flex;align-items:center;justify-content:center;
   overflow:hidden;
   background:var(--primary-tint-2);color:var(--primary);
-  font-size:10px;font-weight:700;letter-spacing:.02em;line-height:1;
+  font-size:12px;font-weight:700;letter-spacing:.02em;line-height:1;
   text-transform:uppercase;user-select:none
 }
 .cmt-ava img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:var(--surface)}
@@ -82,7 +82,7 @@
 .cmt-react:focus-visible{box-shadow:0 0 0 2px var(--primary-ring)}
 .cmt-react.mine{border-color:var(--primary-ring);background:var(--primary-tint-2);color:var(--primary);font-weight:600}
 .cmt-react:disabled{cursor:default;opacity:.85}
-.cmt-react-emoji{font-size:13px;line-height:1}
+.cmt-react-emoji{font-size:14px;line-height:1}
 .cmt-reacts .cmt-react-add{width:26px;height:22px;border-radius:11px;color:var(--faint)}
 .cmt-reacts .cmt-react-add .icon{width:14px;height:14px}
 .cmt-item.picker-open>.cmt-main>.cmt-meta>.cmt-actions{opacity:1}
