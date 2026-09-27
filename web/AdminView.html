@@ -44,7 +44,7 @@
 
           <div class="field">
             <label for="vacancyName">Название *</label>
-            <input id="vacancyName" placeholder="Middle .NET Developer" oninput="this.classList.remove('input-error')">
+            <input id="vacancyName" placeholder="Например, Middle .NET Developer" oninput="this.classList.remove('input-error')">
             <small id="vacancyNameError" class="field-error" hidden></small>
           </div>
 
@@ -61,11 +61,11 @@
           <div class="drawer-section-head">
             <h4>Шаблоны интервью <span id="vacancyTemplateCount" class="counter-badge">0</span></h4>
             <div class="header-actions">
-              <label class="checkbox-line" data-tip="Показывать архивные и удалённые шаблоны">
+              <label class="checkbox-line">
                 <input id="templateShowAll" type="checkbox" onchange="loadVacancyTemplates()">
-                <span>Все</span>
+                <span>Показать архивные</span>
               </label>
-              <button id="templateAddButton" type="button" class="icon-btn icon-btn-primary" data-tip="Новый шаблон" aria-label="Новый шаблон" onclick="openTemplateModal()" disabled><svg class="icon"><use href="#i-plus"/></svg></button>
+              <button id="templateAddButton" type="button" class="button button-secondary button-small" onclick="openTemplateModal()" disabled><svg class="icon"><use href="#i-plus"/></svg><span>Шаблон</span></button>
             </div>
           </div>
           <div id="vacancyTemplateEmpty" class="empty-state compact">Сначала сохраните вакансию — после этого можно добавить шаблоны.</div>
@@ -116,7 +116,7 @@
           <label for="sourceName">Название *</label>
           <div class="input-with-brand">
             <span id="sourceFormIcon" class="brand-icon brand-generic" aria-hidden="true"><svg class="icon"><use href="#i-globe"/></svg></span>
-            <input id="sourceName" placeholder="LinkedIn" oninput="renderSourceFormIcon()">
+            <input id="sourceName" placeholder="Например, LinkedIn" oninput="renderSourceFormIcon()">
           </div>
         </div>
       </div>
@@ -230,7 +230,7 @@
       <div class="form-grid">
         <div class="field">
           <label for="templateName">Название шаблона *</label>
-          <input id="templateName" placeholder="Проф. интервью .NET">
+          <input id="templateName" placeholder="Например, Проф. интервью .NET">
         </div>
 
         <div class="field">
@@ -248,7 +248,7 @@
       <div class="field">
         <div class="field-header">
           <label>Вопросы *</label>
-          <button class="icon-btn icon-btn-sm" type="button" data-tip="Добавить вопрос" aria-label="Добавить вопрос" onclick="addTemplateQuestion()"><svg class="icon icon-sm"><use href="#i-plus"/></svg></button>
+          <button class="button button-ghost button-small" type="button" onclick="addTemplateQuestion()"><svg class="icon icon-sm"><use href="#i-plus"/></svg><span>Добавить вопрос</span></button>
         </div>
         <div id="templateQuestionsList" class="question-list"></div>
       </div>

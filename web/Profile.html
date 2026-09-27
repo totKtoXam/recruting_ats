@@ -38,21 +38,29 @@ img.avatar-lg{border-radius:50%;object-fit:cover}
 .theme-switch button[aria-pressed="true"]{background:var(--surface);color:var(--primary);box-shadow:0 1px 2px rgba(0,0,0,.08)}
 
 /* Страница профиля */
-.profile-page{display:flex;flex-direction:column;gap:12px}
+/* Страница со стандартными полями, карточки — с рамкой и внутренним отступом. */
+.profile-page{display:flex;flex-direction:column;gap:16px;padding:16px var(--page-pad) var(--page-pad);max-width:1280px}
+.profile-page .admin-list-card{border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface);box-shadow:var(--shadow);overflow:hidden}
+.profile-page .admin-list-card>.section-title-row{position:static;margin:0;padding:12px 16px;min-height:52px}
+#profileAccount,#profileTheme,#notifyChannels{padding:16px}
+#notifyTabLog{min-height:360px}
 .profile-tabs{align-self:flex-start}
 .profile-tabs .icon{vertical-align:-2px;margin-right:4px}
-.profile-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:12px;align-items:start}
+.profile-grid{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:16px;align-items:start}
+@media(max-width:900px){.profile-grid{grid-template-columns:1fr}}
 .profile-grid[hidden]{display:none}
-.profile-account{display:flex;gap:14px;align-items:center;margin-bottom:12px}
+.profile-account{display:flex;gap:14px;align-items:center;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--line-soft)}
 .profile-account-name{font-size:17px;font-weight:600}
-.profile-facts{display:grid;grid-template-columns:max-content 1fr;gap:6px 14px;font-size:14px}
+.profile-facts{display:grid;grid-template-columns:max-content 1fr;gap:10px 20px;margin:0 0 16px;font-size:14px;align-items:center}
 .profile-facts dt{color:var(--muted)}
 .profile-facts dd{margin:0;min-width:0;overflow-wrap:anywhere}
 .theme-options{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .theme-option{
-  display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 8px;border-radius:var(--radius);
-  border:1px solid var(--line);background:var(--surface);color:var(--text-2);font-size:12px;cursor:pointer
+  display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 8px;border-radius:var(--radius);
+  border:1px solid var(--line);background:var(--surface);color:var(--text-2);font-size:13px;font-weight:500;cursor:pointer;
+  transition:border-color var(--dur-fast),background-color var(--dur-fast),color var(--dur-fast)
 }
+.theme-option:focus-visible{outline:none;box-shadow:0 0 0 2px var(--primary-ring)}
 .theme-option .icon{width:18px;height:18px}
 .theme-option:hover{border-color:var(--line-strong)}
 .theme-option[aria-pressed="true"]{border-color:var(--primary);color:var(--primary);background:var(--primary-tint)}
@@ -111,7 +119,7 @@ function renderProfileMenu(){
   el('profileMenu').innerHTML=
     '<div class="profile-menu-head">'+avatarHtml(user)+
       '<div style="min-width:0"><div class="profile-menu-name">'+escapeHtml(user['ФИО']||user.Email)+'</div>'+
-      '<div class="profile-menu-email">'+escapeHtml(user.Email||'')+'</div>'+
+      (user['ФИО']&&user['ФИО']!==user.Email?'<div class="profile-menu-email">'+escapeHtml(user.Email||'')+'</div>':'')+
       '<div class="profile-menu-roles">'+userRoleChips(user)+'</div></div>'+
     '</div>'+
     '<div class="profile-menu-list">'+
@@ -172,16 +180,26 @@ function showProfile(tab){
   if(tab==='log')loadServerTable('notificationLog');
 }
 
+function renderProfileTheme(){
+  const current=window.ThemeManager?ThemeManager.get():'system';
+  el('profileTheme').innerHTML='<div class="theme-options" role="group" aria-label="Тема оформления">'+THEME_OPTIONS.map(option=>
+    '<button type="button" class="theme-option" aria-pressed="'+(current===option.mode)+'" onclick="setThemeMode(\''+option.mode+'\')">'+icon(option.icon)+'<span>'+option.label+'</span></button>'
+  ).join('')+'</div>';
+}
+
+// Тема не зависит от загрузки профиля; карточка аккаунта дорисуется, когда придёт пользователь
+// (renderCurrentUser вызывает renderProfileMain повторно).
 function renderProfileMain(){
+  renderProfileTheme();
   const user=state.currentUser;
-  if(!user){el('profileAccount').innerHTML='<div class="empty-state compact">Загрузка…</div>';return}
+  if(!user){el('profileAccount').innerHTML='<div class="skeleton" style="height:120px"></div>';return}
   const facts=[
     ['Email',escapeHtml(user.Email||'')],
     ['Роль',userRoleChips(user)||'Пользователь'],
     ['Этапы',(user.stages||[]).length?'<div class="chip-wrap">'+user.stages.map(stage=>statusChip(stage,true)).join('')+'</div>':'<span class="muted">Не ответственный</span>'],
     ['Telegram',user.telegram?escapeHtml(user.telegram)+(user.telegramVerified?' <span class="state-badge state-ok">Подтверждён</span>':' <span class="state-badge state-archived">Не подтверждён</span>'):'<span class="muted">Не привязан</span>']
   ];
-  if(user['Последний вход'])facts.push(['Последний вход',escapeHtml(user['Последний вход'])]);
+  if(user['Последний вход'])facts.push(['Последний вход',escapeHtml(fmtDate(user['Последний вход']))]);
 
   el('profileAccount').innerHTML=
     '<div class="profile-account">'+avatarHtml(user,'avatar-lg')+
@@ -190,10 +208,5 @@ function renderProfileMain(){
     '</div>'+
     '<dl class="profile-facts">'+facts.map(([label,value])=>'<dt>'+label+'</dt><dd>'+value+'</dd>').join('')+'</dl>'+
     '<div class="channel-card-actions"><button type="button" class="text-btn" onclick="navigateTo(\'profile/notifications\')">'+icon('send','icon-sm')+' Уведомления и Telegram</button></div>';
-
-  const current=window.ThemeManager?ThemeManager.get():'system';
-  el('profileTheme').innerHTML='<div class="theme-options">'+THEME_OPTIONS.map(option=>
-    '<button type="button" class="theme-option" aria-pressed="'+(current===option.mode)+'" onclick="setThemeMode(\''+option.mode+'\')">'+icon(option.icon)+'<span>'+option.label+'</span></button>'
-  ).join('')+'</div>';
 }
 </script>

@@ -29,7 +29,7 @@ tr.row-archived td,tr.row-deleted td{color:var(--muted)}
 }
 .switch-track::after{
   content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;
-  background:var(--surface);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .12s
+  background:var(--knob);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .12s
 }
 .switch input:checked+.switch-track{background:var(--primary)}
 .switch input:checked+.switch-track::after{transform:translateX(14px)}
@@ -60,7 +60,25 @@ tr.row-archived td,tr.row-deleted td{color:var(--muted)}
 .lifecycle-note.deleted{background:var(--danger-tint);color:var(--danger)}
 
 /* Этапы ответственного в форме пользователя. */
-.stage-checks{display:flex;flex-wrap:wrap;gap:4px 12px}
+.stage-checks{display:flex;flex-wrap:wrap;gap:6px}
+/* Этап-переключатель: вся «пилюля» кликабельна, выбранная окрашена цветом этапа. */
+.stage-toggle{
+  display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px 0 8px;
+  border:1px solid var(--line-strong);border-radius:999px;background:var(--surface);
+  color:var(--text-2);font-size:13px;font-weight:500;cursor:pointer;user-select:none;
+  transition:background-color var(--dur-fast),border-color var(--dur-fast),color var(--dur-fast)
+}
+.stage-toggle:hover{border-color:var(--primary-border)}
+.stage-toggle input{width:14px;height:14px;flex-basis:14px}
+.stage-toggle:has(input:focus-visible){box-shadow:0 0 0 2px var(--primary-ring)}
+.stage-toggle.stage-new:has(input:checked){color:var(--chip-new-fg);background:var(--chip-new-bg);border-color:var(--chip-new-line)}
+.stage-toggle.stage-hr:has(input:checked){color:var(--chip-hr-fg);background:var(--chip-hr-bg);border-color:var(--chip-hr-line)}
+.stage-toggle.stage-tech:has(input:checked){color:var(--chip-tech-fg);background:var(--chip-tech-bg);border-color:var(--chip-tech-line)}
+.stage-toggle.stage-final:has(input:checked){color:var(--chip-final-fg);background:var(--chip-final-bg);border-color:var(--chip-final-line)}
+.stage-toggle.stage-offer:has(input:checked){color:var(--chip-offer-fg);background:var(--chip-offer-bg);border-color:var(--chip-offer-line)}
+.stage-toggle.stage-hired:has(input:checked){color:var(--chip-hired-fg);background:var(--chip-hired-bg);border-color:var(--chip-hired-line)}
+.stage-toggle.stage-rejected:has(input:checked),.stage-toggle.stage-neutral:has(input:checked){color:var(--chip-neutral-fg);background:var(--chip-neutral-bg);border-color:var(--chip-neutral-line)}
+.user-meta{gap:6px;padding:12px 0 0}
 
 /* Результат интервью: блок комментариев раскрывается по кнопке. */
 .history-comments{margin-top:6px}
