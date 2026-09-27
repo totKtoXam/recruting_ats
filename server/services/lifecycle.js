@@ -8,6 +8,7 @@ import { trashFile } from '../lib/drive.js';
 import { fail } from '../lib/errors.js';
 import { isUuid } from '../lib/validation.js';
 import { notifyCandidateEvent, purgeOldNotifications } from './notifications.js';
+import { purgeAudit, recordEvent } from './audit.js';
 import { requireAdmin } from './users.js';
 
 // Изменения жизненного цикла кандидата и его результатов интервью — это «изменения в карточке».
@@ -123,6 +124,7 @@ export async function archive({ type, id } = {}, actor) {
       [row.id]
     );
     await notifyLifecycle(tx, type, row, 'archive', actor);
+    await recordEvent(tx, { entityType: type, entityId: row.id, action: 'archive', actor });
     return { ok: true };
   });
 }
@@ -138,6 +140,7 @@ export async function unarchive({ type, id } = {}, actor) {
     if (!row.archived_at) return { ok: true };
     await tx.query(`UPDATE ${entity.table} SET archived_at = NULL WHERE id = $1`, [row.id]);
     await notifyLifecycle(tx, type, row, 'unarchive', actor);
+    await recordEvent(tx, { entityType: type, entityId: row.id, action: 'unarchive', actor });
     return { ok: true };
   });
 }
@@ -154,6 +157,7 @@ export async function moveToTrash({ type, id } = {}, actor) {
 
     await tx.query(`UPDATE ${entity.table} SET deleted_at = now() WHERE id = $1`, [row.id]);
     await notifyLifecycle(tx, type, row, 'delete', actor);
+    await recordEvent(tx, { entityType: type, entityId: row.id, action: 'delete', actor });
     return { ok: true, purgeAfterDays: RETENTION_DAYS };
   });
 }
@@ -168,6 +172,7 @@ export async function restoreFromTrash({ type, id } = {}, actor) {
     if (!row.deleted_at) return { ok: true };
     await tx.query(`UPDATE ${entity.table} SET deleted_at = NULL WHERE id = $1`, [row.id]);
     await notifyLifecycle(tx, type, row, 'restore', actor);
+    await recordEvent(tx, { entityType: type, entityId: row.id, action: 'restore', actor });
     return { ok: true };
   });
 }
@@ -186,6 +191,7 @@ async function purgeTable(tx, entityType, table, extraWhere = '') {
       entityType,
       rows.map(row => row.id)
     ]);
+    await purgeAudit(tx, entityType, rows.map(row => row.id));
   }
   return rows.length;
 }
@@ -210,6 +216,11 @@ export async function purgeExpired() {
     if (candidateIds.length) {
       await tx.query(
         `DELETE FROM comments WHERE entity_type = 'interview'
+         AND entity_id IN (SELECT id FROM interviews WHERE candidate_id = ANY($1))`,
+        [candidateIds]
+      );
+      await tx.query(
+        `DELETE FROM audit_log WHERE entity_type = 'interview'
          AND entity_id IN (SELECT id FROM interviews WHERE candidate_id = ANY($1))`,
         [candidateIds]
       );

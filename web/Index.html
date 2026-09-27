@@ -57,14 +57,8 @@
           <a class="sidebar-link" href="#/vacancies" data-route="vacancies" data-short="Вакансии"><svg class="icon"><use href="#i-briefcase"/></svg><span>Вакансии</span></a>
           </div>
         </div>
-        <div class="sidebar-group" data-group="settings">
-          <button type="button" class="sidebar-group-toggle" aria-expanded="true" onclick="toggleSidebarGroup('settings')"><svg class="icon"><use href="#i-settings"/></svg><span>Настройки</span><svg class="icon chevron"><use href="#i-chevron-right"/></svg></button>
-          <div class="sidebar-group-items" id="sidebarGroup-settings">
-          <a class="sidebar-link" href="#/settings/sources" data-route="settings/sources" data-short="Источники"><svg class="icon"><use href="#i-list"/></svg><span>Источники вакансий</span></a>
-          <a class="sidebar-link" href="#/settings/users" data-route="settings/users" data-short="Люди" id="sidebarUsersLink" hidden><svg class="icon"><use href="#i-user"/></svg><span>Пользователи</span></a>
-          <a class="sidebar-link" href="#/settings/integrations" data-route="settings/integrations" data-short="Интеграции" data-admin-only hidden><svg class="icon"><use href="#i-link"/></svg><span>Интеграции</span></a>
-          </div>
-        </div>
+        <!-- Все настройки — одна страница с вкладками (источники, пользователи, интеграции). -->
+        <a class="sidebar-link sidebar-link-top" href="#/settings/sources" data-route="settings" data-short="Настройки"><svg class="icon"><use href="#i-settings"/></svg><span>Настройки</span></a>
       </nav>
       <button id="sidebarToggle" class="icon-btn sidebar-toggle" data-tip="Свернуть меню" aria-label="Свернуть меню" onclick="toggleSidebar()"><svg class="icon"><use href="#i-chevrons-left"/></svg></button>
     </aside>
@@ -78,6 +72,7 @@
       </div>
 
       <div class="page-actions">
+        <button type="button" id="boardFoldToggle" class="icon-btn" data-tip="Свернуть все колонки" aria-label="Свернуть все колонки" onclick="toggleAllColumns()"><svg class="icon"><use href="#i-fold-horizontal"/></svg></button>
         <button type="button" id="filtersToggle" class="icon-btn filters-toggle" aria-controls="candidateFilters" aria-expanded="false" data-tip="Фильтры" aria-label="Фильтры" onclick="toggleCandidateFilters()"><svg class="icon"><use href="#i-filter"/></svg><span id="filtersBadge" class="filters-badge" hidden></span></button>
         <button class="icon-btn" data-tip="Обновить" aria-label="Обновить" onclick="refreshCandidatesPage(this)"><svg class="icon"><use href="#i-refresh"/></svg></button>
         <button type="button" class="button button-primary" onclick="openCandidate()"><svg class="icon"><use href="#i-plus"/></svg><span class="btn-label">Новый кандидат</span></button>
@@ -94,26 +89,22 @@
       </div>
 
       <div class="field compact">
-        <label>Вакансия</label>
-        <select id="filterVacancy" onchange="renderBoard();renderVacancyStats()"></select>
+        <label for="filterResponsible">Рекрутер</label>
+        <select id="filterResponsible" multiple data-placeholder="Все рекрутеры" onchange="renderBoard()"></select>
       </div>
 
       <div class="field compact">
-        <label>Рекрутер</label>
-        <select id="filterResponsible" onchange="renderBoard()"></select>
-      </div>
-
-      <div class="field compact">
-        <label>Источник</label>
-        <select id="filterSource" onchange="renderBoard()"></select>
+        <label for="filterSource">Источник</label>
+        <select id="filterSource" multiple data-placeholder="Все источники" onchange="renderBoard()"></select>
       </div>
 
       <div class="field compact">
         <span class="field-label" id="boardStateLabel">Показать</span>
         <div class="segmented" id="boardStateSwitch" role="radiogroup" aria-labelledby="boardStateLabel">
-          <label class="segmented-option"><input type="radio" name="boardState" value="active" checked onchange="setBoardState(this.value)"><span>Активные</span></label>
-          <label class="segmented-option"><input type="radio" name="boardState" value="archived" onchange="setBoardState(this.value)"><span>Архив</span></label>
-          <label class="segmented-option"><input type="radio" name="boardState" value="deleted" onchange="setBoardState(this.value)"><span>Корзина</span></label>
+          <label class="segmented-option" data-state="active"><input type="radio" name="boardState" value="active" checked onchange="setBoardState(this.value)"><span><svg class="icon seg-icon" aria-hidden="true"><use href="#i-dot"/></svg>Активные</span></label>
+          <label class="segmented-option" data-state="archived"><input type="radio" name="boardState" value="archived" onchange="setBoardState(this.value)"><span><svg class="icon seg-icon" aria-hidden="true"><use href="#i-archive"/></svg>Архив</span></label>
+          <label class="segmented-option" data-state="deleted" data-admin-only hidden><input type="radio" name="boardState" value="deleted" onchange="setBoardState(this.value)"><span><svg class="icon seg-icon" aria-hidden="true"><use href="#i-trash"/></svg>Корзина</span></label>
+          <label class="segmented-option" data-state="all"><input type="radio" name="boardState" value="all" onchange="setBoardState(this.value)"><span><svg class="icon seg-icon" aria-hidden="true"><use href="#i-list"/></svg>Все</span></label>
         </div>
         <!-- Прежний флажок «Архив» — для совместимости со старым кодом. -->
         <input id="filterArchived" type="checkbox" hidden>
@@ -201,6 +192,7 @@
 
         <div class="candidate-header-actions">
           <button id="watchCandidateButton" class="icon-btn" data-tip="Следить за кандидатом" aria-label="Следить за кандидатом" aria-pressed="false" onclick="toggleCandidateWatch(this)" hidden><svg class="icon"><use href="#i-eye"/></svg></button>
+          <button id="historyCandidateButton" class="icon-btn" data-tip="История изменений" aria-label="История изменений" onclick="openHistory('candidate',currentCandidate.ID,fullNameOf(currentCandidate))" hidden><svg class="icon"><use href="#i-history"/></svg></button>
           <button id="shareCandidateButton" class="icon-btn" data-tip="Скопировать ссылку" aria-label="Скопировать ссылку" onclick="copyCandidateLink(this)" hidden><svg class="icon"><use href="#i-share"/></svg></button>
           <span id="candidateLifecycleActions" class="header-actions"></span>
           <button type="button" id="candidateSaveButton" class="button button-primary" onclick="saveCandidateForm(this)"><svg class="icon"><use href="#i-save"/></svg><span>Сохранить</span></button>
@@ -545,6 +537,9 @@
   </script>
 
   <?!= include('UiKit'); ?>
+  <?!= include('Select'); ?>
+  <?!= include('IconEditor'); ?>
+  <?!= include('History'); ?>
   <?!= include('Drawer'); ?>
   <?!= include('Editor'); ?>
   <?!= include('Comments'); ?>

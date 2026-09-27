@@ -12,6 +12,7 @@ import {
 } from '../lib/validation.js';
 import { toPublicUser, toResponsible } from './mappers.js';
 import { runtime } from './settings.js';
+import { recordChanges, recordEvent } from './audit.js';
 
 export const ACCESS_DENIED_MESSAGE =
   'Доступ для этого Google Account не выдан или отключён. Обратитесь к администратору ATS.';
@@ -253,6 +254,11 @@ export async function saveUser(input = {}, actor) {
         ]
       );
 
+      await recordEvent(tx, {
+        entityType: 'user', entityId: created.id, action: 'create',
+        newDisplay: created.email, actor
+      });
+
       return { ok: true, user: toPublicUser(created) };
     }
 
@@ -308,8 +314,22 @@ export async function saveUser(input = {}, actor) {
       ]
     );
 
+    await recordChanges(tx, 'user', existing, updated, actor);
+    if (grantAccess) {
+      await recordEvent(tx, {
+        entityType: 'user', entityId: id, action: 'status', field: 'access', fieldLabel: 'Доступ в ATS',
+        oldDisplay: accessLabel(existing), newDisplay: accessLabel(updated), actor
+      });
+    }
+
     return { ok: true, user: toPublicUser(updated) };
   });
+}
+
+// Статус доступа для журнала изменений.
+function accessLabel(row) {
+  if (row.is_active) return 'Открыт';
+  return row.access_granted_at ? 'Закрыт' : 'Ожидает';
 }
 
 async function assertAnotherAdmin(tx, userId) {
@@ -360,6 +380,13 @@ export async function setUserAccess(input = {}, actor) {
        WHERE id = $1 RETURNING *`,
       [id, isActive, grantNow, actor.id]
     );
+
+    if (existing.is_active !== updated.is_active) {
+      await recordEvent(tx, {
+        entityType: 'user', entityId: id, action: 'status', field: 'access', fieldLabel: 'Доступ в ATS',
+        oldDisplay: accessLabel(existing), newDisplay: accessLabel(updated), actor
+      });
+    }
 
     return { ok: true, user: toPublicUser(updated) };
   });

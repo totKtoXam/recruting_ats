@@ -13,7 +13,26 @@
 .integration-desc{margin:2px 0 0;font-size:14px;color:var(--muted)}
 .integration-status{flex:0 0 auto;align-self:center}
 
-.integration-body{display:flex;flex-direction:column;gap:18px;padding:18px 20px 20px}
+.integration-body{display:flex;flex-direction:column;gap:0;padding:0 20px 4px}
+/* Tabs of the module: one page, a tab per integration (each with its own URL). */
+/* Second-level tabs (inside Настройки → Интеграции): compact pills. */
+.integration-tabs{display:inline-flex;flex-wrap:wrap;gap:4px;margin:0 0 16px;padding:4px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface-3)}
+.integration-tab{display:inline-flex;align-items:center;gap:8px;min-height:32px;padding:0 12px;border-radius:var(--radius-sm);color:var(--text-2);font-size:14px;font-weight:500;text-decoration:none;white-space:nowrap}
+.integration-tab:hover{color:var(--text);background:var(--hover)}
+.integration-tab.active{background:var(--surface);color:var(--primary);box-shadow:0 0 0 1px var(--line),0 1px 2px var(--hover)}
+.integration-tab:focus-visible{outline:none;box-shadow:0 0 0 2px var(--primary-ring)}
+.tab-dot{width:6px;height:6px;border-radius:50%;background:var(--primary)}
+/* Sections inside a tab: title + hint on the left, fields on the right. */
+.integration-section{display:grid;grid-template-columns:minmax(180px,240px) minmax(0,1fr);gap:12px 32px;padding:20px 0;border-top:1px solid var(--line-soft)}
+.integration-section:first-child{border-top:0}
+.integration-section-head h4{margin:0;font-size:14px;font-weight:600;color:var(--text)}
+.integration-section-head p{margin:4px 0 0;font-size:12px;line-height:1.5;color:var(--muted)}
+.integration-section>.integration-info{grid-column:2}
+.integration-section .integration-fields>.integration-field:only-child{grid-column:1/-1}
+@media(max-width:900px){
+  .integration-section{grid-template-columns:1fr;gap:12px}
+  .integration-section>.integration-info{grid-column:auto}
+}
 .integration-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-flow:row dense;gap:18px 24px}
 .integration-field.wide,.integration-field.switch-field{grid-column:1/-1}
 .integration-field .field-label{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:22px}
@@ -74,12 +93,37 @@
 // Вход через Google, SMTP и Telegram-бот. Значения из интерфейса важнее .env и применяются
 // без перезапуска сервера. Секреты сервер не отдаёт: пустое поле секрета — «не менять».
 
-const integrations={data:null,initial:{},loading:false};
+// group — раздел меню (auth | smtp | telegram): показывается только его карточка.
+const integrations={data:null,initial:{},loading:false,group:'auth'};
 const INTEGRATION_ICONS={auth:'user',smtp:'mail',telegram:'send'};
+// Вкладки модуля: подпись и адрес. Порядок = порядок вкладок.
+const INTEGRATION_TABS=[
+  {key:'auth',label:'Вход через Google',route:'settings/integrations/auth'},
+  {key:'smtp',label:'Почта (SMTP)',route:'settings/integrations/smtp'},
+  {key:'telegram',label:'Telegram-бот',route:'settings/integrations/telegram'}
+];
+// Разделы формы каждой вкладки: заголовок, пояснение и поля (по ключу настройки).
+const INTEGRATION_SECTIONS={
+  auth:[
+    {title:'OAuth-клиент',hint:'Данные клиента из Google Cloud Console. Перед сохранением ATS проверит их в Google.',keys:['auth.googleClientId','auth.googleClientSecret']},
+    {title:'Автоматический доступ',hint:'Кому открывать доступ сразу при первом входе, без решения администратора.',keys:['auth.allowedDomains','auth.allowedEmails']}
+  ],
+  smtp:[
+    {title:'Сервер',hint:'Адрес SMTP-сервера и способ шифрования.',keys:['smtp.host','smtp.port','smtp.secure']},
+    {title:'Авторизация',hint:'Учётная запись, от имени которой ATS отправляет письма.',keys:['smtp.user','smtp.pass']},
+    {title:'Отправитель',hint:'Что увидят получатели в поле «От кого».',keys:['smtp.from']}
+  ],
+  telegram:[
+    {title:'Бот',hint:'Токен выдаёт @BotFather после создания бота.',keys:['telegram.botToken']},
+    {title:'Режим работы',hint:'Бот принимает сообщения для привязки аккаунтов пользователей.',keys:['telegram.polling']}
+  ]
+};
 const SOURCE_LABELS={db:'задано в ATS',env:'из .env',default:'по умолчанию',none:'не задано'};
 const SOURCE_TIPS={db:'Значение сохранено в ATS и важнее .env',default:'Используется значение по умолчанию',none:'Значение не задано ни в ATS, ни в .env'};
 
-async function showIntegrations(){
+async function showIntegrations(group){
+  if(group)integrations.group=group;
+  if(integrations.data){renderIntegrations();}
   if(integrations.loading)return;
   integrations.loading=true;
   try{
@@ -128,11 +172,38 @@ function integrationFieldHtml(group,field){
     '<input id="'+id+'" type="'+(field.type==='number'?'number':'text')+'" data-key="'+field.key+'" value="'+escapeHtml(field.value)+'" placeholder="'+escapeHtml(examplePlaceholder(field.placeholder))+'" oninput="'+oninput+'" autocomplete="off" spellcheck="false">'+hint+'</div>';
 }
 
+function integrationTabsHtml(){
+  return '<nav class="integration-tabs" aria-label="Интеграции">'+INTEGRATION_TABS.map(tab=>{
+    const active=tab.key===integrations.group;
+    const group=(integrations.data&&integrations.data.groups||[]).find(item=>item.key===tab.key);
+    return '<a class="integration-tab'+(active?' active':'')+'" href="#/'+tab.route+'"'+(active?' aria-current="page"':'')+'>'+
+      icon(INTEGRATION_ICONS[tab.key],'icon-sm')+'<span>'+escapeHtml(tab.label)+'</span>'+
+      (group&&group.overridden?'<span class="tab-dot" data-tip="Есть настройки, сохранённые в ATS"></span>':'')+
+    '</a>';
+  }).join('')+'</nav>';
+}
+
+// Поля группы, разложенные по разделам; поля без раздела — в «Прочее».
+function integrationSectionsHtml(group){
+  const sections=INTEGRATION_SECTIONS[group.key]||[];
+  const used=new Set(sections.flatMap(section=>section.keys));
+  const rest=group.fields.filter(field=>!used.has(field.key));
+  const all=[...sections,...(rest.length?[{title:'Прочее',hint:'',keys:rest.map(field=>field.key)}]:[])];
+  return all.map(section=>{
+    const fields=section.keys.map(key=>group.fields.find(field=>field.key===key)).filter(Boolean);
+    if(!fields.length)return '';
+    return '<section class="integration-section">'+
+      '<div class="integration-section-head"><h4>'+escapeHtml(section.title)+'</h4>'+
+        (section.hint?'<p>'+escapeHtml(section.hint)+'</p>':'')+'</div>'+
+      '<div class="integration-fields">'+fields.map(field=>integrationFieldHtml(group.key,field)).join('')+'</div>'+
+    '</section>';
+  }).join('');
+}
+
 function authInfoHtml(info){
   const copy=text=>'<button type="button" class="icon-btn icon-btn-sm" data-tip="Скопировать" aria-label="Скопировать" onclick="copyIntegrationText(\''+escJs(text)+'\')">'+icon('copy','icon-sm')+'</button>';
   return '<div class="integration-info">'+
     (info.authMode!=='google'?'<div class="integration-warning">'+icon('alert','icon-sm')+'<span>Сейчас <strong>AUTH_MODE='+escapeHtml(info.authMode)+'</strong> — вход через Google выключен.</span></div>':'')+
-    '<h4>Настройка в Google Cloud Console</h4>'+
     '<p>В OAuth-клиенте (раздел Clients) должны быть указаны:</p>'+
     '<div class="copy-field"><span>Redirect URI</span><code>'+escapeHtml(info.redirectUri)+'</code>'+copy(info.redirectUri)+'</div>'+
     '<div class="copy-field"><span>JS origin</span><code>'+escapeHtml(info.javascriptOrigin)+'</code>'+copy(info.javascriptOrigin)+'</div>'+
@@ -149,9 +220,13 @@ function renderIntegrations(){
   if(!data)return;
   integrations.initial={};
 
-  el('integrationsRoot').innerHTML='<div class="integrations">'+data.groups.map(group=>{
+  data.groups.forEach(group=>{
     integrations.initial[group.key]={};
     group.fields.forEach(field=>{if(field.type!=='secret')integrations.initial[group.key][field.key]=field.value});
+  });
+  const visibleGroups=data.groups.filter(group=>group.key===integrations.group);
+
+  el('integrationsRoot').innerHTML=integrationTabsHtml()+'<div class="integrations">'+(visibleGroups.length?visibleGroups:data.groups).map(group=>{
     const g=group.key;
     const meta=group.updatedAt
       ? 'Изменено '+escapeHtml(notifyFullTime(group.updatedAt))+(group.updatedBy?' · '+escapeHtml(group.updatedBy):'')
@@ -162,8 +237,9 @@ function renderIntegrations(){
         '<div class="integration-title"><h3 id="integration-title-'+g+'">'+escapeHtml(group.title)+'</h3><p class="integration-desc">'+escapeHtml(group.description)+'</p></div>'+
       '</header>'+
       '<div class="integration-body">'+
-        '<div class="integration-fields">'+group.fields.map(field=>integrationFieldHtml(g,field)).join('')+'</div>'+
-        (g==='auth'?authInfoHtml(data.info):'')+
+        integrationSectionsHtml(group)+
+        (g==='auth'?'<section class="integration-section"><div class="integration-section-head"><h4>Настройка в Google Cloud Console</h4>'+
+          '<p>Что указать в OAuth-клиенте, чтобы вход работал.</p></div>'+authInfoHtml(data.info)+'</section>':'')+
       '</div>'+
       '<div class="integration-result" id="integrationResult-'+g+'" role="status" aria-live="polite" hidden></div>'+
       '<footer class="integration-foot">'+

@@ -12,6 +12,7 @@ import {
   getStageResponsible,
   loadCandidateDto
 } from './candidates.js';
+import { recordChanges, recordEvent } from './audit.js';
 
 const REJECTED = APP_CONFIG.REJECTED_STATUS;
 
@@ -321,6 +322,11 @@ export async function transitionCandidate(input, changedBy) {
         toStatus
       ]);
 
+      await recordEvent(tx, {
+        entityType: 'interview', entityId: interview['Interview ID'], action: 'create',
+        newDisplay: `${fromStatus} → ${toStatus}`, actor: changedBy
+      });
+
       // Комментарий к переходу — первый в ленте комментариев этого результата.
       const transitionComment = input.interview && input.interview.comment;
       if (transitionComment) {
@@ -375,11 +381,12 @@ export async function updateInterview(input, actor) {
   }
 
   await transaction(async tx => {
+    const before = await tx.one('SELECT * FROM interviews WHERE id = $1 AND deleted_at IS NULL FOR UPDATE', [id]);
     const saved = await tx.one(
       `UPDATE interviews
        SET answers = COALESCE($2::jsonb, answers), result = $3, updated_at = now()
        WHERE id = $1 AND deleted_at IS NULL
-       RETURNING id, candidate_id, to_status`,
+       RETURNING *`,
       [
         id,
         Array.isArray(input.answers) ? JSON.stringify(normalizeAnswers(input.answers)) : null,
@@ -390,6 +397,8 @@ export async function updateInterview(input, actor) {
     if (!saved) {
       fail('Результат интервью не найден.', 404);
     }
+
+    await recordChanges(tx, 'interview', before, saved, actor);
 
     await notifyCandidateEvent(tx, saved.candidate_id, actor, {
       type: 'changed',

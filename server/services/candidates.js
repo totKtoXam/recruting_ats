@@ -27,6 +27,7 @@ import {
 import { lockActiveDraft, markDraftUsed, tryLockActiveDraft } from './drafts.js';
 import { insertComment } from './comments.js';
 import { diffCandidate, notifyCandidateEvent } from './notifications.js';
+import { recordChanges, recordEvent } from './audit.js';
 
 const personName = alias =>
   `concat_ws(' ', NULLIF(${alias}.last_name, ''), NULLIF(${alias}.first_name, ''), NULLIF(${alias}.middle_name, ''))`;
@@ -81,6 +82,11 @@ export async function getDeletedCandidateSummaries() {
     CANDIDATE_SELECT + ' WHERE c.deleted_at IS NOT NULL ORDER BY c.deleted_at DESC'
   );
   return rows.map(row => toCandidate(row));
+}
+
+export async function getDeletedCandidateCount() {
+  const { count } = await db.one('SELECT count(*)::int AS count FROM candidates WHERE deleted_at IS NOT NULL');
+  return count;
 }
 
 export async function getArchivedCandidateCount() {
@@ -451,6 +457,16 @@ export async function saveCandidate(payload, changedBy) {
             values
           );
 
+      // Журнал изменений: создание или изменённые поля.
+      if (isNew) {
+        await recordEvent(tx, {
+          entityType: 'candidate', entityId: candidateId, action: 'create',
+          newDisplay: fullName, actor: changedBy
+        });
+      } else {
+        await recordChanges(tx, 'candidate', existing, saved, changedBy);
+      }
+
       if (uploaded) {
         const resumeFile = await insertFile(tx, uploaded);
 
@@ -458,6 +474,11 @@ export async function saveCandidate(payload, changedBy) {
           'INSERT INTO candidate_resumes (candidate_id, file_id) VALUES ($1, $2)',
           [candidateId, resumeFile.id]
         );
+
+        await recordEvent(tx, {
+          entityType: 'candidate', entityId: candidateId, action: 'update',
+          field: 'resume', fieldLabel: 'Резюме', newDisplay: resumeFile.original_name, actor: changedBy
+        });
       }
 
       if (isNew && payload.comment) {
@@ -520,6 +541,7 @@ export async function archiveCandidate(candidateId, actor) {
     );
     if (result.rowCount) {
       await notifyCandidateEvent(tx, candidateId, actor, { type: 'changed', text: 'Кандидат отправлен в архив.' });
+      await recordEvent(tx, { entityType: 'candidate', entityId: candidateId, action: 'archive', actor });
     }
   });
 
@@ -549,6 +571,7 @@ export async function unarchiveCandidate(candidateId, actor) {
     }
 
     await notifyCandidateEvent(tx, candidateId, actor, { type: 'changed', text: 'Кандидат возвращён из архива.' });
+    await recordEvent(tx, { entityType: 'candidate', entityId: candidateId, action: 'unarchive', actor });
   });
 
   return { ok: true, candidate: await loadCandidateDto(candidateId) };

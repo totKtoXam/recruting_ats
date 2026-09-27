@@ -37,6 +37,7 @@ export function toVacancy(row) {
     '№': row.number,
     'Вакансия': row.name,
     'Статус': row.status,
+    links: Array.isArray(row.links) ? row.links : [],
     ...softDeleteFields(row)
   };
 }
@@ -46,6 +47,9 @@ export function toSource(row) {
     'Source ID': row.id,
     '№': row.number,
     'Название': row.name,
+    // Иконка: своя картинка важнее пресета; пустой ключ — определить по названию.
+    iconKey: row.icon_key || '',
+    iconUrl: row.icon_png ? `/source-icons/${row.id}?v=${row.icon_updated_at ? new Date(row.icon_updated_at).getTime() : 0}` : '',
     ...softDeleteFields(row)
   };
 }
