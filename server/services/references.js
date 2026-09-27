@@ -1,21 +1,9 @@
 import { APP_CONFIG } from '../config.js';
-import { db, transaction } from '../db/pool.js';
+import { db } from '../db/pool.js';
 import { fail } from '../lib/errors.js';
-import {
-  clean,
-  composeFullName,
-  normalizeNamePart,
-  optionalUuid,
-  toBoolean,
-  validateEmail
-} from '../lib/validation.js';
-import {
-  normalizeTemplateQuestions,
-  toResponsible,
-  toSource,
-  toTemplate,
-  toVacancy
-} from './mappers.js';
+import { clean, optionalUuid, toBoolean } from '../lib/validation.js';
+import { normalizeTemplateQuestions, toSource, toTemplate, toVacancy } from './mappers.js';
+import { getResponsibles } from './users.js';
 
 const TEMPLATE_SELECT = `
   SELECT t.*, v.name AS vacancy_name
@@ -23,27 +11,31 @@ const TEMPLATE_SELECT = `
   JOIN vacancies v ON v.id = t.vacancy_id
 `;
 
+// Записи, доступные для выбора в формах: не в архиве и не в корзине.
+const ACTIVE = 'archived_at IS NULL AND deleted_at IS NULL';
+
 // ---------- Вакансии ----------
 
 export async function getVacancies() {
-  const rows = await db.many(
-    'SELECT * FROM vacancies WHERE deleted_at IS NULL ORDER BY number'
-  );
+  const rows = await db.many(`SELECT * FROM vacancies WHERE ${ACTIVE} ORDER BY number`);
   return rows.map(toVacancy);
 }
 
+// Переходы между статусами вакансии (кнопки в таблице и на форме).
+export const VACANCY_STATUS_TRANSITIONS = Object.freeze({
+  'Открыта': ['На паузе', 'Закрыта'],
+  'На паузе': ['Открыта', 'Закрыта'],
+  'Закрыта': ['Открыта']
+});
+
+// Карточка вакансии: только название. Новая вакансия создаётся открытой,
+// статус меняется кнопками перехода (setVacancyStatus).
 export async function saveVacancy(input = {}) {
   const name = clean(input.name);
-  const status = clean(input.status);
-  const comment = clean(input.comment);
   const id = optionalUuid(input.id, 'Вакансия не найдена.');
 
   if (!name) {
     fail('Название вакансии обязательно.');
-  }
-
-  if (!APP_CONFIG.VACANCY_STATUSES.includes(status)) {
-    fail('Некорректный статус вакансии.');
   }
 
   // Дополнительно гарантируется уникальным индексом vacancies_name_active_uq.
@@ -59,15 +51,12 @@ export async function saveVacancy(input = {}) {
 
   const row = id
     ? await db.one(
-        `UPDATE vacancies
-         SET name = $2, status = $3, comment = $4, updated_at = now(), deleted_at = NULL
-         WHERE id = $1
-         RETURNING *`,
-        [id, name, status, comment]
+        'UPDATE vacancies SET name = $2, updated_at = now() WHERE id = $1 RETURNING *',
+        [id, name]
       )
     : await db.one(
-        `INSERT INTO vacancies (name, status, comment) VALUES ($1, $2, $3) RETURNING *`,
-        [name, status, comment]
+        `INSERT INTO vacancies (name, status) VALUES ($1, 'Открыта') RETURNING *`,
+        [name]
       );
 
   if (!row) {
@@ -77,36 +66,35 @@ export async function saveVacancy(input = {}) {
   return { ok: true, vacancy: toVacancy(row) };
 }
 
-export async function deleteVacancy(id) {
-  const vacancyId = optionalUuid(id, 'Запись не найдена.');
+export async function setVacancyStatus(input = {}) {
+  const id = optionalUuid(input.id, 'Вакансия не найдена.');
+  const status = clean(input.status);
+  const vacancy = id ? await db.one('SELECT * FROM vacancies WHERE id = $1', [id]) : null;
 
-  return transaction(async tx => {
-    const row = await tx.one(
-      `UPDATE vacancies SET deleted_at = now(), updated_at = now()
-       WHERE id = $1 RETURNING *`,
-      [vacancyId]
-    );
+  if (!vacancy) {
+    fail('Вакансия не найдена.', 404);
+  }
 
-    if (!row) {
-      fail('Запись не найдена.', 404);
-    }
+  if (vacancy.archived_at || vacancy.deleted_at) {
+    fail('Вакансия в архиве — сначала верните её.');
+  }
 
-    await tx.query(
-      `UPDATE interview_templates SET deleted_at = now(), updated_at = now()
-       WHERE vacancy_id = $1 AND deleted_at IS NULL`,
-      [vacancyId]
-    );
+  if (!(VACANCY_STATUS_TRANSITIONS[vacancy.status] || []).includes(status)) {
+    fail(`Переход «${vacancy.status}» → «${status}» не разрешён.`);
+  }
 
-    return { ok: true, entity: toVacancy(row) };
-  });
+  const row = await db.one(
+    'UPDATE vacancies SET status = $2, updated_at = now() WHERE id = $1 RETURNING *',
+    [id, status]
+  );
+
+  return { ok: true, vacancy: toVacancy(row) };
 }
 
 // ---------- Источники ----------
 
 export async function getSources() {
-  const rows = await db.many(
-    'SELECT * FROM sources WHERE deleted_at IS NULL ORDER BY number'
-  );
+  const rows = await db.many(`SELECT * FROM sources WHERE ${ACTIVE} ORDER BY number`);
   return rows.map(toSource);
 }
 
@@ -121,8 +109,7 @@ export async function saveSource(input = {}) {
   // Дубликаты дополнительно ловит уникальный индекс sources_name_active_uq.
   const row = id
     ? await db.one(
-        `UPDATE sources SET name = $2, updated_at = now(), deleted_at = NULL
-         WHERE id = $1 RETURNING *`,
+        'UPDATE sources SET name = $2, updated_at = now() WHERE id = $1 RETURNING *',
         [id, name]
       )
     : await db.one('INSERT INTO sources (name) VALUES ($1) RETURNING *', [name]);
@@ -134,124 +121,29 @@ export async function saveSource(input = {}) {
   return { ok: true, source: toSource(row) };
 }
 
-export async function deleteSource(id) {
-  const row = await db.one(
-    `UPDATE sources SET deleted_at = now(), updated_at = now()
-     WHERE id = $1 RETURNING *`,
-    [optionalUuid(id, 'Запись не найдена.')]
-  );
-
-  if (!row) {
-    fail('Запись не найдена.', 404);
-  }
-
-  return { ok: true, entity: toSource(row) };
-}
-
-// ---------- Ответственные ----------
-
-export async function getResponsibles() {
-  const rows = await db.many(
-    'SELECT * FROM responsibles WHERE deleted_at IS NULL ORDER BY number'
-  );
-  return rows.map(toResponsible);
-}
-
-export async function saveResponsible(input = {}) {
-  const id = optionalUuid(input.id, 'Ответственный не найден.');
-  const lastName = normalizeNamePart(input.lastName);
-  const firstName = normalizeNamePart(input.firstName);
-  const middleName = normalizeNamePart(input.middleName);
-  const email = validateEmail(input.email);
-  const userId = optionalUuid(input.userId, 'Выбранный пользователь не найден.');
-  const stages = Array.isArray(input.stages) ? input.stages.map(clean) : [];
-
-  if (!lastName || !firstName) {
-    fail('Фамилия и имя ответственного обязательны.');
-  }
-
-  if (!stages.length) {
-    fail('Выберите хотя бы один доступный этап.');
-  }
-
-  const invalid = stages.filter(stage => !APP_CONFIG.PIPELINE_STATUSES.includes(stage));
-
-  if (invalid.length) {
-    fail('Некорректные этапы ответственного: ' + invalid.join(', '));
-  }
-
-  if (userId) {
-    const user = await db.one('SELECT id FROM users WHERE id = $1', [userId]);
-
-    if (!user) {
-      fail('Выбранный пользователь не найден.');
-    }
-
-    const linked = await db.one(
-      `SELECT last_name, first_name, middle_name FROM responsibles
-       WHERE user_id = $1 AND deleted_at IS NULL AND id IS DISTINCT FROM $2`,
-      [userId, id]
-    );
-
-    if (linked) {
-      fail(
-        'Этот пользователь уже привязан к ответственному "' +
-          composeFullName(linked.last_name, linked.first_name, linked.middle_name) +
-          '".'
-      );
-    }
-  }
-
-  const params = [lastName, firstName, middleName, email, userId, stages];
-
-  const row = id
-    ? await db.one(
-        `UPDATE responsibles
-         SET last_name = $2, first_name = $3, middle_name = $4, email = $5,
-             user_id = $6, stages = $7, updated_at = now(), deleted_at = NULL
-         WHERE id = $1 RETURNING *`,
-        [id, ...params]
-      )
-    : await db.one(
-        `INSERT INTO responsibles (last_name, first_name, middle_name, email, user_id, stages)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-        params
-      );
-
-  if (!row) {
-    fail('Ответственный не найден.', 404);
-  }
-
-  return { ok: true, responsible: toResponsible(row) };
-}
-
-export async function deleteResponsible(id) {
-  const row = await db.one(
-    `UPDATE responsibles SET deleted_at = now(), updated_at = now()
-     WHERE id = $1 RETURNING *`,
-    [optionalUuid(id, 'Запись не найдена.')]
-  );
-
-  if (!row) {
-    fail('Запись не найдена.', 404);
-  }
-
-  return { ok: true, entity: toResponsible(row) };
-}
-
 // ---------- Шаблоны интервью ----------
 
 export async function getInterviewTemplates(executor = db) {
   const rows = await executor.many(
-    TEMPLATE_SELECT + ' WHERE t.deleted_at IS NULL ORDER BY t.number'
+    TEMPLATE_SELECT + ' WHERE t.archived_at IS NULL AND t.deleted_at IS NULL ORDER BY t.number'
   );
+  return rows.map(toTemplate);
+}
+
+// Все шаблоны вакансии, включая архивные и удалённые (для админки).
+export async function listVacancyTemplates(vacancyId) {
+  const id = optionalUuid(vacancyId, 'Вакансия не найдена.');
+  if (!id) return [];
+
+  const rows = await db.many(TEMPLATE_SELECT + ' WHERE t.vacancy_id = $1 ORDER BY t.number', [id]);
   return rows.map(toTemplate);
 }
 
 export async function getTemplatesFor(vacancyId, stage, executor = db) {
   const rows = await executor.many(
     TEMPLATE_SELECT +
-      ' WHERE t.deleted_at IS NULL AND t.vacancy_id = $1 AND t.stage = $2 ORDER BY t.number',
+      ` WHERE t.archived_at IS NULL AND t.deleted_at IS NULL
+          AND t.vacancy_id = $1 AND t.stage = $2 ORDER BY t.number`,
     [vacancyId, stage]
   );
   return rows.map(toTemplate);
@@ -281,10 +173,7 @@ export async function saveInterviewTemplate(input = {}) {
     fail('Добавьте хотя бы один вопрос.');
   }
 
-  const vacancy = await db.one(
-    'SELECT id FROM vacancies WHERE id = $1 AND deleted_at IS NULL',
-    [vacancyId]
-  );
+  const vacancy = await db.one(`SELECT id FROM vacancies WHERE id = $1 AND deleted_at IS NULL`, [vacancyId]);
 
   if (!vacancy) {
     fail('Вакансия не найдена.');
@@ -295,8 +184,7 @@ export async function saveInterviewTemplate(input = {}) {
   const saved = id
     ? await db.one(
         `UPDATE interview_templates
-         SET name = $2, vacancy_id = $3, stage = $4, required = $5, questions = $6,
-             updated_at = now(), deleted_at = NULL
+         SET name = $2, vacancy_id = $3, stage = $4, required = $5, questions = $6, updated_at = now()
          WHERE id = $1 RETURNING id`,
         [id, ...params]
       )
@@ -313,22 +201,6 @@ export async function saveInterviewTemplate(input = {}) {
   const row = await db.one(TEMPLATE_SELECT + ' WHERE t.id = $1', [saved.id]);
 
   return { ok: true, template: toTemplate(row) };
-}
-
-export async function deleteInterviewTemplate(id) {
-  const saved = await db.one(
-    `UPDATE interview_templates SET deleted_at = now(), updated_at = now()
-     WHERE id = $1 RETURNING id`,
-    [optionalUuid(id, 'Запись не найдена.')]
-  );
-
-  if (!saved) {
-    fail('Запись не найдена.', 404);
-  }
-
-  const row = await db.one(TEMPLATE_SELECT + ' WHERE t.id = $1', [saved.id]);
-
-  return { ok: true, entity: toTemplate(row) };
 }
 
 // ---------- Справочники ----------
@@ -368,6 +240,10 @@ export async function getReferenceData() {
       candidate: dictionaries[APP_CONFIG.REJECTION_REASON_CATEGORIES.candidate] || [],
       responsible: dictionaries[APP_CONFIG.REJECTION_REASON_CATEGORIES.responsible] || []
     },
-    otherReason: APP_CONFIG.OTHER_REASON
+    otherReason: APP_CONFIG.OTHER_REASON,
+    vacancyStatusTransitions: VACANCY_STATUS_TRANSITIONS,
+    trashRetentionDays: APP_CONFIG.TRASH_RETENTION_DAYS
   };
 }
+
+export { getResponsibles };

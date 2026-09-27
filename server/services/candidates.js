@@ -25,6 +25,7 @@ import {
   uploadCandidateResume
 } from './files.js';
 import { lockActiveDraft, markDraftUsed, tryLockActiveDraft } from './drafts.js';
+import { insertComment } from './comments.js';
 
 const personName = alias =>
   `concat_ws(' ', NULLIF(${alias}.last_name, ''), NULLIF(${alias}.first_name, ''), NULLIF(${alias}.middle_name, ''))`;
@@ -43,10 +44,10 @@ export const CANDIDATE_SELECT = `
   FROM candidates c
   JOIN vacancies v ON v.id = c.vacancy_id
   LEFT JOIN sources s ON s.id = c.source_id
-  LEFT JOIN responsibles rec ON rec.id = c.recruiter_id
-  LEFT JOIN responsibles hr  ON hr.id  = c.hr_responsible_id
-  LEFT JOIN responsibles ti  ON ti.id  = c.tech_interviewer_id
-  LEFT JOIN responsibles rb  ON rb.id  = c.rejected_by_responsible_id
+  LEFT JOIN users rec ON rec.id = c.recruiter_id
+  LEFT JOIN users hr  ON hr.id  = c.hr_responsible_id
+  LEFT JOIN users ti  ON ti.id  = c.tech_interviewer_id
+  LEFT JOIN users rb  ON rb.id  = c.rejected_by_responsible_id
   LEFT JOIN LATERAL (
     SELECT cr.file_id, f.external_url
     FROM candidate_resumes cr
@@ -61,21 +62,29 @@ export const CANDIDATE_SELECT = `
 
 export async function getCandidateSummaries() {
   const rows = await db.many(
-    CANDIDATE_SELECT + ' WHERE c.archived_at IS NULL ORDER BY c.number'
+    CANDIDATE_SELECT + ' WHERE c.archived_at IS NULL AND c.deleted_at IS NULL ORDER BY c.number'
   );
   return rows.map(row => toCandidate(row));
 }
 
 export async function getArchivedCandidateSummaries() {
   const rows = await db.many(
-    CANDIDATE_SELECT + ' WHERE c.archived_at IS NOT NULL ORDER BY c.number'
+    CANDIDATE_SELECT + ' WHERE c.archived_at IS NOT NULL AND c.deleted_at IS NULL ORDER BY c.number'
+  );
+  return rows.map(row => toCandidate(row));
+}
+
+// Корзина: удалённые кандидаты, которых ещё можно восстановить (30 дней).
+export async function getDeletedCandidateSummaries() {
+  const rows = await db.many(
+    CANDIDATE_SELECT + ' WHERE c.deleted_at IS NOT NULL ORDER BY c.deleted_at DESC'
   );
   return rows.map(row => toCandidate(row));
 }
 
 export async function getArchivedCandidateCount() {
   const { count } = await db.one(
-    'SELECT count(*)::int AS count FROM candidates WHERE archived_at IS NOT NULL'
+    'SELECT count(*)::int AS count FROM candidates WHERE archived_at IS NOT NULL AND deleted_at IS NULL'
   );
   return count;
 }
@@ -138,7 +147,7 @@ export async function resolveResponsible(executor, responsibleId, label, require
 
   const responsible = isUuid(id)
     ? await executor.one(
-        'SELECT * FROM responsibles WHERE id = $1 AND deleted_at IS NULL',
+        'SELECT * FROM users WHERE id = $1 AND archived_at IS NULL AND deleted_at IS NULL',
         [id]
       )
     : null;
@@ -322,6 +331,10 @@ export async function saveCandidate(payload, changedBy) {
         if (!existing) {
           fail('Кандидат не найден.', 404);
         }
+
+        if (existing.deleted_at) {
+          fail('Кандидат в корзине — сначала восстановите его.');
+        }
       }
 
       const vacancyId = clean(payload.vacancyId || existing.vacancy_id);
@@ -391,7 +404,6 @@ export async function saveCandidate(payload, changedBy) {
 
       const phone = normalizeKzPhone(pick(payload, 'phone', existing.phone));
       const email = validateEmail(pick(payload, 'email', existing.email));
-      const comment = clean(pick(payload, 'comment', existing.comment));
 
       // Как в исходной версии: черновик обязан быть активным, только если из него берётся резюме.
       // При собственном файле неактивный черновик просто игнорируется.
@@ -410,7 +422,7 @@ export async function saveCandidate(payload, changedBy) {
       const values = [
         candidateId, lastName, firstName, middleName, vacancyId, phone, email,
         telegram.display, telegram.url, linkedin, github, source ? source.id : null, salary,
-        recruiter.id, hrResponsible.id, techInterviewer.id, folderId, comment,
+        recruiter.id, hrResponsible.id, techInterviewer.id, folderId,
         JSON.stringify(links)
       ];
 
@@ -419,9 +431,9 @@ export async function saveCandidate(payload, changedBy) {
             `INSERT INTO candidates
                (id, last_name, first_name, middle_name, vacancy_id, phone, email,
                 telegram, telegram_url, linkedin, github, source_id, salary_expectation,
-                recruiter_id, hr_responsible_id, tech_interviewer_id, drive_folder_id, comment,
+                recruiter_id, hr_responsible_id, tech_interviewer_id, drive_folder_id,
                 links, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, 'Новый')
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, 'Новый')
              RETURNING *`,
             values
           )
@@ -432,7 +444,7 @@ export async function saveCandidate(payload, changedBy) {
                source_id = $12, salary_expectation = $13, recruiter_id = $14,
                hr_responsible_id = $15, tech_interviewer_id = $16,
                drive_folder_id = COALESCE($17, drive_folder_id),
-               comment = $18, links = $19, updated_at = now()
+               links = $18, updated_at = now()
              WHERE id = $1
              RETURNING *`,
             values
@@ -444,6 +456,14 @@ export async function saveCandidate(payload, changedBy) {
         await tx.query(
           'INSERT INTO candidate_resumes (candidate_id, file_id) VALUES ($1, $2)',
           [candidateId, resumeFile.id]
+        );
+      }
+
+      if (isNew && payload.comment) {
+        await insertComment(
+          tx,
+          { entityType: 'candidate', entityId: candidateId, bodyHtml: payload.comment },
+          changedBy
         );
       }
 
@@ -483,7 +503,7 @@ export async function archiveCandidate(candidateId) {
   // Текущий статус сохраняется, кандидат лишь получает отметку архивации.
   await db.query(
     `UPDATE candidates SET archived_at = now(), updated_at = now()
-     WHERE id = $1 AND archived_at IS NULL`,
+     WHERE id = $1 AND archived_at IS NULL AND deleted_at IS NULL`,
     [candidateId]
   );
 
@@ -494,6 +514,24 @@ export async function archiveCandidate(candidateId) {
   }
 
   return { ok: true, candidate };
+}
+
+export async function unarchiveCandidate(candidateId) {
+  if (!isUuid(candidateId)) {
+    fail('Кандидат не найден.', 404);
+  }
+
+  const row = await db.one(
+    `UPDATE candidates SET archived_at = NULL, updated_at = now()
+     WHERE id = $1 AND deleted_at IS NULL RETURNING id`,
+    [candidateId]
+  );
+
+  if (!row) {
+    fail('Кандидат не найден или находится в корзине.', 404);
+  }
+
+  return { ok: true, candidate: await loadCandidateDto(candidateId) };
 }
 
 export async function getAllowedTransitions(candidateId) {

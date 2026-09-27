@@ -3,6 +3,23 @@
 import { formatDateTime } from '../lib/dates.js';
 import { composeFullName } from '../lib/validation.js';
 
+import { APP_CONFIG } from '../config.js';
+
+// Состояние записи: активная, в архиве или в корзине (с датой окончательного удаления).
+export function lifecycleFields(row) {
+  const deletedAt = row.deleted_at ? new Date(row.deleted_at) : null;
+  const retention = APP_CONFIG.TRASH_RETENTION_DAYS * 86_400_000;
+  const purgeAt = deletedAt ? new Date(deletedAt.getTime() + retention) : null;
+
+  return {
+    state: row.deleted_at ? 'deleted' : row.archived_at ? 'archived' : 'active',
+    archivedAt: formatDateTime(row.archived_at),
+    deletedAt: formatDateTime(row.deleted_at),
+    purgeAt: formatDateTime(purgeAt),
+    daysUntilPurge: purgeAt ? Math.max(0, Math.ceil((purgeAt.getTime() - Date.now()) / 86_400_000)) : null
+  };
+}
+
 export const fileUrl = fileId => (fileId ? `/files/${fileId}` : '');
 export const candidateFolderUrl = candidateId => `/candidates/${candidateId}/files`;
 
@@ -10,8 +27,7 @@ function softDeleteFields(row) {
   return {
     'Дата создания': formatDateTime(row.created_at),
     'Дата изменения': formatDateTime(row.updated_at),
-    'Удален': Boolean(row.deleted_at),
-    'Дата удаления': formatDateTime(row.deleted_at)
+    ...lifecycleFields(row)
   };
 }
 
@@ -21,7 +37,6 @@ export function toVacancy(row) {
     '№': row.number,
     'Вакансия': row.name,
     'Статус': row.status,
-    'Комментарий': row.comment,
     ...softDeleteFields(row)
   };
 }
@@ -35,22 +50,26 @@ export function toSource(row) {
   };
 }
 
+// Ответственный — пользователь с этапами; 'Responsible ID' совпадает с 'User ID'.
 export function toResponsible(row) {
   const stages = row.stages || [];
 
   return {
     'Responsible ID': row.id,
-    '№': row.number,
+    'User ID': row.id,
     'Фамилия': row.last_name,
     'Имя': row.first_name,
     'Отчество': row.middle_name,
-    'ФИО': composeFullName(row.last_name, row.first_name, row.middle_name),
+    'ФИО': userDisplayName(row),
     'Email': row.email,
-    'User ID': row.user_id || '',
     'Доступные этапы': JSON.stringify(stages),
     stages,
-    ...softDeleteFields(row)
+    hasAccess: Boolean(row.is_active)
   };
+}
+
+export function userDisplayName(row) {
+  return composeFullName(row.last_name, row.first_name, row.middle_name) || row.full_name || row.email || '';
 }
 
 // Вопрос шаблона: { text, answers } — текст и список вероятных ответов.
@@ -94,7 +113,14 @@ export function toPublicUser(row) {
   return {
     'User ID': row.id,
     'Email': row.email,
-    'ФИО': row.full_name,
+    'ФИО': userDisplayName(row),
+    'Фамилия': row.last_name || '',
+    'Имя': row.first_name || '',
+    'Отчество': row.middle_name || '',
+    stages: row.stages || [],
+    // Email ещё не входил ни разу — его можно исправить (например, временный адрес).
+    emailEditable: !row.google_subject,
+    ...lifecycleFields(row),
     'Avatar URL': row.avatar_url,
     'IsActive': row.is_active,
     isAdmin: Boolean(row.is_admin),
@@ -169,11 +195,11 @@ export function toCandidate(row, resumeVersions) {
     'Резюме': latestResumeUrl,
     'Resume File ID': row.latest_resume_file_id || '',
     'Папка кандидата': candidateFolderUrl(row.id),
-    'Комментарий': row.comment,
     'Дата добавления': formatDateTime(row.created_at),
     'Дата изменения': formatDateTime(row.updated_at),
     'Архивирован': archived,
     'Дата архивации': formatDateTime(row.archived_at),
+    ...lifecycleFields(row),
     'Причина отказа': row.rejection_reason,
     'Комментарий к отказу': row.rejection_comment || '',
     'Кем отказано': rejectedByLabel(row),
@@ -232,7 +258,6 @@ export function toInterview(row) {
     ),
     'Responsible ID': row.responsible_id || '',
     'Вопросы и ответы': JSON.stringify(answers),
-    'Комментарий': row.comment,
     'Результат': row.result,
     answers,
     ...softDeleteFields(row)

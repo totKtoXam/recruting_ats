@@ -1,8 +1,10 @@
 // Реестр RPC-методов, которые раньше вызывались через google.script.run.
 // Имена и формат ответов сохранены, поэтому фронтенд работает без изменений.
 import * as candidates from './services/candidates.js';
+import * as comments from './services/comments.js';
 import * as drafts from './services/drafts.js';
 import * as interviews from './services/interviews.js';
+import * as lifecycle from './services/lifecycle.js';
 import * as lists from './services/lists.js';
 import * as references from './services/references.js';
 import * as users from './services/users.js';
@@ -21,7 +23,9 @@ async function getCandidateData() {
 
 async function getBootstrapData(_args, { user }) {
   await users.touchLastLogin(user.id);
+  // Фоновое обслуживание без cron: очистка черновиков и окончательное удаление из корзины.
   drafts.cleanupDraftsIfDue();
+  lifecycle.purgeIfDue();
 
   const [referenceData, candidateData] = await Promise.all([
     references.getReferenceData(),
@@ -35,6 +39,11 @@ async function getBootstrapData(_args, { user }) {
   };
 }
 
+const adminOnly = handler => (input, context) => {
+  users.requireAdmin(context.user);
+  return handler(input, context);
+};
+
 export const rpcHandlers = {
   getBootstrapData,
   getInitialData: getBootstrapData,
@@ -43,11 +52,15 @@ export const rpcHandlers = {
   getArchivedCandidateData: async () => ({
     archivedCandidates: await candidates.getArchivedCandidateSummaries()
   }),
+  getDeletedCandidateData: async () => ({
+    deletedCandidates: await candidates.getDeletedCandidateSummaries()
+  }),
   getAdminUserData: async () => ({ users: await users.getUsers() }),
 
   getCandidateDetails: id => candidates.getCandidateDetails(id),
   saveCandidate: (payload, { user }) => candidates.saveCandidate(payload, user),
   archiveCandidate: id => candidates.archiveCandidate(id),
+  unarchiveCandidate: id => candidates.unarchiveCandidate(id),
   getAllowedTransitions: id => candidates.getAllowedTransitions(id),
   getCandidateTransitionStatusLog: id => candidates.getCandidateTransitionStatusLog(id),
   getCandidateDraft: token => drafts.getCandidateDraft(token),
@@ -56,26 +69,32 @@ export const rpcHandlers = {
   getInterviewContext: input => interviews.getInterviewContext(input),
   transitionCandidate: (input, { user }) => interviews.transitionCandidate(input, user),
   updateInterview: input => interviews.updateInterview(input),
-  deleteInterview: id => interviews.deleteInterview(id),
 
-  // Серверные таблицы админ-панели: фильтры, сортировка и пагинация в БД.
+  // Жизненный цикл любой записи: { type: candidate|vacancy|source|template|interview|user, id }.
+  archiveEntity: (input, { user }) => lifecycle.archive(input, user),
+  unarchiveEntity: (input, { user }) => lifecycle.unarchive(input, user),
+  deleteEntity: (input, { user }) => lifecycle.moveToTrash(input, user),
+  restoreEntity: (input, { user }) => lifecycle.restoreFromTrash(input, user),
+
+  // Комментарии и реакции.
+  listComments: (input, { user }) => comments.listComments(input, user),
+  addComment: (input, { user }) => comments.addComment(input, user),
+  updateComment: (input, { user }) => comments.updateComment(input, user),
+  deleteComment: (id, { user }) => comments.deleteComment(id, user),
+  toggleReaction: (input, { user }) => comments.toggleReaction(input, user),
+
+  // Серверные таблицы: фильтры, сортировка и пагинация в БД.
   listVacancies: input => lists.listVacancies(input),
   listSources: input => lists.listSources(input),
-  listResponsibles: input => lists.listResponsibles(input),
+  listUsers: adminOnly(input => lists.listUsers(input)),
 
-  // Управление доступом — только администраторы.
-  listUsers: (input, { user }) => {
-    users.requireAdmin(user);
-    return lists.listUsers(input);
-  },
+  // Пользователи (они же ответственные) — только администраторы.
   saveUser: (input, { user }) => users.saveUser(input, user),
+  setUserAccess: (input, { user }) => users.setUserAccess(input, user),
 
   saveVacancy: input => references.saveVacancy(input),
-  deleteVacancy: id => references.deleteVacancy(id),
+  setVacancyStatus: input => references.setVacancyStatus(input),
+  listVacancyTemplates: vacancyId => references.listVacancyTemplates(vacancyId),
   saveSource: input => references.saveSource(input),
-  deleteSource: id => references.deleteSource(id),
-  saveResponsible: input => references.saveResponsible(input),
-  deleteResponsible: id => references.deleteResponsible(id),
-  saveInterviewTemplate: input => references.saveInterviewTemplate(input),
-  deleteInterviewTemplate: id => references.deleteInterviewTemplate(id)
+  saveInterviewTemplate: input => references.saveInterviewTemplate(input)
 };

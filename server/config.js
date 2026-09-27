@@ -52,7 +52,9 @@ export const APP_CONFIG = Object.freeze({
   MAX_RESUME_BYTES: 10 * 1024 * 1024,
   ALLOWED_RESUME_EXTENSIONS: Object.freeze(['pdf', 'doc', 'docx']),
   DRAFT_TTL_DAYS: 7,
-  LAST_LOGIN_THROTTLE_MINUTES: 30
+  LAST_LOGIN_THROTTLE_MINUTES: 30,
+  // Сколько дней удалённое лежит в корзине до окончательного удаления из БД.
+  TRASH_RETENTION_DAYS: 30
 });
 
 export const config = Object.freeze({
