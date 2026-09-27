@@ -219,8 +219,14 @@
               <h3>Основные данные</h3>
               <p>ФИО, контакты и назначение.</p>
             </div>
+            <!-- Только для нового кандидата: выбор файла резюме с автозаполнением полей. -->
+            <div id="resumeFillWrap" class="resume-fill-wrap" hidden>
+              <button type="button" id="resumeFillButton" class="button resume-fill-btn" onclick="chooseResumeForAutofill()"><svg class="icon"><use href="#i-sparkles"/></svg><span>Заполнить из резюме</span></button>
+              <div id="resumeFillHint" class="resume-fill-hint" role="status" hidden>Загрузите резюме — ФИО и контакты заполнятся сами. Файл можно перетащить в поле «Резюме».</div>
+            </div>
           </div>
 
+          <div id="resumeAutofillPanel" class="autofill-panel" hidden></div>
           <div id="candidateRejectedInfo" class="rejected-info" hidden></div>
 
           <div class="candidate-fields">
@@ -336,16 +342,16 @@
 
           <div class="field">
             <label>Резюме *</label>
-            <label class="file-drop">
+            <label class="file-drop" id="resumeDropZone" ondragenter="resumeDragOver(event)" ondragover="resumeDragOver(event)" ondragleave="resumeDragLeave(event)" ondrop="resumeDrop(event)">
               <input class="sr-only"
                 id="candidateResumeFile"
                 type="file"
                 accept=".pdf,.doc,.docx"
-                onchange="renderSelectedResumeFile()"
+                onchange="onResumeFileChange()"
               >
               <span class="file-drop-icon"><svg class="icon"><use href="#i-upload"/></svg></span>
               <span>
-                <strong>Выберите файл</strong>
+                <strong>Выберите файл или перетащите сюда</strong>
                 <small>PDF / DOC / DOCX до 10 МБ</small>
               </span>
             </label>
@@ -553,5 +559,6 @@
   <?!= include('Notifications'); ?>
   <?!= include('Integrations'); ?>
   <?!= include('Profile'); ?>
+  <?!= include('ResumeAutofill'); ?>
 </body>
 </html>
