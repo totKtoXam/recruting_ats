@@ -65,6 +65,19 @@
 .autofill-foot{color:var(--muted);font-size:12px}
 .autofill-legend{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:-1px;margin:0 2px 0 6px;border:1px solid var(--primary-border);background:var(--primary-tint)}
 .autofill-legend.check{border-color:var(--warning);background:var(--warning-tint)}
+
+/* Похожие кандидаты: жёлтый — похожее ФИО, красный — совпали контакты. */
+.similar-panel{
+  padding:8px 10px;border-radius:var(--radius);border:1px solid var(--warning);background:var(--warning-tint);
+  font-size:13px;display:flex;flex-direction:column;gap:4px
+}
+.similar-panel.is-exact{border-color:var(--danger-soft);background:var(--danger-tint)}
+.similar-panel .similar-title{display:flex;align-items:center;gap:6px;font-weight:600}
+.similar-panel .similar-title .icon{width:15px;height:15px;flex:0 0 auto;color:var(--warning)}
+.similar-panel.is-exact .similar-title .icon{color:var(--danger)}
+.similar-row{display:flex;gap:6px;flex-wrap:wrap;align-items:baseline}
+.similar-row a{font-weight:600}
+.similar-row small{color:var(--muted)}
 </style>
 
 <script>
@@ -102,6 +115,9 @@ function resetResumeAutofill(isNew){
   el('resumeAutofillPanel').hidden=true;
   el('resumeAutofillPanel').innerHTML='';
   el('resumeAutofillPanel').className='autofill-panel';
+  clearTimeout(similar.timer);
+  similar.enabled=isNew;similar.lastKey='';
+  renderSimilarCandidates([]);
   wrap.hidden=!isNew;
   const hint=el('resumeFillHint');
   const button=el('resumeFillButton');
@@ -246,6 +262,8 @@ function applyAutofill(result){
   renderSocialPreviews();
   renderCandidateSourceIcon();
   UiKit.clearFieldErrors('candidateWorkspace');
+  if(result.duplicates&&result.duplicates.length)renderSimilarCandidates(result.duplicates);
+  else checkSimilarCandidates();
   return filled;
 }
 
@@ -299,6 +317,7 @@ function applySuggestion(index){
   }
   renderSocialPreviews();
   renderCandidateSourceIcon();
+  checkSimilarCandidates();
   const chip=document.querySelector('#resumeAutofillPanel [data-suggestion="'+index+'"]');
   if(chip)chip.replaceWith(Object.assign(document.createElement('span'),{className:'state-badge state-ok',textContent:'Подставлено'}));
 }
@@ -356,11 +375,7 @@ function renderAutofillPanel({loading,error,result,filled,fileName}){
     '<span class="header-actions">'+(filled?'<button type="button" class="text-btn" onclick="undoResumeAutofill()">'+icon('reset','icon-sm')+' Отменить</button>':'')+closeBtn+'</span></div>');
 
   if(result.duplicates&&result.duplicates.length){
-    const stateLabel={active:'',archived:' · в архиве',deleted:' · в корзине'};
-    const matchLabel={email:'email',phone:'телефон',telegram:'Telegram'};
-    parts.push('<div class="autofill-dup"><div>'+icon('alert')+'<strong>Похоже, кандидат уже есть в системе</strong></div>'+
-      result.duplicates.map(dup=>'<div>№'+dup.number+' <a href="#/candidate/'+encodeURIComponent(dup.id)+'">'+escapeHtml(dup.fullName)+'</a> — '+escapeHtml(dup.vacancy)+' · '+escapeHtml(dup.status)+escapeHtml(stateLabel[dup.state]||'')+
-        ' <small class="muted">(совпадение: '+dup.matchedBy.map(key=>matchLabel[key]||key).join(', ')+')</small></div>').join('')+'</div>');
+    parts.push('<div class="autofill-warn">'+icon('alert')+'<span>Похоже, такой кандидат уже есть — см. «Похожие кандидаты» под полями ФИО.</span></div>');
   }
 
   const badEvents=(result.hh&&result.hh.events||[]).filter(event=>/отказ/i.test(event.kind));
@@ -408,6 +423,67 @@ function renderAutofillPanel({loading,error,result,filled,fileName}){
   if(filled)parts.push('<div class="autofill-foot">Поля из резюме отмечены цветом: <span class="autofill-legend"></span>уверенно, <span class="autofill-legend check"></span>проверьте. Отметка снимается при правке.'+(fieldNames.length?' Заполнено: '+escapeHtml(fieldNames.join(', '))+'.':'')+'</div>');
   panel.innerHTML=parts.join('');
 }
+
+// ---------- Похожие кандидаты ----------
+// Пока заполняется новая карточка, сервер ищет кандидатов с похожим ФИО (расстояние Дамерау — Левенштейна:
+// опечатки, лишние пробелы, регистр, латиница/кириллица) и с теми же email, телефоном или Telegram.
+
+const SIMILAR_INPUTS=['candidateLastName','candidateFirstName','candidateMiddleName','candidateEmail','candidatePhone','candidateTelegram'];
+const similar={enabled:false,timer:null,lastKey:'',request:0};
+
+function similarInput(){
+  return {
+    lastName:value('candidateLastName'),firstName:value('candidateFirstName'),middleName:value('candidateMiddleName'),
+    email:value('candidateEmail'),phone:value('candidatePhone'),telegram:value('candidateTelegram')
+  };
+}
+
+function scheduleSimilarCheck(){
+  if(!similar.enabled)return;
+  clearTimeout(similar.timer);
+  similar.timer=setTimeout(checkSimilarCandidates,400);
+}
+
+async function checkSimilarCandidates(){
+  if(!similar.enabled||value('candidateId'))return;
+  const input=similarInput();
+  const key=JSON.stringify(input);
+  if(key===similar.lastKey)return;
+  similar.lastKey=key;
+  const request=++similar.request;
+  try{
+    const matches=await rpc('findSimilarCandidates',input);
+    if(request===similar.request&&similar.enabled)renderSimilarCandidates(matches);
+  }catch(error){
+    // Поиск похожих — вспомогательный: ошибка не должна мешать заполнению.
+    if(request===similar.request)renderSimilarCandidates([]);
+  }
+}
+
+function renderSimilarCandidates(matches){
+  const root=el('candidateSimilar');
+  if(!root)return;
+  if(!matches||!matches.length){root.hidden=true;root.innerHTML='';return}
+  const exact=matches.some(match=>match.matchedBy.some(key=>key!=='name'));
+  const stateLabel={active:'',archived:' · в архиве',deleted:' · в корзине'};
+  const reason=match=>{
+    const parts=[];
+    if(match.matchedBy.includes('email'))parts.push('тот же email');
+    if(match.matchedBy.includes('phone'))parts.push('тот же телефон');
+    if(match.matchedBy.includes('telegram'))parts.push('тот же Telegram');
+    if(match.matchedBy.includes('name'))parts.push(match.nameScore>=1?'такое же ФИО':'похожее ФИО ('+Math.round(match.nameScore*100)+'%)');
+    return parts.join(', ');
+  };
+  root.className='similar-panel'+(exact?' is-exact':'');
+  root.innerHTML='<div class="similar-title">'+icon('alert')+'<span>'+(exact?'Похоже, такой кандидат уже есть':'Похожие кандидаты — проверьте, не дубль ли это')+'</span></div>'+
+    matches.map(match=>'<div class="similar-row"><span>№'+match.number+'</span><a href="#/candidate/'+encodeURIComponent(match.id)+'">'+escapeHtml(match.fullName)+'</a>'+
+      '<span class="muted">— '+escapeHtml(match.vacancy)+' · '+escapeHtml(match.status)+escapeHtml(stateLabel[match.state]||'')+'</span><small>'+escapeHtml(reason(match))+'</small></div>').join('');
+  root.hidden=false;
+}
+
+document.addEventListener('DOMContentLoaded',()=>{
+  SIMILAR_INPUTS.forEach(id=>{const input=el(id);if(input)input.addEventListener('input',scheduleSimilarCheck);});
+});
 
 function pluralRu(n,one,few,many){
   const mod10=n%10,mod100=n%100;

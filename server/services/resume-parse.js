@@ -10,6 +10,7 @@ import { extractResumeText } from '../lib/resume-text.js';
 import { isFirstName, looksLikePatronymic, looksLikeSurname, skeleton, titleCase } from '../lib/person-names.js';
 import { normalizeKzPhone, normalizeProfileUrl, normalizeTelegram, validateEmail } from '../lib/validation.js';
 import { decodeResumeUpload } from './files.js';
+import { findSimilarCandidates } from './similar.js';
 
 export const FORMAT_LABELS = {
   hh: 'hh.ru / hh.kz',
@@ -745,40 +746,6 @@ export function computeHints(result, vacancies, sources) {
   return hints;
 }
 
-async function findDuplicates(fields) {
-  const email = fields.email ? fields.email.value : '';
-  const phoneDigits = fields.phone ? fields.phone.value.replace(/\D/g, '') : '';
-  const telegram = fields.telegram ? fields.telegram.value.toLowerCase() : '';
-  if (!email && !phoneDigits && !telegram) return [];
-
-  const rows = await db.many(
-    `SELECT c.id, c.number, c.last_name, c.first_name, c.middle_name, c.status, c.email, c.phone, c.telegram,
-            c.archived_at, c.deleted_at, v.name AS vacancy_name
-     FROM candidates c
-     JOIN vacancies v ON v.id = c.vacancy_id
-     WHERE ($1 <> '' AND lower(c.email) = $1)
-        OR ($2 <> '' AND regexp_replace(c.phone, '\\D', '', 'g') = $2)
-        OR ($3 <> '' AND lower(c.telegram) = $3)
-     ORDER BY c.deleted_at IS NOT NULL, c.archived_at IS NOT NULL, c.number DESC
-     LIMIT 5`,
-    [email, phoneDigits, telegram]
-  );
-
-  return rows.map(row => ({
-    id: row.id,
-    number: Number(row.number),
-    fullName: [row.last_name, row.first_name, row.middle_name].filter(Boolean).join(' '),
-    vacancy: row.vacancy_name,
-    status: row.status,
-    state: row.deleted_at ? 'deleted' : row.archived_at ? 'archived' : 'active',
-    matchedBy: [
-      email && String(row.email).toLowerCase() === email ? 'email' : '',
-      phoneDigits && String(row.phone).replace(/\D/g, '') === phoneDigits ? 'phone' : '',
-      telegram && String(row.telegram).toLowerCase() === telegram ? 'telegram' : ''
-    ].filter(Boolean)
-  }));
-}
-
 // RPC: разбирает файл { name, mimeType, base64 } и ничего не сохраняет.
 export async function parseResume(input) {
   const upload = decodeResumeUpload(input);
@@ -801,6 +768,7 @@ export async function parseResume(input) {
     db.many('SELECT id, name FROM sources WHERE archived_at IS NULL ORDER BY number')
   ]);
   result.hints = computeHints(result, vacancies, sources);
-  result.duplicates = await findDuplicates(result.fields);
+  const value = name => (result.fields[name] ? result.fields[name].value : '');
+  result.duplicates = await findSimilarCandidates({ lastName: value('lastName'), firstName: value('firstName'), middleName: value('middleName'), email: value('email'), phone: value('phone'), telegram: value('telegram') });
   return result;
 }
