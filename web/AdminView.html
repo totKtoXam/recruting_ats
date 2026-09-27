@@ -11,7 +11,7 @@
 
 <!-- ===================== Вакансии ===================== -->
 <section id="admin-vacancies" class="admin-page-section active">
-  <div class="directory-layout vacancy-directory-layout">
+  <div class="directory-layout directory-single">
     <div class="admin-list-card directory-table-card">
       <div class="section-title-row table-toolbar">
         <h3>Вакансии</h3>
@@ -22,60 +22,68 @@
       </div>
       <div id="vacancyTable"></div>
     </div>
+  </div>
 
-    <aside id="vacancyForm" class="admin-form-card directory-form-card">
-      <div class="section-title-row">
-        <div>
+  <!-- Боковая панель (Drawer); переносится в <body> при инициализации. -->
+  <div id="vacancyDrawer" class="drawer drawer-lg" aria-hidden="true">
+    <aside id="vacancyForm" class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="vacancyFormTitle" tabindex="-1">
+      <header class="drawer-header">
+        <div class="drawer-title">
           <div class="eyebrow">Вакансия</div>
           <h3 id="vacancyFormTitle">Новая вакансия</h3>
         </div>
         <div class="header-actions" id="vacancyFormActions"></div>
+        <span class="toolbar-divider" aria-hidden="true"></span>
+        <button type="button" class="icon-btn" data-drawer-close data-tip="Закрыть (Esc)" aria-label="Закрыть"><svg class="icon"><use href="#i-close"/></svg></button>
+      </header>
+
+      <div class="drawer-body">
+        <section class="drawer-section">
+          <input id="vacancyId" type="hidden">
+          <div id="vacancyLifecycleNote"></div>
+
+          <div class="field">
+            <label for="vacancyName">Название *</label>
+            <input id="vacancyName" placeholder="Middle .NET Developer" oninput="this.classList.remove('input-error')">
+            <small id="vacancyNameError" class="field-error" hidden></small>
+          </div>
+
+          <div class="field" id="vacancyStatusField" hidden>
+            <label>Статус</label>
+            <div class="status-row">
+              <span id="vacancyStatusChip"></span>
+              <span id="vacancyStatusActions" class="status-actions"></span>
+            </div>
+          </div>
+        </section>
+
+        <section class="drawer-section" data-drawer-ignore>
+          <div class="drawer-section-head">
+            <h4>Шаблоны интервью <span id="vacancyTemplateCount" class="counter-badge">0</span></h4>
+            <div class="header-actions">
+              <label class="checkbox-line" data-tip="Показывать архивные и удалённые шаблоны">
+                <input id="templateShowAll" type="checkbox" onchange="loadVacancyTemplates()">
+                <span>Все</span>
+              </label>
+              <button id="templateAddButton" type="button" class="icon-btn icon-btn-primary" data-tip="Новый шаблон" aria-label="Новый шаблон" onclick="openTemplateModal()" disabled><svg class="icon"><use href="#i-plus"/></svg></button>
+            </div>
+          </div>
+          <div id="vacancyTemplateEmpty" class="empty-state compact">Сначала сохраните вакансию — после этого можно добавить шаблоны.</div>
+          <div id="vacancyTemplateList" class="template-list"></div>
+        </section>
+
+        <!-- Заголовок «Комментарии» рисует сама лента (Comments.html). -->
+        <section class="drawer-section" data-drawer-ignore>
+          <div id="vacancyComments" class="comments-host"></div>
+        </section>
       </div>
-
-      <input id="vacancyId" type="hidden">
-      <div id="vacancyLifecycleNote"></div>
-
-      <div class="field">
-        <label for="vacancyName">Название *</label>
-        <input id="vacancyName" placeholder="Middle .NET Developer" oninput="this.classList.remove('input-error')">
-        <small id="vacancyNameError" class="field-error" hidden></small>
-      </div>
-
-      <div class="field" id="vacancyStatusField" hidden>
-        <label>Статус</label>
-        <div class="status-row">
-          <span id="vacancyStatusChip"></span>
-          <span id="vacancyStatusActions" class="status-actions"></span>
-        </div>
-      </div>
-
-      <div id="vacancyComments" class="comments-host"></div>
-    </aside>
-
-    <aside class="directory-side-card">
-      <div class="section-title-row">
-        <div>
-          <div class="eyebrow">Шаблоны интервью</div>
-          <h3>Вопросы по этапам <span id="vacancyTemplateCount" class="counter-badge">0</span></h3>
-        </div>
-        <div class="header-actions">
-          <label class="checkbox-line" data-tip="Показывать архивные и удалённые шаблоны">
-            <input id="templateShowAll" type="checkbox" onchange="loadVacancyTemplates()">
-            <span>Все</span>
-          </label>
-          <button id="templateAddButton" class="icon-btn icon-btn-primary" data-tip="Новый шаблон" aria-label="Новый шаблон" onclick="openTemplateModal()" disabled><svg class="icon"><use href="#i-plus"/></svg></button>
-        </div>
-      </div>
-
-      <div id="vacancyTemplateEmpty" class="empty-state compact">Сначала сохраните или выберите вакансию.</div>
-      <div id="vacancyTemplateList" class="template-list"></div>
     </aside>
   </div>
 </section>
 
 <!-- ===================== Источники ===================== -->
 <section id="admin-sources" class="admin-page-section">
-  <div class="directory-layout">
+  <div class="directory-layout directory-single">
     <div class="admin-list-card directory-table-card">
       <div class="section-title-row table-toolbar">
         <h3>Источники вакансий</h3>
@@ -86,24 +94,30 @@
       </div>
       <div id="sourceTable"></div>
     </div>
+  </div>
 
-    <aside id="sourceForm" class="admin-form-card directory-form-card">
-      <div class="section-title-row">
-        <div>
+  <div id="sourceDrawer" class="drawer" aria-hidden="true">
+    <aside id="sourceForm" class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="sourceFormTitle" tabindex="-1">
+      <header class="drawer-header">
+        <div class="drawer-title">
           <div class="eyebrow">Источник</div>
           <h3 id="sourceFormTitle">Новый источник</h3>
         </div>
         <div class="header-actions" id="sourceFormActions"></div>
-      </div>
+        <span class="toolbar-divider" aria-hidden="true"></span>
+        <button type="button" class="icon-btn" data-drawer-close data-tip="Закрыть (Esc)" aria-label="Закрыть"><svg class="icon"><use href="#i-close"/></svg></button>
+      </header>
 
-      <input id="sourceId" type="hidden">
-      <div id="sourceLifecycleNote"></div>
+      <div class="drawer-body">
+        <input id="sourceId" type="hidden">
+        <div id="sourceLifecycleNote"></div>
 
-      <div class="field">
-        <label for="sourceName">Название *</label>
-        <div class="input-with-brand">
-          <span id="sourceFormIcon" class="brand-icon brand-generic">•</span>
-          <input id="sourceName" placeholder="LinkedIn" oninput="renderSourceFormIcon()">
+        <div class="field">
+          <label for="sourceName">Название *</label>
+          <div class="input-with-brand">
+            <span id="sourceFormIcon" class="brand-icon brand-generic">•</span>
+            <input id="sourceName" placeholder="LinkedIn" oninput="renderSourceFormIcon()">
+          </div>
         </div>
       </div>
     </aside>
@@ -112,7 +126,7 @@
 
 <!-- ===================== Пользователи (они же ответственные) ===================== -->
 <section id="admin-users" class="admin-page-section">
-  <div class="directory-layout">
+  <div class="directory-layout directory-single">
     <div class="admin-list-card directory-table-card">
       <div class="section-title-row table-toolbar">
         <h3>Пользователи</h3>
@@ -123,16 +137,21 @@
       </div>
       <div id="userTable"></div>
     </div>
+  </div>
 
-    <aside id="userForm" class="admin-form-card directory-form-card">
-      <div class="section-title-row">
-        <div>
+  <div id="userDrawer" class="drawer" aria-hidden="true">
+    <aside id="userForm" class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="userFormTitle" tabindex="-1">
+      <header class="drawer-header">
+        <div class="drawer-title">
           <div class="eyebrow">Пользователь</div>
           <h3 id="userFormTitle">Новый пользователь</h3>
         </div>
         <div class="header-actions" id="userFormActions"></div>
-      </div>
+        <span class="toolbar-divider" aria-hidden="true"></span>
+        <button type="button" class="icon-btn" data-drawer-close data-tip="Закрыть (Esc)" aria-label="Закрыть"><svg class="icon"><use href="#i-close"/></svg></button>
+      </header>
 
+      <div class="drawer-body">
       <input id="userId" type="hidden">
       <div id="userLifecycleNote"></div>
 
@@ -163,7 +182,7 @@
           <input id="userTelegram" placeholder="@username" autocomplete="off">
           <span id="userTelegramStatus" class="state-badge" hidden></span>
         </div>
-        <small class="field-hint">Подтверждается самим пользователем: «Настройки → Уведомления → Привязать Telegram». Ник, указанный здесь, считается неподтверждённым.</small>
+        <small class="field-hint">Подтверждается самим пользователем: «Профиль → Уведомления → Привязать Telegram». Ник, указанный здесь, считается неподтверждённым.</small>
       </div>
 
       <div class="field">
@@ -183,6 +202,7 @@
       </label>
 
       <div id="userMeta" class="user-meta" hidden></div>
+      </div>
     </aside>
   </div>
 </section>
@@ -190,43 +210,6 @@
 <!-- ===================== Интеграции (только администраторы) ===================== -->
 <section id="admin-integrations" class="admin-page-section">
   <div id="integrationsRoot"><div class="empty-state compact">Загрузка…</div></div>
-</section>
-
-<!-- ===================== Уведомления (для всех пользователей) ===================== -->
-<section id="admin-notifications" class="admin-page-section">
-  <div class="notify-page">
-    <div class="segmented notify-tabs" role="tablist">
-      <label class="segmented-option"><input type="radio" name="notifyTab" value="settings" onchange="navigateTo('settings/notifications')"><span><svg class="icon icon-sm"><use href="#i-settings"/></svg> Подписки</span></label>
-      <label class="segmented-option"><input type="radio" name="notifyTab" value="log" onchange="navigateTo('settings/notifications/log')"><span><svg class="icon icon-sm"><use href="#i-history"/></svg> Журнал</span></label>
-    </div>
-
-    <div id="notifyTabSettings" class="notify-settings-grid">
-      <div class="admin-list-card">
-        <div class="section-title-row"><h3>Каналы</h3></div>
-        <div id="notifyChannels" class="notify-channels"><div class="empty-state compact">Загрузка…</div></div>
-      </div>
-
-      <div class="admin-list-card">
-        <div class="section-title-row">
-          <div>
-            <h3>Что присылать</h3>
-            <p class="muted notify-hint">Уведомления приходят по кандидатам, где вы назначены рекрутером, HR или проф. интервьювером, и по тем, за которыми вы следите (<svg class="icon icon-sm"><use href="#i-eye"/></svg> в карточке кандидата). О своих действиях уведомлений нет.</p>
-          </div>
-        </div>
-        <div id="notifyMatrix"></div>
-      </div>
-    </div>
-
-    <div id="notifyTabLog" class="admin-list-card directory-table-card" hidden>
-      <div class="section-title-row table-toolbar">
-        <h3>Журнал уведомлений</h3>
-        <div class="header-actions">
-          <button class="icon-btn" data-tip="Отметить все как прочитанные" aria-label="Отметить все как прочитанные" onclick="markAllNotificationsRead(this)"><svg class="icon"><use href="#i-check-check"/></svg></button>
-        </div>
-      </div>
-      <div id="notificationLogTable"></div>
-    </div>
-  </div>
 </section>
 
 <!-- Переносится в <body> при инициализации: внутри скрытого раздела модальное окно не отобразится. -->

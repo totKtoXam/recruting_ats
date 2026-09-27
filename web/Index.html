@@ -19,22 +19,23 @@
     </div>
 
     <nav class="top-actions">
-      <span id="dataSyncStatus" class="sync-status">Загрузка данных…</span>
-      <div id="currentUserBadge" class="current-user-badge" hidden>
-        <img id="currentUserAvatar" class="current-user-avatar" alt="">
-        <span class="current-user-text">
-          <strong id="currentUserName"></strong>
-          <small id="currentUserEmail"></small>
-        </span>
-      </div>
       <div class="notify-wrap">
         <button type="button" id="notifyBell" class="icon-btn notify-bell" data-tip="Уведомления" aria-label="Уведомления" aria-haspopup="dialog" aria-expanded="false" onclick="toggleNotifyPopover()"><svg class="icon"><use href="#i-bell"/></svg><span id="notifyBadge" class="notify-badge" hidden></span></button>
         <div id="notifyPopover" class="notify-popover" role="dialog" aria-label="Уведомления" hidden></div>
       </div>
-      <button type="button" class="icon-btn" data-theme-toggle data-tip="Тема: системная" aria-label="Тема: системная" onclick="ThemeManager.cycle()"><svg class="icon"><use href="#i-monitor"/></svg></button>
-      <form method="post" action="/auth/logout" class="logout-form">
-        <button type="submit" class="icon-btn" data-tip="Выйти" aria-label="Выйти"><svg class="icon"><use href="#i-logout"/></svg></button>
-      </form>
+      <div class="profile-wrap">
+        <button type="button" id="currentUserBadge" class="current-user-badge profile-trigger" aria-haspopup="menu" aria-expanded="false" aria-label="Профиль и настройки" onclick="toggleProfileMenu()" hidden>
+          <img id="currentUserAvatar" class="current-user-avatar" alt="" referrerpolicy="no-referrer" hidden>
+          <span id="currentUserInitials" class="avatar-initials" hidden></span>
+          <span class="current-user-text">
+            <strong id="currentUserName"></strong>
+            <small id="currentUserEmail"></small>
+          </span>
+          <svg class="icon chevron"><use href="#i-chevron-down"/></svg>
+        </button>
+        <div id="profileMenu" class="notify-popover profile-menu" role="menu" aria-label="Профиль" hidden></div>
+      </div>
+      <form id="logoutForm" method="post" action="/auth/logout" hidden></form>
     </nav>
   </header>
 
@@ -52,7 +53,6 @@
           <button type="button" class="sidebar-group-toggle" aria-expanded="true" onclick="toggleSidebarGroup('settings')"><svg class="icon"><use href="#i-settings"/></svg><span>Настройки</span><svg class="icon chevron"><use href="#i-chevron-right"/></svg></button>
           <div class="sidebar-group-items" id="sidebarGroup-settings">
           <a class="sidebar-link" href="#/settings/sources" data-route="settings/sources"><svg class="icon"><use href="#i-list"/></svg><span>Источники вакансий</span></a>
-          <a class="sidebar-link" href="#/settings/notifications" data-route="settings/notifications"><svg class="icon"><use href="#i-bell"/></svg><span>Уведомления</span></a>
           <a class="sidebar-link" href="#/settings/users" data-route="settings/users" id="sidebarUsersLink" hidden><svg class="icon"><use href="#i-user"/></svg><span>Пользователи</span></a>
           <a class="sidebar-link" href="#/settings/integrations" data-route="settings/integrations" data-admin-only hidden><svg class="icon"><use href="#i-link"/></svg><span>Интеграции</span></a>
           </div>
@@ -111,6 +111,61 @@
     <section id="stats" class="stats"></section>
     <section id="vacancyStats" class="vacancy-stats"></section>
     <section id="board" class="board"></section>
+  </main>
+
+  <main id="viewProfile" class="page app-view" hidden>
+    <div class="page-header">
+      <div>
+        <h2>Профиль</h2>
+        <p class="page-description">Личные настройки: уведомления, Telegram, оформление.</p>
+      </div>
+    </div>
+
+    <div class="profile-page">
+      <div class="segmented profile-tabs" role="tablist">
+        <label class="segmented-option"><input type="radio" name="profileTab" value="" onchange="navigateTo('profile')"><span><svg class="icon icon-sm"><use href="#i-user"/></svg>Профиль</span></label>
+        <label class="segmented-option"><input type="radio" name="profileTab" value="notifications" onchange="navigateTo('profile/notifications')"><span><svg class="icon icon-sm"><use href="#i-bell"/></svg>Уведомления</span></label>
+        <label class="segmented-option"><input type="radio" name="profileTab" value="log" onchange="navigateTo('profile/log')"><span><svg class="icon icon-sm"><use href="#i-history"/></svg>Журнал</span></label>
+      </div>
+
+      <div id="profileTabMain" class="profile-grid">
+        <div class="admin-list-card">
+          <div class="section-title-row"><h3>Аккаунт</h3></div>
+          <div id="profileAccount"></div>
+        </div>
+        <div class="admin-list-card">
+          <div class="section-title-row"><h3>Оформление</h3></div>
+          <div id="profileTheme"></div>
+        </div>
+      </div>
+
+    <div id="notifyTabSettings" class="notify-settings-grid">
+        <div class="admin-list-card">
+          <div class="section-title-row"><h3>Каналы</h3></div>
+          <div id="notifyChannels" class="notify-channels"><div class="empty-state compact">Загрузка…</div></div>
+        </div>
+  
+        <div class="admin-list-card">
+          <div class="section-title-row">
+            <div>
+              <h3>Что присылать</h3>
+              <p class="muted notify-hint">Уведомления приходят по кандидатам, где вы назначены рекрутером, HR или проф. интервьювером, и по тем, за которыми вы следите (<svg class="icon icon-sm"><use href="#i-eye"/></svg> в карточке кандидата). О своих действиях уведомлений нет.</p>
+            </div>
+          </div>
+          <div id="notifyMatrix"></div>
+        </div>
+      </div>
+
+    <div id="notifyTabLog" class="admin-list-card directory-table-card" hidden>
+        <div class="section-title-row table-toolbar">
+          <h3>Журнал уведомлений</h3>
+          <div class="header-actions">
+            <button class="icon-btn" data-tip="Отметить все как прочитанные" aria-label="Отметить все как прочитанные" onclick="markAllNotificationsRead(this)"><svg class="icon"><use href="#i-check-check"/></svg></button>
+          </div>
+        </div>
+        <div id="notificationLogTable"></div>
+      </div>
+    </div>
   </main>
 
   <main id="viewAdmin" class="page app-view" hidden>
@@ -475,11 +530,13 @@
   </script>
 
   <?!= include('UiKit'); ?>
+  <?!= include('Drawer'); ?>
   <?!= include('Editor'); ?>
   <?!= include('Comments'); ?>
   <?!= include('Scripts'); ?>
   <?!= include('AdminScripts'); ?>
   <?!= include('Notifications'); ?>
   <?!= include('Integrations'); ?>
+  <?!= include('Profile'); ?>
 </body>
 </html>

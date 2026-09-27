@@ -379,6 +379,10 @@ function initAdmin(){
   // Модальное окно шаблона лежит в разметке админки, но должно жить в <body>,
   // иначе оно скрыто вместе с разделом, когда открыта доска кандидатов.
   document.body.appendChild(el('templateModal'));
+  // Формы справочников — боковые панели (Drawer.html); закрытие снимает выбор строки.
+  Drawer.register('vacancyDrawer',{onClose:onVacancyDrawerClose});
+  Drawer.register('sourceDrawer',{onClose:onSourceDrawerClose});
+  Drawer.register('userDrawer',{onClose:onUserDrawerClose});
   renderVacancyFormActions(null);
   renderSourceFormActions(null);
   renderUserFormActions(null);
@@ -465,9 +469,17 @@ function renderVacancyFormActions(vacancy){
   const readOnly=vacancy&&vacancy.state==='deleted';
   formActions('vacancyFormActions',[
     readOnly?'':iconBtn('save','Сохранить вакансию','saveVacancyForm(this)','icon-btn-primary'),
-    iconBtn('close','Отмена','resetVacancyForm()'),
     vacancy?lifecycleButtons('vacancy',vacancy['Vacancy ID'],vacancy.state):''
   ]);
+}
+
+function onVacancyDrawerClose(){
+  currentVacancy=null;
+  vacancyTemplatesCache=[];
+  el('vacancyId').value='';
+  setVacancyNameError('');
+  mountCommentThread('vacancy','vacancyComments','vacancy',null);
+  rerenderServerTable('vacancies');
 }
 
 function renderVacancyStatus(vacancy){
@@ -478,6 +490,7 @@ function renderVacancyStatus(vacancy){
 }
 
 function resetVacancyForm(){
+  Drawer.open('vacancyDrawer');
   currentVacancy=null;
   el('vacancyId').value='';
   el('vacancyName').value='';
@@ -490,12 +503,14 @@ function resetVacancyForm(){
   mountCommentThread('vacancy','vacancyComments','vacancy',null);
   rerenderServerTable('vacancies');
   loadVacancyTemplates();
+  Drawer.markClean('vacancyDrawer');
   el('vacancyName').focus();
 }
 
 function editVacancy(id,item){
   const vacancy=item||tableItem('vacancies','Vacancy ID',id)||state.vacancies.find(x=>String(x['Vacancy ID'])===String(id));
   if(!vacancy)return;
+  Drawer.open('vacancyDrawer');
   currentVacancy=vacancy;
 
   el('vacancyId').value=id;
@@ -509,6 +524,7 @@ function editVacancy(id,item){
   mountCommentThread('vacancy','vacancyComments','vacancy',id);
   rerenderServerTable('vacancies');
   loadVacancyTemplates();
+  Drawer.markClean('vacancyDrawer');
 }
 
 async function reopenVacancy(id){
@@ -591,7 +607,7 @@ function renderVacancyTemplatesForSelected(){
 
   if(!vacancyId){
     empty.hidden=false;
-    empty.textContent='Сначала сохраните или выберите вакансию.';
+    empty.textContent='Сначала сохраните вакансию — после этого можно добавить шаблоны.';
     list.innerHTML='';
     el('vacancyTemplateCount').textContent='0';
     return;
@@ -756,12 +772,17 @@ function renderSourceFormActions(source){
   const readOnly=source&&source.state==='deleted';
   formActions('sourceFormActions',[
     readOnly?'':iconBtn('save','Сохранить источник','saveSourceForm(this)','icon-btn-primary'),
-    iconBtn('close','Отмена','resetSourceForm()'),
     source?lifecycleButtons('source',source['Source ID'],source.state):''
   ]);
 }
 
+function onSourceDrawerClose(){
+  el('sourceId').value='';
+  rerenderServerTable('sources');
+}
+
 function resetSourceForm(){
+  Drawer.open('sourceDrawer');
   el('sourceId').value='';
   el('sourceName').value='';
   el('sourceName').readOnly=false;
@@ -770,12 +791,14 @@ function resetSourceForm(){
   renderSourceFormActions(null);
   renderSourceFormIcon();
   rerenderServerTable('sources');
+  Drawer.markClean('sourceDrawer');
   el('sourceName').focus();
 }
 
 function editSource(id,item){
   const source=item||tableItem('sources','Source ID',id)||state.sources.find(x=>String(x['Source ID'])===String(id));
   if(!source)return;
+  Drawer.open('sourceDrawer');
 
   el('sourceId').value=id;
   el('sourceName').value=source['Название']||'';
@@ -785,6 +808,7 @@ function editSource(id,item){
   renderSourceFormActions(source);
   renderSourceFormIcon();
   rerenderServerTable('sources');
+  Drawer.markClean('sourceDrawer');
 }
 
 async function reopenSource(id){
@@ -827,9 +851,13 @@ function renderUserFormActions(user){
   const readOnly=user&&user.state==='deleted';
   formActions('userFormActions',[
     readOnly?'':iconBtn('save','Сохранить','saveUserForm(this)','icon-btn-primary'),
-    iconBtn('close','Отмена','resetUserForm()'),
     user?lifecycleButtons('user',user['User ID'],user.state):''
   ]);
+}
+
+function onUserDrawerClose(){
+  el('userId').value='';
+  rerenderServerTable('users');
 }
 
 function setUserFormReadOnly(readOnly){
@@ -838,6 +866,7 @@ function setUserFormReadOnly(readOnly){
 }
 
 function resetUserForm(){
+  Drawer.open('userDrawer');
   el('userId').value='';
   ['userLastName','userFirstName','userMiddleName','userEmail','userTelegram'].forEach(id=>el(id).value='');
   renderUserTelegramStatus(null);
@@ -853,10 +882,12 @@ function resetUserForm(){
   renderUserStageOptions([]);
   renderUserFormActions(null);
   rerenderServerTable('users');
+  Drawer.markClean('userDrawer');
   el('userLastName').focus();
 }
 
 function editUser(user){
+  Drawer.open('userDrawer');
   el('userId').value=user['User ID'];
   el('userLastName').value=user['Фамилия']||'';
   el('userFirstName').value=user['Имя']||'';
@@ -887,6 +918,7 @@ function editUser(user){
   el('userMeta').innerHTML=rows.map(([label,text])=>'<div class="user-meta-row"><span>'+escapeHtml(label)+'</span><span>'+escapeHtml(text)+'</span></div>').join('');
   el('userMeta').hidden=!rows.length;
   rerenderServerTable('users');
+  Drawer.markClean('userDrawer');
 }
 
 function renderUserTelegramStatus(user){

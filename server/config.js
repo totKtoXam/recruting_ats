@@ -59,8 +59,8 @@ export const APP_CONFIG = Object.freeze({
 
 export const config = Object.freeze({
   env: env('NODE_ENV', 'development'),
-  port: Number(env('PORT', '3000')),
-  publicUrl: env('PUBLIC_URL', 'http://localhost:3000').replace(/\/$/, ''),
+  port: Number(env('PORT', '3040')),
+  publicUrl: env('PUBLIC_URL', 'http://localhost:3040').replace(/\/$/, ''),
   timeZone: env('APP_TIMEZONE', 'Asia/Almaty'),
   trustProxy: env('TRUST_PROXY', 'false') === 'true',
 

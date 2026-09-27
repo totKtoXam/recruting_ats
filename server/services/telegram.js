@@ -130,7 +130,7 @@ async function handleMessage(message) {
       chatId,
       user
         ? `✅ Telegram привязан к Recruiting ATS: <b>${escapeHtml(userDisplayName(user))}</b>.\nСюда будут приходить уведомления. Отключить: /stop`
-        : '⚠️ Ссылка недействительна или устарела. Получите новую в ATS: Настройки → Уведомления → «Привязать Telegram».'
+        : '⚠️ Ссылка недействительна или устарела. Получите новую в ATS: Профиль → Уведомления → «Привязать Telegram».'
     );
     return;
   }
@@ -149,7 +149,7 @@ async function handleMessage(message) {
 
   await sendTelegramMessage(
     chatId,
-    'Это бот уведомлений Recruiting ATS. Чтобы привязать аккаунт, откройте в ATS: Настройки → Уведомления → «Привязать Telegram».'
+    'Это бот уведомлений Recruiting ATS. Чтобы привязать аккаунт, откройте в ATS: Профиль → Уведомления → «Привязать Telegram».'
   );
 }
 
