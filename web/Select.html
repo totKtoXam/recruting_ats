@@ -1,0 +1,964 @@
+<style>
+/* =====================================================================
+   UiSelect — custom dropdown over a native <select> (script below).
+   The native control stays in the DOM (value / options / onchange),
+   visually hidden; .ui-select is the visible trigger, the listbox lives
+   in a body-level portal (.ui-select-portal > .ui-select-pop).
+   Variants: default underline | --filled (table filter row) |
+   --small (pagination) | --brand (.select-with-brand) | --multiple |
+   --readonly (data-readonly) | --empty (placeholder value).
+   ===================================================================== */
+select[data-ui-select]{
+  position:absolute!important;
+  width:1px!important;height:1px!important;min-height:0!important;
+  margin:0!important;padding:0!important;border:0!important;
+  opacity:0!important;overflow:hidden!important;
+  clip-path:inset(50%)!important;pointer-events:none!important
+}
+
+button.ui-select{
+  position:relative;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  width:100%;
+  min-width:0;
+  min-height:var(--control-h);
+  margin:0;
+  padding:5px 2px;
+  border:0;
+  border-bottom:1px solid var(--input-line);
+  border-radius:0;
+  background-color:transparent;
+  color:var(--text);
+  font:inherit;
+  font-size:14px;
+  line-height:1.5;
+  text-align:left;
+  cursor:pointer;
+  outline:none;
+  box-shadow:none;
+  opacity:1;
+  transition:border-color var(--dur-fast),box-shadow var(--dur-fast),background-color var(--dur-fast),color var(--dur-fast)
+}
+.ui-select-value{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ui-select--empty .ui-select-value{color:var(--placeholder)}
+.ui-select-chevron,
+.ui-select-check{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.ui-select-chevron{
+  flex:0 0 14px;width:14px;height:14px;
+  color:var(--muted);
+  transition:transform var(--dur-fast) var(--ease-out)
+}
+button.ui-select[aria-expanded="true"] .ui-select-chevron{transform:rotate(180deg)}
+.ui-select-badge{
+  flex:0 0 auto;
+  min-width:20px;height:18px;
+  padding:0 6px;
+  border-radius:999px;
+  background:var(--primary-soft);
+  color:var(--primary);
+  font-size:12px;font-weight:600;line-height:18px;
+  text-align:center;
+  font-variant-numeric:tabular-nums
+}
+
+button.ui-select:hover:not(:disabled){border-bottom-color:var(--input-line-hover)}
+button.ui-select:focus-visible,
+button.ui-select[aria-expanded="true"]{
+  border-bottom-color:var(--primary);
+  box-shadow:inset 0 -1px 0 var(--primary);
+  background-color:var(--primary-tint)
+}
+button.ui-select[aria-invalid="true"]{border-bottom-color:var(--danger);box-shadow:inset 0 -1px 0 var(--danger)}
+button.ui-select[aria-invalid="true"]:focus-visible{background-color:var(--danger-tint)}
+
+/* Disabled / read-only: dashed underline, muted text (same as inputs) */
+button.ui-select:disabled,
+button.ui-select.ui-select--readonly{
+  color:var(--muted);
+  border-bottom:1px dashed var(--line-strong);
+  background-color:transparent;
+  box-shadow:none
+}
+button.ui-select:disabled{cursor:not-allowed;opacity:.75}
+button.ui-select.ui-select--readonly{cursor:default}
+button.ui-select.ui-select--readonly:hover{border-bottom-color:var(--line-strong)}
+button.ui-select.ui-select--readonly:focus-visible{border-bottom-color:var(--line-strong);box-shadow:none;background-color:var(--hover)}
+.ui-select--readonly .ui-select-chevron{display:none}
+button.ui-select:disabled .ui-select-value,
+.ui-select--readonly .ui-select-value{color:inherit}
+
+/* Table filter row: quiet filled box */
+button.ui-select.ui-select--filled{
+  height:30px;min-height:30px;
+  padding:4px 8px;
+  gap:4px;
+  border:1px solid transparent;
+  border-radius:var(--radius-sm);
+  background-color:var(--surface-2);
+  font-size:13px;
+  line-height:20px
+}
+button.ui-select.ui-select--filled:hover:not(:disabled){border-color:var(--line-strong)}
+button.ui-select.ui-select--filled:focus-visible,
+button.ui-select.ui-select--filled[aria-expanded="true"]{
+  border-color:var(--primary);
+  box-shadow:0 0 0 2px var(--primary-ring);
+  background-color:var(--surface)
+}
+button.ui-select.ui-select--filled:disabled{border:1px dashed var(--line-strong)}
+.ui-select--filled .ui-select-chevron,
+.ui-select--small .ui-select-chevron{flex-basis:12px;width:12px;height:12px}
+
+/* Pagination "rows per page" */
+button.ui-select.ui-select--small{
+  width:auto;
+  min-width:56px;
+  height:26px;min-height:26px;
+  padding:1px 2px;
+  gap:4px;
+  font-size:12px;
+  line-height:18px
+}
+
+/* Brand icon on the left (.select-with-brand) */
+button.ui-select.ui-select--brand{padding-left:28px}
+
+/* ---- popup ---- */
+.ui-select-pop{
+  position:fixed;
+  left:0;top:0;
+  z-index:1100;
+  display:flex;
+  flex-direction:column;
+  width:max-content;
+  max-width:min(420px,calc(100vw - 16px));
+  background:var(--surface-raised);
+  border:1px solid var(--line);
+  border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-pop);
+  color:var(--text);
+  font-size:14px;
+  line-height:1.35;
+  overflow:hidden;
+  opacity:0;
+  transform:translateY(-4px);
+  transition:opacity var(--dur-fast) var(--ease-out),transform var(--dur-fast) var(--ease-out)
+}
+.ui-select-pop[data-side="top"]{transform:translateY(4px)}
+.ui-select-pop.is-open{opacity:1;transform:none}
+
+.ui-select-search-wrap{flex:0 0 auto;padding:6px 10px 4px}
+.ui-select-pop .ui-select-search{min-height:30px;padding:4px 2px;font-size:14px}
+.ui-select-actions{
+  flex:0 0 auto;
+  display:flex;
+  justify-content:space-between;
+  gap:8px;
+  padding:4px 6px;
+  border-bottom:1px solid var(--line)
+}
+.ui-select-action{
+  height:26px;
+  padding:0 8px;
+  border-radius:var(--radius-sm);
+  color:var(--primary);
+  font-size:12px;
+  font-weight:500;
+  cursor:pointer;
+  transition:background-color var(--dur-fast)
+}
+.ui-select-action:hover{background:var(--primary-tint)}
+.ui-select-action[data-act="none"]{color:var(--muted)}
+.ui-select-action[data-act="none"]:hover{background:var(--hover);color:var(--text-2)}
+
+.ui-select-list{
+  position:relative;
+  flex:1 1 auto;
+  min-height:0;
+  max-height:320px;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  padding:4px;
+  outline:none
+}
+.ui-select-option{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-height:36px;
+  padding:8px 10px;
+  border-radius:var(--radius-sm);
+  color:var(--text);
+  cursor:pointer;
+  user-select:none;
+  -webkit-user-select:none
+}
+.ui-select-text{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}
+.ui-select-option:hover{background:var(--hover)}
+.ui-select-option.is-active{background:var(--primary-tint)}
+.ui-select-pop.is-kbd .ui-select-option.is-active{box-shadow:inset 0 0 0 2px var(--primary-ring)}
+.ui-select-option .ui-select-check{flex:0 0 16px;width:16px;height:16px;visibility:hidden}
+.ui-select-option[aria-selected="true"]{color:var(--primary);font-weight:500}
+.ui-select-option[aria-selected="true"] .ui-select-check{visibility:visible}
+.ui-select-option[aria-disabled="true"]{color:var(--faint);opacity:.6;cursor:not-allowed;background:none;box-shadow:none}
+.ui-select-group-label{
+  padding:8px 10px 4px;
+  color:var(--muted);
+  font-size:12px;
+  font-weight:600;
+  cursor:default;
+  user-select:none
+}
+.ui-select-group+.ui-select-option,
+.ui-select-option+.ui-select-group,
+.ui-select-group+.ui-select-group{margin-top:4px;border-top:1px solid var(--line-soft)}
+.ui-select-empty{padding:12px 10px;color:var(--muted);font-size:13px;text-align:center}
+
+/* multiple: checkbox-like marks */
+.ui-select-pop--multiple .ui-select-option[aria-selected="true"]{color:var(--text);font-weight:400}
+.ui-select-box{
+  flex:0 0 16px;
+  width:16px;height:16px;
+  display:grid;
+  place-items:center;
+  border:1px solid var(--line-strong);
+  border-radius:var(--radius-sm);
+  background:var(--surface);
+  color:var(--on-primary);
+  transition:background-color var(--dur-fast),border-color var(--dur-fast)
+}
+.ui-select-box .ui-select-check{flex-basis:12px;width:12px;height:12px;stroke-width:3}
+.ui-select-option[aria-selected="true"] .ui-select-box{background:var(--primary);border-color:var(--primary)}
+
+@media(pointer:coarse){
+  button.ui-select.ui-select--filled{height:36px;min-height:36px}
+  .ui-select-option{min-height:44px}
+  .ui-select-action{height:36px}
+  .ui-select-pop .ui-select-search{min-height:40px}
+}
+@media (prefers-reduced-motion:reduce){
+  .ui-select-pop,.ui-select-pop[data-side="top"]{transition:none;transform:none}
+  .ui-select-chevron,button.ui-select{transition:none}
+}
+</style>
+
+<script>
+/* UiSelect: кастомный выпадающий список поверх нативного <select>.
+   Нативный select остаётся источником истины (value, options, onchange,
+   disabled, selectedOptions) и визуально скрыт; сразу после него стоит
+   кнопка-триггер button.ui-select, список рендерится в портал на body.
+   Пропускаются: select[data-native], select[size], select внутри .re-pop.
+   API: UiSelect.enhance(root), refresh(select), open(select), close(), isOpen(). */
+(function(){
+  if(window.UiSelect){return;}
+  if(!window.HTMLSelectElement||!Object.getOwnPropertyDescriptor){return;}
+
+  var P=HTMLSelectElement.prototype;
+  var VALUE=Object.getOwnPropertyDescriptor(P,'value');
+  var INDEX=Object.getOwnPropertyDescriptor(P,'selectedIndex');
+  var SEARCH_MIN=8;     // поле поиска, если опций больше
+  var TYPE_RESET=700;   // мс — сброс буфера type-ahead
+  var GAP=4,MARGIN=8,MIN_ROOM=120;
+  var ATTRS=['disabled','class','aria-invalid','hidden','style','aria-required','aria-describedby',
+    'aria-label','aria-labelledby','title','data-tip','data-placeholder','data-readonly','multiple',
+    'label','selected','value','required'];
+  var SVG=' viewBox="0 0 24 24" aria-hidden="true" focusable="false"';
+  var CHEVRON='<svg class="ui-select-chevron"'+SVG+'><path d="m6 9 6 6 6-6"/></svg>';
+  var CHECK='<svg class="ui-select-check"'+SVG+'><path d="M20 6 9 17l-5-5"/></svg>';
+
+  var uid=0,instances=[],current=null,portal=null,queued=false,placeQueued=false;
+  /* rAF-батчинг; setTimeout — запасной путь (фоновая вкладка, headless). */
+  function raf(fn){
+    var done=false;
+    function go(){if(!done){done=true;fn();}}
+    if(window.requestAnimationFrame){window.requestAnimationFrame(go);}
+    setTimeout(go,100);
+  }
+
+  /* ---------- утилиты ---------- */
+  function coarse(){try{return window.matchMedia('(pointer:coarse)').matches;}catch(e){return false;}}
+  function visible(n){return !!(n&&n.isConnected&&!n.hidden&&(n.offsetWidth||n.offsetHeight||n.getClientRects().length));}
+  function norm(s){return String(s||'').toLowerCase().replace(/ё/g,'е');}
+  function optText(o){return String(o.label||o.text||'').replace(/\s+/g,' ').trim();}
+  function setText(n,t){if(n.textContent!==t){n.textContent=t;}}
+  function setAttr(n,name,v){
+    if(v===null||v===undefined){if(n.hasAttribute(name)){n.removeAttribute(name);}return;}
+    v=String(v);
+    if(n.getAttribute(name)!==v){n.setAttribute(name,v);}
+  }
+  function focus(n){if(!n){return;}try{n.focus({preventScroll:true});}catch(e){n.focus();}}
+  function fire(s,type){
+    var ev;
+    try{ev=new Event(type,{bubbles:true});}catch(e){ev=document.createEvent('Event');ev.initEvent(type,true,false);}
+    s.dispatchEvent(ev);
+  }
+  function readonly(s){return s.hasAttribute('data-readonly');}
+  function skip(s){
+    return s.hasAttribute('data-native')||s.hasAttribute('size')||!!(s.closest&&s.closest('.re-pop,.ui-select-portal'));
+  }
+  function optDisabled(o){
+    return o.disabled||!!(o.parentNode&&o.parentNode.tagName==='OPTGROUP'&&o.parentNode.disabled);
+  }
+  function ensurePortal(){
+    if(!portal||!portal.isConnected){
+      portal=document.createElement('div');
+      portal.className='ui-select-portal';
+      document.body.appendChild(portal);
+    }
+    return portal;
+  }
+
+  /* ---------- экземпляр ---------- */
+  function create(s){
+    if(!s.parentNode){return null;}
+    var id='uis-'+(++uid);
+    var btn=document.createElement('button');
+    btn.type='button';
+    btn.id=id+'-btn';
+    btn.className='ui-select';
+    btn.setAttribute('aria-haspopup','listbox');
+    btn.setAttribute('aria-expanded','false');
+    btn.setAttribute('aria-controls',id+'-list');
+    btn.innerHTML='<span class="ui-select-value" id="'+id+'-val"></span>'+
+      '<span class="ui-select-badge" id="'+id+'-cnt" hidden></span>'+CHEVRON;
+    var inst={
+      id:id,select:s,btn:btn,valueEl:btn.children[0],badge:btn.children[1],
+      pop:null,list:null,search:null,empty:null,items:[],active:-1,query:'',
+      ta:{buf:'',time:0},labelIds:null,ariaLabel:null,
+      saved:{tabindex:s.getAttribute('tabindex'),hidden:s.getAttribute('aria-hidden')}
+    };
+    s.__uiSelect=inst;
+    s.setAttribute('data-ui-select','');
+    s.setAttribute('tabindex','-1');
+    s.setAttribute('aria-hidden','true');
+    s.parentNode.insertBefore(btn,s.nextSibling);
+
+    // Программные s.value=… / s.selectedIndex=… сразу обновляют триггер.
+    Object.defineProperty(s,'value',{configurable:true,
+      get:function(){return VALUE.get.call(this);},
+      set:function(v){VALUE.set.call(this,v);sync(inst);}});
+    Object.defineProperty(s,'selectedIndex',{configurable:true,
+      get:function(){return INDEX.get.call(this);},
+      set:function(v){INDEX.set.call(this,v);sync(inst);}});
+
+    inst.onSync=function(){sync(inst);};
+    // Фокус на скрытый select (label, showFieldErrors, data-autofocus) уходит на триггер.
+    inst.onFocus=function(){if(!btn.disabled&&!btn.hidden){focus(btn);}};
+    s.addEventListener('change',inst.onSync);
+    s.addEventListener('input',inst.onSync);
+    s.addEventListener('focus',inst.onFocus);
+
+    btn.addEventListener('click',function(){
+      if(current===inst){close(true);}else{open(inst);}
+    });
+    btn.addEventListener('keydown',function(e){onTriggerKey(inst,e);});
+
+    inst.mo=new MutationObserver(function(records){
+      sync(inst);
+      if(current!==inst){return;}
+      if(inst.btn.disabled||inst.btn.hidden||readonly(s)){close('auto');return;}
+      var rebuild=false;
+      for(var i=0;i<records.length;i++){
+        var r=records[i];
+        if(r.type!=='attributes'||r.target!==s||r.attributeName==='multiple'){rebuild=true;break;}
+      }
+      if(rebuild){renderOptions(inst,true);}
+      place();
+    });
+    inst.mo.observe(s,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:ATTRS});
+    instances.push(inst);
+    sync(inst);
+    return inst;
+  }
+
+  function destroy(inst){
+    if(current===inst){close(false);}
+    var s=inst.select;
+    inst.mo.disconnect();
+    s.removeEventListener('change',inst.onSync);
+    s.removeEventListener('input',inst.onSync);
+    s.removeEventListener('focus',inst.onFocus);
+    delete s.value;
+    delete s.selectedIndex;
+    if(inst.saved.tabindex===null){s.removeAttribute('tabindex');}else{s.setAttribute('tabindex',inst.saved.tabindex);}
+    if(inst.saved.hidden===null){s.removeAttribute('aria-hidden');}else{s.setAttribute('aria-hidden',inst.saved.hidden);}
+    s.removeAttribute('data-ui-select');
+    if(inst.btn.parentNode){inst.btn.parentNode.removeChild(inst.btn);}
+    s.__uiSelect=null;
+    var i=instances.indexOf(inst);
+    if(i>=0){instances.splice(i,1);}
+  }
+
+  function display(inst){
+    var s=inst.select;
+    if(s.multiple){
+      var sel=[];
+      for(var i=0;i<s.options.length;i++){if(s.options[i].selected){sel.push(s.options[i]);}}
+      if(!sel.length){return {text:s.getAttribute('data-placeholder')||'Все',empty:true,more:0};}
+      return {text:optText(sel[0]),empty:false,more:sel.length-1};
+    }
+    var idx=INDEX.get.call(s);
+    var o=idx>=0?s.options[idx]:null;
+    if(!o){return {text:s.getAttribute('data-placeholder')||'',empty:true,more:0};}
+    return {text:optText(o),empty:VALUE.get.call(s)==='',more:0};
+  }
+
+  /* Вид триггера = состояние нативного select. Пишет в DOM только изменения. */
+  function sync(inst){
+    var s=inst.select,b=inst.btn;
+    var dis=s.disabled||(s.matches?s.matches(':disabled'):false);
+    if(b.disabled!==dis){b.disabled=dis;}
+    var hide=!!(s.hidden||s.style.display==='none');
+    if(b.hidden!==hide){b.hidden=hide;}
+    var ro=readonly(s);
+    var d=display(inst);
+
+    var cls=['ui-select'];
+    if(s.multiple){cls.push('ui-select--multiple');}
+    if(s.classList.contains('filter-input')||s.closest('tr.filter-row')){cls.push('ui-select--filled');}
+    if(s.classList.contains('page-size')||s.closest('.table-pagination')){cls.push('ui-select--small');}
+    if(s.closest('.select-with-brand')){cls.push('ui-select--brand');}
+    if(ro){cls.push('ui-select--readonly');}
+    if(d.empty){cls.push('ui-select--empty');}
+    for(var i=0;i<s.classList.length;i++){
+      if(cls.indexOf(s.classList[i])<0){cls.push(s.classList[i]);}
+    }
+    var name=cls.join(' ');
+    if(b.className!==name){b.className=name;}
+
+    setAttr(b,'aria-invalid',s.getAttribute('aria-invalid'));
+    setAttr(b,'aria-required',s.getAttribute('aria-required')||(s.required?'true':null));
+    setAttr(b,'aria-describedby',s.getAttribute('aria-describedby'));
+    setAttr(b,'title',s.getAttribute('title'));
+    setAttr(b,'data-tip',s.getAttribute('data-tip'));
+    setAttr(b,'aria-disabled',ro?'true':null);
+    setText(inst.valueEl,d.text||'\u00a0');
+    setText(inst.badge,d.more?'+'+d.more:'');
+    if(inst.badge.hidden!==!d.more){inst.badge.hidden=!d.more;}
+    syncLabel(inst,d);
+  }
+
+  /* Имя триггера: label + значение через aria-labelledby, иначе aria-label от select. */
+  function syncLabel(inst,d){
+    var s=inst.select,b=inst.btn,ids=[];
+    var labels=s.labels||[];
+    for(var i=0;i<labels.length;i++){
+      if(!labels[i].id){labels[i].id=inst.id+'-lbl'+(i||'');}
+      ids.push(labels[i].id);
+    }
+    if(!ids.length&&s.getAttribute('aria-labelledby')){
+      ids=s.getAttribute('aria-labelledby').split(/\s+/).filter(Boolean);
+    }
+    var al=s.getAttribute('aria-label');
+    inst.labelIds=ids.length?ids.join(' '):null;
+    inst.ariaLabel=ids.length?null:al;
+    if(ids.length){
+      setAttr(b,'aria-labelledby',ids.concat([inst.id+'-val',inst.id+'-cnt']).join(' '));
+      setAttr(b,'aria-label',null);
+    }else if(al){
+      setAttr(b,'aria-labelledby',null);
+      setAttr(b,'aria-label',al+': '+d.text+(d.more?' +'+d.more:''));
+    }else{
+      setAttr(b,'aria-labelledby',null);
+      setAttr(b,'aria-label',null);
+    }
+  }
+
+  /* ---------- открытие / закрытие ---------- */
+  function open(inst,key){
+    if(!inst||!inst.select.isConnected){return;}
+    if(current===inst){return;}
+    sync(inst);
+    var s=inst.select,b=inst.btn;
+    if(b.disabled||readonly(s)||!visible(b)){return;}
+    close(false);
+    current=inst;
+
+    var multi=s.multiple;
+    var hasSearch=s.options.length>SEARCH_MIN;
+    var listId=inst.id+'-list';
+    var pop=document.createElement('div');
+    pop.className='ui-select-pop'+(multi?' ui-select-pop--multiple':'');
+    pop.id=inst.id+'-pop';
+    pop.innerHTML=
+      (hasSearch?'<div class="ui-select-search-wrap"><input type="text" class="ui-select-search" role="combobox" '+
+        'aria-expanded="true" aria-autocomplete="list" aria-controls="'+listId+'" aria-label="Поиск по списку" '+
+        'placeholder="Поиск" autocomplete="off" spellcheck="false"></div>':'')+
+      (multi?'<div class="ui-select-actions"><button type="button" class="ui-select-action" data-act="all" tabindex="-1">Выбрать все</button>'+
+        '<button type="button" class="ui-select-action" data-act="none" tabindex="-1">Сбросить</button></div>':'')+
+      '<div class="ui-select-list" role="listbox" tabindex="-1" id="'+listId+'"'+(multi?' aria-multiselectable="true"':'')+'></div>'+
+      '<div class="ui-select-empty" hidden>Ничего не найдено</div>';
+    inst.pop=pop;
+    inst.list=pop.querySelector('.ui-select-list');
+    inst.search=pop.querySelector('.ui-select-search');
+    inst.empty=pop.querySelector('.ui-select-empty');
+    inst.query='';
+    if(inst.labelIds){inst.list.setAttribute('aria-labelledby',inst.labelIds);}
+    else{inst.list.setAttribute('aria-label',inst.ariaLabel||display(inst).text||'Список');}
+    bindPop(inst);
+    ensurePortal().appendChild(pop);
+    renderOptions(inst,false);
+    b.setAttribute('aria-expanded','true');
+    place();
+    raf(function(){if(current===inst){pop.classList.add('is-open');}});
+    focus(inst.search&&!coarse()?inst.search:inst.list);
+    if(key){typeKey(inst,key);}
+  }
+
+  /* back: true — вернуть фокус на триггер; 'auto' — только если фокус был в списке. */
+  function close(back){
+    var inst=current;
+    if(!inst){return;}
+    current=null;
+    var pop=inst.pop;
+    var hadFocus=!!(pop&&pop.contains(document.activeElement));
+    inst.btn.setAttribute('aria-expanded','false');
+    if((back===true||(back==='auto'&&hadFocus))&&visible(inst.btn)&&!inst.btn.disabled){focus(inst.btn);}
+    if(pop&&pop.parentNode){pop.parentNode.removeChild(pop);}
+    inst.pop=inst.list=inst.search=inst.empty=null;
+    inst.items=[];
+    inst.active=-1;
+    inst.query='';
+  }
+
+  /* ---------- список ---------- */
+  function renderOptions(inst,keep){
+    var s=inst.select,list=inst.list;
+    var prev=keep&&inst.items[inst.active]?inst.items[inst.active].opt:null;
+    var scroll=keep?list.scrollTop:0;
+    list.textContent='';
+    inst.items=[];
+    var gid=0,kids=s.children;
+    for(var i=0;i<kids.length;i++){
+      var c=kids[i];
+      if(c.tagName==='OPTGROUP'){
+        if(c.hidden){continue;}
+        var g=document.createElement('div');
+        g.className='ui-select-group';
+        g.setAttribute('role','group');
+        var h=document.createElement('div');
+        h.className='ui-select-group-label';
+        h.id=inst.id+'-g'+(gid++);
+        h.setAttribute('role','presentation');
+        h.textContent=c.label||'';
+        g.setAttribute('aria-labelledby',h.id);
+        g.appendChild(h);
+        for(var j=0;j<c.children.length;j++){
+          if(c.children[j].tagName==='OPTION'){addOption(inst,c.children[j],g);}
+        }
+        list.appendChild(g);
+      }else if(c.tagName==='OPTION'){
+        addOption(inst,c,list);
+      }
+    }
+    applyFilter(inst);
+    var k=-1,n;
+    for(n=0;n<inst.items.length;n++){if(prev&&inst.items[n].opt===prev){k=n;break;}}
+    if(k<0||!navigable(inst,k)){
+      k=-1;
+      for(n=0;n<inst.items.length;n++){if(inst.items[n].opt.selected&&navigable(inst,n)){k=n;break;}}
+    }
+    if(k<0){k=firstNav(inst);}
+    if(keep){list.scrollTop=scroll;}
+    setActive(inst,k,!keep);
+  }
+
+  function addOption(inst,o,parent){
+    if(o.hidden){return;}
+    var k=inst.items.length;
+    var row=document.createElement('div');
+    row.className='ui-select-option';
+    row.id=inst.id+'-o'+k;
+    row.setAttribute('role','option');
+    row.setAttribute('data-k',String(k));
+    row.innerHTML=inst.select.multiple?
+      '<span class="ui-select-box">'+CHECK+'</span><span class="ui-select-text"></span>':
+      '<span class="ui-select-text"></span>'+CHECK;
+    var text=optText(o);
+    row.querySelector('.ui-select-text').textContent=text||'\u00a0';   // только текст, без HTML
+    parent.appendChild(row);
+    var it={opt:o,row:row,text:norm(text),disabled:false};
+    inst.items.push(it);
+    paintRow(it);
+  }
+
+  function paintRow(it){
+    it.disabled=optDisabled(it.opt);
+    setAttr(it.row,'aria-selected',it.opt.selected?'true':'false');
+    setAttr(it.row,'aria-disabled',it.disabled?'true':null);
+  }
+
+  function applyFilter(inst){
+    var q=norm(inst.query).trim(),any=false;
+    for(var i=0;i<inst.items.length;i++){
+      var it=inst.items[i],hit=!q||it.text.indexOf(q)>=0;
+      if(it.row.hidden===hit){it.row.hidden=!hit;}
+      if(hit){any=true;}
+    }
+    var groups=inst.list.querySelectorAll('.ui-select-group');
+    for(i=0;i<groups.length;i++){
+      groups[i].hidden=!groups[i].querySelector('.ui-select-option:not([hidden])');
+    }
+    inst.empty.hidden=any;
+  }
+
+  function navigable(inst,k){var it=inst.items[k];return !!(it&&!it.row.hidden&&!it.disabled);}
+  function navList(inst){
+    var out=[];
+    for(var k=0;k<inst.items.length;k++){if(navigable(inst,k)){out.push(k);}}
+    return out;
+  }
+  function firstNav(inst){var nav=navList(inst);return nav.length?nav[0]:-1;}
+
+  function setActive(inst,k,scroll){
+    var prev=inst.items[inst.active];
+    if(prev){prev.row.classList.remove('is-active');}
+    inst.active=k;
+    var it=inst.items[k];
+    var id=it?it.row.id:null;
+    if(it){
+      it.row.classList.add('is-active');
+      if(scroll){reveal(inst.list,it.row);}
+    }
+    setAttr(inst.list,'aria-activedescendant',id);
+    if(inst.search){setAttr(inst.search,'aria-activedescendant',id);}
+  }
+
+  function reveal(list,row){
+    var top=row.offsetTop,bottom=top+row.offsetHeight;
+    if(top<list.scrollTop){list.scrollTop=Math.max(0,top-4);}
+    else if(bottom>list.scrollTop+list.clientHeight){list.scrollTop=bottom-list.clientHeight+4;}
+  }
+
+  function pageSize(inst){
+    var nav=navList(inst);
+    var h=nav.length?inst.items[nav[0]].row.offsetHeight:36;
+    return Math.max(1,Math.floor(inst.list.clientHeight/(h||36))-1);
+  }
+
+  function move(inst,delta){
+    var nav=navList(inst);
+    if(!nav.length){return;}
+    var pos=nav.indexOf(inst.active),next;
+    if(pos<0){next=delta>0?0:nav.length-1;}
+    else{next=Math.max(0,Math.min(nav.length-1,pos+delta));}
+    setActive(inst,nav[next],true);
+  }
+
+  /* Type-ahead: буквы переходят к следующей опции, начинающейся с набранного. */
+  function typeKey(inst,ch){
+    if(inst.search){
+      if(document.activeElement!==inst.search){focus(inst.search);}
+      inst.search.value+=ch;
+      onSearch(inst);
+      return;
+    }
+    var now=Date.now(),ta=inst.ta;
+    ta.buf=now-ta.time>TYPE_RESET?ch:ta.buf+ch;
+    ta.time=now;
+    var buf=norm(ta.buf);
+    var nav=navList(inst);
+    if(!nav.length){return;}
+    var start=Math.max(0,nav.indexOf(inst.active));
+    function find(prefix,inclusive){
+      for(var i=inclusive?0:1;i<=nav.length;i++){
+        var k=nav[(start+i)%nav.length];
+        if(inst.items[k].text.indexOf(prefix)===0){return k;}
+      }
+      return -1;
+    }
+    var hit=find(buf,buf.length>1);
+    if(hit<0&&/^(.)\1*$/.test(buf)){hit=find(buf.charAt(0),false);}
+    if(hit>=0){setActive(inst,hit,true);}
+  }
+
+  function onSearch(inst){
+    inst.query=inst.search.value;
+    applyFilter(inst);
+    inst.list.scrollTop=0;
+    setActive(inst,firstNav(inst),true);
+  }
+
+  /* ---------- выбор ---------- */
+  function choose(inst,k){
+    var it=inst.items[k];
+    if(!it||it.disabled){return;}
+    var s=inst.select;
+    if(s.multiple){
+      it.opt.selected=!it.opt.selected;
+      paintRow(it);
+      setActive(inst,k,false);
+      sync(inst);
+      place();
+      fire(s,'input');
+      fire(s,'change');
+      return;
+    }
+    var before=INDEX.get.call(s);
+    it.opt.selected=true;
+    var changed=INDEX.get.call(s)!==before;
+    sync(inst);
+    close(true);
+    if(changed){fire(s,'input');fire(s,'change');}
+  }
+
+  /* «Выбрать все» — видимые (с учётом поиска) доступные опции; «Сбросить» — все. */
+  function setAll(inst,on){
+    var s=inst.select,changed=false;
+    for(var i=0;i<inst.items.length;i++){
+      var it=inst.items[i];
+      if((on&&it.row.hidden)||it.disabled||it.opt.selected===on){continue;}
+      it.opt.selected=on;
+      paintRow(it);
+      changed=true;
+    }
+    if(!changed){return;}
+    sync(inst);
+    place();
+    fire(s,'input');
+    fire(s,'change');
+  }
+
+  function allSelected(inst){
+    var nav=navList(inst);
+    for(var i=0;i<nav.length;i++){if(!inst.items[nav[i]].opt.selected){return false;}}
+    return nav.length>0;
+  }
+
+  /* ---------- события ---------- */
+  function onTriggerKey(inst,e){
+    if(current===inst){return;}
+    var k=e.key;
+    // Enter / Space — штатный click кнопки.
+    if(k==='ArrowDown'||k==='ArrowUp'){e.preventDefault();open(inst);return;}
+    if(k&&k.length===1&&k!==' '&&!e.ctrlKey&&!e.metaKey&&!e.altKey){
+      if(inst.btn.disabled||readonly(inst.select)){return;}
+      e.preventDefault();
+      open(inst,k);
+    }
+  }
+
+  function onPopKey(inst,e){
+    var k=e.key,inSearch=!!inst.search&&e.target===inst.search;
+    if(current!==inst){return;}
+    inst.pop.classList.add('is-kbd');
+    switch(k){
+      case 'ArrowDown':e.preventDefault();move(inst,1);return;
+      case 'ArrowUp':
+        e.preventDefault();
+        if(e.altKey){close(true);return;}
+        move(inst,-1);return;
+      case 'Home':case 'End':
+        if(inSearch&&inst.search.value){return;}
+        e.preventDefault();move(inst,k==='Home'?-Infinity:Infinity);return;
+      case 'PageDown':case 'PageUp':
+        e.preventDefault();move(inst,(k==='PageDown'?1:-1)*pageSize(inst));return;
+      case 'Enter':
+        e.preventDefault();e.stopPropagation();
+        if(inst.active>=0){choose(inst,inst.active);}
+        return;
+      case ' ':case 'Spacebar':
+        if(inSearch){return;}
+        e.preventDefault();
+        if(inst.active>=0){choose(inst,inst.active);}
+        return;
+      case 'Escape':case 'Esc':
+        // Не даём модалке/дроверу закрыться вместе со списком.
+        e.preventDefault();e.stopPropagation();
+        close(true);
+        return;
+      case 'Tab':
+        // Фокус на триггер, дальше отрабатывает штатный Tab (и ловушка модалки).
+        close(true);
+        return;
+    }
+    if(inst.select.multiple&&!inSearch&&(e.ctrlKey||e.metaKey)&&/^[aф]$/i.test(k)){
+      e.preventDefault();
+      setAll(inst,!allSelected(inst));
+      return;
+    }
+    if(!inSearch&&k&&k.length===1&&!e.ctrlKey&&!e.metaKey&&!e.altKey){
+      e.preventDefault();
+      typeKey(inst,k);
+    }
+  }
+
+  function bindPop(inst){
+    var pop=inst.pop;
+    // Клик по опции не уводит фокус из поиска/списка.
+    pop.addEventListener('mousedown',function(e){
+      if(e.target.closest('.ui-select-option,.ui-select-action,.ui-select-group-label,.ui-select-empty')){e.preventDefault();}
+    });
+    pop.addEventListener('click',function(e){
+      var act=e.target.closest('.ui-select-action');
+      if(act){setAll(inst,act.getAttribute('data-act')==='all');return;}
+      var row=e.target.closest('.ui-select-option');
+      if(row){choose(inst,+row.getAttribute('data-k'));}
+    });
+    pop.addEventListener('pointermove',function(e){
+      pop.classList.remove('is-kbd');
+      var row=e.target.closest&&e.target.closest('.ui-select-option');
+      if(!row||row.hasAttribute('aria-disabled')){return;}
+      var k=+row.getAttribute('data-k');
+      if(k!==inst.active){setActive(inst,k,false);}
+    });
+    pop.addEventListener('keydown',function(e){onPopKey(inst,e);});
+    pop.addEventListener('focusout',function(e){
+      var to=e.relatedTarget;
+      if(current===inst&&to&&!pop.contains(to)&&to!==inst.btn){close(false);}
+    });
+    if(inst.search){inst.search.addEventListener('input',function(){onSearch(inst);});}
+  }
+
+  /* ---------- позиционирование ---------- */
+  function queuePlace(){
+    if(placeQueued){return;}
+    placeQueued=true;
+    raf(function(){placeQueued=false;place();});
+  }
+
+  function place(){
+    var inst=current;
+    if(!inst||!inst.pop){return;}
+    var b=inst.btn,pop=inst.pop;
+    if(!visible(b)){close(false);return;}
+    var r=b.getBoundingClientRect();
+    var de=document.documentElement;
+    var vw=de.clientWidth||window.innerWidth,vh=de.clientHeight||window.innerHeight;
+    // Триггер уехал за пределы экрана (прокрутка) — закрываем.
+    if(r.bottom<0||r.top>vh||r.right<0||r.left>vw){close(false);return;}
+    pop.style.minWidth=Math.round(r.width)+'px';
+    pop.style.maxHeight='none';
+    var h=pop.offsetHeight,w=pop.offsetWidth;
+    var below=vh-r.bottom-GAP-MARGIN,above=r.top-GAP-MARGIN;
+    var up=h>below&&above>below;
+    var room=Math.max(up?above:below,MIN_ROOM);
+    var ph=Math.min(h,room);
+    if(h>room){pop.style.maxHeight=Math.floor(room)+'px';}
+    var top=up?r.top-GAP-ph:r.bottom+GAP;
+    var left=Math.max(MARGIN,Math.min(r.left,vw-MARGIN-w));
+    pop.style.left=Math.round(left)+'px';
+    pop.style.top=Math.round(top)+'px';
+    pop.setAttribute('data-side',up?'top':'bottom');
+  }
+
+  /* ---------- сканирование DOM ---------- */
+  function enhance(root){
+    root=root||document;
+    var list;
+    if(root.nodeType===1&&root.tagName==='SELECT'){list=[root];}
+    else if(root.querySelectorAll){list=root.querySelectorAll('select');}
+    else{return;}
+    for(var i=0;i<list.length;i++){
+      var s=list[i];
+      if(s.__uiSelect||!s.isConnected||skip(s)){continue;}
+      create(s);
+    }
+  }
+
+  function batch(){
+    queued=false;
+    for(var i=instances.length-1;i>=0;i--){
+      var inst=instances[i],s=inst.select;
+      if(!s.isConnected||skip(s)){destroy(inst);continue;}
+      if(s.nextSibling!==inst.btn){s.parentNode.insertBefore(inst.btn,s.nextSibling);}
+      sync(inst);   // контекст (filter-row, label for=) мог поменяться
+    }
+    if(current&&!visible(current.btn)){close(false);}
+    enhance(document);
+  }
+
+  function queueBatch(){
+    if(queued){return;}
+    queued=true;
+    raf(batch);
+  }
+
+  function onMutations(records){
+    for(var i=0;i<records.length;i++){
+      var t=records[i].target;
+      if(portal&&(t===portal||portal.contains(t))){continue;}
+      if(t.nodeType===1&&t.closest&&t.closest('button.ui-select')){continue;}
+      queueBatch();
+      return;
+    }
+  }
+
+  function instOf(select){
+    if(typeof select==='string'){select=document.getElementById(select);}
+    return select&&select.__uiSelect||null;
+  }
+
+  /* ---------- глобальные слушатели ---------- */
+  document.addEventListener('pointerdown',function(e){
+    if(!current){return;}
+    var t=e.target;
+    if(current.pop&&current.pop.contains(t)){return;}
+    if(current.btn.contains(t)){return;}
+    close(false);
+  },true);
+
+  // <label for=select> — фокус на триггер вместо скрытого select.
+  document.addEventListener('click',function(e){
+    var lab=e.target&&e.target.closest?e.target.closest('label'):null;
+    if(!lab){return;}
+    var inst=lab.control&&lab.control.__uiSelect;
+    if(!inst||inst.btn.contains(e.target)){return;}
+    e.preventDefault();
+    if(!inst.btn.disabled&&!inst.btn.hidden){focus(inst.btn);}
+  });
+
+  document.addEventListener('scroll',function(e){
+    if(!current){return;}
+    var t=e.target;
+    if(current.pop&&t&&t.nodeType===1&&current.pop.contains(t)){return;}
+    queuePlace();
+  },true);
+  window.addEventListener('resize',queuePlace);
+  window.addEventListener('blur',function(){close('auto');});
+
+  // form.reset() меняет выбор без событий — пересинхронизируем после сброса.
+  document.addEventListener('reset',function(e){
+    var form=e.target;
+    setTimeout(function(){
+      for(var i=0;i<instances.length;i++){
+        if(form&&form.contains&&form.contains(instances[i].select)){sync(instances[i]);}
+      }
+    },0);
+  },true);
+
+  function init(){
+    enhance(document);
+    if(window.MutationObserver&&document.body){
+      new MutationObserver(onMutations).observe(document.body,{
+        childList:true,subtree:true,attributes:true,attributeFilter:['for','data-native','size']
+      });
+    }
+  }
+
+  window.UiSelect={
+    enhance:function(root){enhance(root||document);},
+    refresh:function(select){
+      var inst=instOf(select);
+      if(!inst){if(select&&select.nodeType===1){enhance(select);}return;}
+      sync(inst);
+      if(current===inst){renderOptions(inst,true);place();}
+    },
+    open:function(select){
+      var inst=instOf(select);
+      if(!inst&&select&&select.nodeType===1){enhance(select);inst=instOf(select);}
+      open(inst);
+    },
+    close:function(){close('auto');},
+    isOpen:function(select){
+      if(!current){return false;}
+      return select?instOf(select)===current:true;
+    }
+  };
+
+  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}
+  else{init();}
+})();
+</script>

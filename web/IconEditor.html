@@ -1,0 +1,899 @@
+<style>
+/* =====================================================================
+   IconEditor — "upload & fit" modal for source (job board) icons.
+   Markup is created by the script below (#iconEditorModal); every class
+   is prefixed with .ie- to stay out of the way of the rest of the app.
+   ===================================================================== */
+.ie-panel{width:min(648px,100%)}
+.ie-body{
+  display:grid;
+  grid-template-columns:256px minmax(0,1fr);
+  gap:20px 24px;
+  align-items:start
+}
+
+/* ---- left column: stage + zoom ---- */
+.ie-stage-col{display:flex;flex-direction:column;gap:10px;min-width:0}
+.ie-stage-wrap{position:relative;width:100%;max-width:256px;aspect-ratio:1/1}
+.ie-stage-wrap>.ie-drop{
+  position:absolute;inset:0;
+  flex-direction:column;justify-content:center;
+  gap:10px;padding:20px;
+  border-radius:var(--radius-lg);
+  text-align:center
+}
+.ie-drop .file-drop-icon{width:40px;height:40px;border-radius:var(--radius-lg)}
+.ie-drop .file-drop-icon .icon{width:20px;height:20px}
+.ie-drop strong{font-size:14px}
+.ie-drop.is-busy{cursor:progress}
+.ie-drop[hidden]{display:none}
+
+/* Checkerboard built from tokens: shows transparency in both themes. */
+.ie-stage{
+  background-color:var(--surface);
+  background-image:
+    linear-gradient(45deg,var(--line) 25%,transparent 25%,transparent 75%,var(--line) 75%),
+    linear-gradient(45deg,var(--line) 25%,transparent 25%,transparent 75%,var(--line) 75%);
+  background-size:16px 16px;
+  background-position:0 0,8px 8px;
+  position:absolute;inset:0;
+  overflow:hidden;
+  border-radius:var(--radius-lg);
+  box-shadow:inset 0 0 0 1px var(--line);
+  cursor:grab;
+  touch-action:none;
+  user-select:none;
+  -webkit-user-select:none;
+  outline:none;
+  transition:box-shadow var(--dur-fast) var(--ease-out)
+}
+.ie-stage[hidden]{display:none}
+.ie-stage:focus-visible{box-shadow:inset 0 0 0 1px var(--line),var(--focus-ring)}
+.ie-stage.is-grabbing{cursor:grabbing}
+.ie-stage canvas{display:block;width:100%;height:100%;pointer-events:none}
+.ie-stage-wrap.is-dragover>.ie-drop{border-color:var(--primary);background:var(--primary-tint)}
+.ie-stage-wrap.is-dragover>.ie-stage{box-shadow:inset 0 0 0 2px var(--primary)}
+
+.ie-hint{margin:0}
+.ie-hint[hidden],.ie-controls[hidden]{display:none}
+.ie-controls{display:flex;flex-direction:column;gap:8px}
+.ie-range-row{display:flex;align-items:center;gap:10px}
+.ie-range-row>output{
+  flex:0 0 44px;text-align:right;
+  font-size:12px;font-weight:600;color:var(--muted);
+  font-variant-numeric:tabular-nums
+}
+.ie-buttons{display:flex;flex-wrap:wrap;gap:6px}
+
+/* Native range, reset from the underline-input baseline. */
+.ie-panel input[type=range]{
+  flex:1 1 auto;
+  width:100%;height:24px;min-height:0;
+  margin:0;padding:0;
+  border:0;border-radius:var(--radius-sm);
+  background:transparent;box-shadow:none;
+  accent-color:var(--primary);
+  cursor:pointer
+}
+.ie-panel input[type=range]:focus{background:transparent;box-shadow:none}
+.ie-panel input[type=range]:focus-visible{outline:2px solid var(--primary-ring);outline-offset:2px}
+.ie-panel input[type=range]:disabled{cursor:not-allowed}
+
+.ie-error{margin:0}
+
+/* ---- right column: options + preview ---- */
+.ie-options{
+  display:flex;flex-direction:column;gap:16px;
+  min-width:0;margin:0;padding:0;border:0
+}
+.ie-options:disabled{opacity:.55}
+.ie-options .field{gap:6px}
+.ie-row{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.ie-row>.segmented{margin:0}
+.ie-color{
+  width:32px;height:var(--control-h);min-height:0;
+  padding:3px;
+  border:1px solid var(--line-strong);
+  border-radius:var(--radius);
+  background:var(--surface);
+  cursor:pointer
+}
+.ie-color[hidden]{display:none}
+.ie-color:focus{outline:none}
+.ie-color:focus-visible{box-shadow:var(--focus-ring)}
+.ie-color::-webkit-color-swatch-wrapper{padding:0}
+.ie-color::-webkit-color-swatch{border:0;border-radius:var(--radius-sm)}
+.ie-color::-moz-color-swatch{border:0;border-radius:var(--radius-sm)}
+
+.ie-preview{
+  display:grid;
+  grid-template-columns:max-content max-content;
+  justify-content:start;
+  align-items:center;
+  gap:6px 10px
+}
+.ie-preview-label{font-size:12px;color:var(--muted)}
+.ie-tile,
+.ie-sizes{
+  display:grid;
+  grid-template-columns:repeat(4,40px);
+  justify-items:center;
+  align-items:center;
+  padding:0 6px
+}
+.ie-tile{height:48px;border:1px solid var(--line);border-radius:var(--radius)}
+/* Always-light / always-dark tiles: --knob and --tooltip-bg keep their tone in both themes. */
+.ie-tile-light{background:var(--knob)}
+.ie-tile-dark{background:var(--tooltip-bg)}
+.ie-tile img{display:block;image-rendering:auto}
+.ie-tile img:not([src]){visibility:hidden}
+.ie-sizes{font-size:12px;color:var(--faint);font-variant-numeric:tabular-nums}
+
+@media(max-width:560px){
+  .ie-body{grid-template-columns:minmax(0,1fr)}
+  .ie-stage-wrap{margin:0 auto}
+}
+@media(pointer:coarse){
+  .ie-panel .button-small{height:44px;padding:0 14px}
+  .ie-panel input[type=range]{height:44px}
+  .ie-color{width:44px;height:44px}
+}
+@media(prefers-reduced-motion:reduce){
+  .ie-stage,.ie-drop{transition:none}
+}
+</style>
+
+<script>
+/* IconEditor — загрузка и подгонка иконки источника.
+   IconEditor.open({title, file, src, background, color}) -> Promise<string|null>:
+   PNG data URL 64×64 или null, если окно закрыли без применения. */
+(function(){
+  'use strict';
+  if(window.IconEditor){return;}
+
+  const OUT=64;                         // размер результата, px
+  const STAGE_INSET=24/256;             // отступ рамки внутри сцены (доля)
+  const STAGE_FRAME=208/256;            // размер рамки внутри сцены (доля)
+  const MAX_FILE=2*1024*1024;
+  const MAX_URL=60*1024;
+  const RASTER_MAX=2048;                // максимум стороны растра после загрузки
+  const SVG_SIZE=1024;                  // размер растеризации SVG
+  const SVG_NS='http://www.w3.org/2000/svg';
+  const TYPES=['image/png','image/jpeg','image/svg+xml','image/webp','image/gif'];
+  const EXT_RE=/\.(png|jpe?g|svg|webp|gif)$/i;
+  const ACCEPT='image/png,image/jpeg,image/svg+xml,image/webp,image/gif,.png,.jpg,.jpeg,.svg,.webp,.gif';
+  const RADIUS={square:0,rounded:.2,circle:.5};
+  const SIZES=[16,20,24,32];
+  const DROP_TITLE='Перетащите изображение или выберите файл';
+  const MSG={
+    type:'Этот формат не поддерживается. Выберите PNG, JPEG, SVG, WebP или GIF.',
+    size:'Файл больше 2 МБ. Сожмите изображение или выберите другое.',
+    decode:'Не удалось прочитать изображение. Возможно, файл повреждён — попробуйте другой.',
+    svg:'Не удалось разобрать SVG-файл. Экспортируйте его заново или загрузите PNG.',
+    cors:'Браузер не даёт прочитать это изображение с другого сайта. Скачайте его и загрузите файлом.',
+    drop:'Перетащите файл изображения.',
+    paste:'В буфере обмена нет изображения.',
+    big:'Иконка получилась слишком большой. Упростите изображение или выберите другой файл.',
+    export:'Не удалось сохранить иконку. Попробуйте загрузить файл ещё раз.'
+  };
+
+  const TEMPLATE=
+    '<div class="panel ie-panel">'+
+      '<div class="panel-header">'+
+        '<div>'+
+          '<div class="eyebrow">Источник</div>'+
+          '<h2 data-ie="title">Иконка источника</h2>'+
+        '</div>'+
+        '<div class="header-actions">'+
+          '<button type="button" class="button button-primary" data-ie="apply" disabled><svg class="icon"><use href="#i-check"/></svg><span>Применить</span></button>'+
+          '<button type="button" class="icon-btn" data-ie="cancel" data-modal-close data-tip="Отмена (Esc)" aria-label="Отмена"><svg class="icon"><use href="#i-close"/></svg></button>'+
+        '</div>'+
+      '</div>'+
+      '<div class="panel-body ie-body">'+
+        '<div class="ie-stage-col">'+
+          '<div class="ie-stage-wrap" data-ie="wrap">'+
+            '<label class="file-drop ie-drop" data-ie="drop">'+
+              '<input class="sr-only" type="file" data-ie="file" data-autofocus accept="'+ACCEPT+'" aria-describedby="iconEditorError">'+
+              '<span class="file-drop-icon"><svg class="icon"><use href="#i-upload"/></svg></span>'+
+              '<span>'+
+                '<strong data-ie="dropTitle">'+DROP_TITLE+'</strong>'+
+                '<small>PNG, JPEG, SVG, WebP или GIF до 2 МБ</small>'+
+                '<small>Можно вставить из буфера: Ctrl+V</small>'+
+              '</span>'+
+            '</label>'+
+            '<div class="ie-stage" data-ie="stage" tabindex="0" role="application" aria-roledescription="область кадрирования" aria-label="Кадрирование иконки" aria-describedby="iconEditorHint iconEditorKeys" hidden>'+
+              '<canvas data-ie="canvas" aria-hidden="true"></canvas>'+
+            '</div>'+
+          '</div>'+
+          '<p class="field-hint ie-hint" id="iconEditorHint" data-ie="hint" hidden>Перетащите, чтобы сдвинуть; колёсико или ползунок — масштаб</p>'+
+          '<span class="sr-only" id="iconEditorKeys">Стрелки сдвигают изображение, с Shift — быстрее. Плюс и минус меняют масштаб, ноль — вписать целиком.</span>'+
+          '<div class="ie-controls" data-ie="controls" hidden>'+
+            '<div class="field">'+
+              '<div class="field-header"><label for="iconEditorZoom">Масштаб</label></div>'+
+              '<div class="ie-range-row">'+
+                '<input type="range" id="iconEditorZoom" data-ie="zoom" min="0" max="1000" step="1" value="0">'+
+                '<output for="iconEditorZoom" data-ie="zoomOut">100%</output>'+
+              '</div>'+
+            '</div>'+
+            '<div class="ie-buttons">'+
+              '<button type="button" class="button button-secondary button-small" data-ie="fit">Вписать</button>'+
+              '<button type="button" class="button button-secondary button-small" data-ie="cover">Заполнить</button>'+
+              '<button type="button" class="button button-ghost button-small" data-ie="replace"><svg class="icon"><use href="#i-upload"/></svg><span>Заменить файл</span></button>'+
+            '</div>'+
+          '</div>'+
+          '<p class="field-error ie-error" id="iconEditorError" data-ie="error" role="alert" hidden></p>'+
+          '<input class="sr-only" type="file" data-ie="replaceFile" tabindex="-1" aria-hidden="true" accept="'+ACCEPT+'">'+
+        '</div>'+
+        '<fieldset class="ie-options" data-ie="options" disabled>'+
+          '<legend class="sr-only">Оформление иконки</legend>'+
+          '<div class="field">'+
+            '<span class="field-label" id="iconEditorBgLabel">Фон</span>'+
+            '<div class="ie-row">'+
+              '<div class="segmented" role="radiogroup" aria-labelledby="iconEditorBgLabel">'+
+                '<label class="segmented-option"><input type="radio" name="iconEditorBg" value="transparent"><span>Прозрачный</span></label>'+
+                '<label class="segmented-option"><input type="radio" name="iconEditorBg" value="white"><span>Белый</span></label>'+
+                '<label class="segmented-option"><input type="radio" name="iconEditorBg" value="color"><span>Цвет</span></label>'+
+              '</div>'+
+              '<input type="color" class="ie-color" data-ie="color" aria-label="Цвет фона" hidden>'+
+            '</div>'+
+          '</div>'+
+          '<div class="field">'+
+            '<div class="field-header"><label for="iconEditorPad">Отступ</label></div>'+
+            '<div class="ie-range-row">'+
+              '<input type="range" id="iconEditorPad" data-ie="pad" min="0" max="20" step="1" value="0">'+
+              '<output for="iconEditorPad" data-ie="padOut">0%</output>'+
+            '</div>'+
+          '</div>'+
+          '<div class="field">'+
+            '<span class="field-label" id="iconEditorShapeLabel">Форма</span>'+
+            '<div class="segmented" role="radiogroup" aria-labelledby="iconEditorShapeLabel">'+
+              '<label class="segmented-option"><input type="radio" name="iconEditorShape" value="square"><span>Квадрат</span></label>'+
+              '<label class="segmented-option"><input type="radio" name="iconEditorShape" value="rounded"><span>Скругление</span></label>'+
+              '<label class="segmented-option"><input type="radio" name="iconEditorShape" value="circle"><span>Круг</span></label>'+
+            '</div>'+
+          '</div>'+
+          '<div class="field">'+
+            '<span class="field-label" id="iconEditorPreviewLabel">Предпросмотр</span>'+
+            '<div class="ie-preview" role="group" aria-labelledby="iconEditorPreviewLabel">'+
+              '<span class="ie-preview-label">Светлая тема</span>'+
+              '<div class="ie-tile ie-tile-light" data-ie="tileLight" role="img" aria-label="На светлой теме: 16, 20, 24 и 32 пикселя"></div>'+
+              '<span class="ie-preview-label">Тёмная тема</span>'+
+              '<div class="ie-tile ie-tile-dark" data-ie="tileDark" role="img" aria-label="На тёмной теме: 16, 20, 24 и 32 пикселя"></div>'+
+              '<span aria-hidden="true"></span>'+
+              '<div class="ie-sizes" aria-hidden="true">'+SIZES.map(function(n){return '<span>'+n+'</span>';}).join('')+'</div>'+
+            '</div>'+
+          '</div>'+
+        '</fieldset>'+
+      '</div>'+
+    '</div>';
+
+  let modal=null;
+  const el={};
+  const previews=[];
+  let state=null;
+  let pending=null;
+  let frame=0;
+
+  /* ---------- утилиты ---------- */
+  function clamp(v,min,max){return Math.min(max,Math.max(min,v));}
+  function userError(message){const err=new Error(message);err.userMessage=message;return err;}
+  function makeCanvas(w,h){const c=document.createElement('canvas');c.width=Math.max(1,Math.round(w));c.height=Math.max(1,Math.round(h));return c;}
+  function smooth(ctx){ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';return ctx;}
+  function token(name){return getComputedStyle(modal||document.documentElement).getPropertyValue(name).trim();}
+
+  // Любой CSS-цвет -> #rrggbb (для <input type=color>)
+  function toHex(color){
+    if(!color){return '';}
+    const ctx=makeCanvas(1,1).getContext('2d');
+    ctx.fillStyle='#000000';
+    ctx.fillStyle=color;
+    const v=String(ctx.fillStyle);
+    if(/^#[0-9a-f]{6}$/i.test(v)){return v.toLowerCase();}
+    const m=v.match(/rgba?\(([^)]+)\)/);
+    if(!m){return '';}
+    return '#'+m[1].split(',').slice(0,3).map(function(n){return ('0'+(parseInt(n,10)|0).toString(16)).slice(-2);}).join('');
+  }
+
+  // Пошаговое уменьшение вдвое — чище, чем одним drawImage
+  function downscale(src,sw,sh,tw,th){
+    let cur=src,cw=sw,ch=sh;
+    while(cw/2>=tw&&ch/2>=th){
+      // первый шаг — не больше 4096 по стороне, чтобы не раздувать память
+      const k=cur===src?Math.min(.5,4096/Math.max(cw,ch)):.5;
+      const next=makeCanvas(cw*k,ch*k);
+      smooth(next.getContext('2d')).drawImage(cur,0,0,cw,ch,0,0,next.width,next.height);
+      cur=next;cw=next.width;ch=next.height;
+    }
+    const out=makeCanvas(tw,th);
+    smooth(out.getContext('2d')).drawImage(cur,0,0,cw,ch,0,0,out.width,out.height);
+    return out;
+  }
+
+  function roundRectPath(ctx,x,y,w,h,r){
+    r=Math.min(r,w/2,h/2);
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+    ctx.closePath();
+  }
+
+  /* ---------- загрузка ---------- */
+  function validateFile(file){
+    if(!file){return MSG.decode;}
+    const type=(file.type||'').toLowerCase();
+    const okType=type?TYPES.indexOf(type)>=0:EXT_RE.test(file.name||'');
+    if(!okType){return MSG.type;}
+    if(file.size>MAX_FILE){return MSG.size;}
+    return '';
+  }
+
+  function isSvgBlob(blob){return /svg/i.test(blob.type||'')||/\.svg$/i.test(blob.name||'');}
+
+  function decodeUrl(url,cors){
+    return new Promise(function(resolve,reject){
+      const img=new Image();
+      if(cors){img.crossOrigin='anonymous';}
+      img.decoding='async';
+      img.onload=function(){resolve(img);};
+      img.onerror=function(){reject(userError(MSG.decode));};
+      img.src=url;
+    });
+  }
+
+
+  // SVG: проставляем размеры по viewBox, чтобы растр был чётким
+  function prepareSvg(blob){
+    return blob.text().then(function(text){
+      const parse=function(src){
+        const doc=new DOMParser().parseFromString(src,'image/svg+xml');
+        const root=doc.documentElement;
+        const bad=!root||root.localName!=='svg'||doc.getElementsByTagName('parsererror').length>0;
+        return bad?null:doc;
+      };
+      let doc=parse(text);
+      if(!doc){throw userError(MSG.svg);}
+      if(doc.documentElement.namespaceURI!==SVG_NS){
+        doc=parse(text.replace(/<svg\b/i,'<svg xmlns="'+SVG_NS+'"'));
+        if(!doc||doc.documentElement.namespaceURI!==SVG_NS){throw userError(MSG.svg);}
+      }
+      const root=doc.documentElement;
+      const num=function(v){return v&&!/%/.test(v)?parseFloat(v):NaN;};
+      const vb=(root.getAttribute('viewBox')||'').trim().split(/[\s,]+/).map(Number);
+      const hasVb=vb.length===4&&vb[2]>0&&vb[3]>0;
+      const aw=num(root.getAttribute('width')),ah=num(root.getAttribute('height'));
+      let ratio=0;
+      if(hasVb){ratio=vb[2]/vb[3];}
+      else if(aw>0&&ah>0){ratio=aw/ah;root.setAttribute('viewBox','0 0 '+aw+' '+ah);}
+      if(ratio){
+        root.setAttribute('width',String(ratio>=1?SVG_SIZE:Math.round(SVG_SIZE*ratio)));
+        root.setAttribute('height',String(ratio>=1?Math.round(SVG_SIZE/ratio):SVG_SIZE));
+      }
+      return new Blob([new XMLSerializer().serializeToString(doc)],{type:'image/svg+xml'});
+    });
+  }
+
+  // Любой источник -> canvas (SVG ~1024 px, растр не больше 2048 px)
+  function rasterize(img,isSvg){
+    let nw=img.naturalWidth||img.width||0,nh=img.naturalHeight||img.height||0;
+    if(!nw||!nh){
+      if(!isSvg){throw userError(MSG.decode);}
+      nw=nh=SVG_SIZE;
+    }
+    const k=isSvg?SVG_SIZE/Math.max(nw,nh):Math.min(1,RASTER_MAX/Math.max(nw,nh));
+    const tw=Math.max(1,Math.round(nw*k)),th=Math.max(1,Math.round(nh*k));
+    let canvas;
+    if(k<.5){canvas=downscale(img,nw,nh,tw,th);}
+    else{
+      canvas=makeCanvas(tw,th);
+      smooth(canvas.getContext('2d')).drawImage(img,0,0,tw,th);
+    }
+    try{canvas.getContext('2d').getImageData(0,0,1,1);}catch(e){throw userError(MSG.cors);}
+    return canvas;
+  }
+
+  function loadBlob(blob,validate){
+    if(!state){return;}
+    const err=validate?validateFile(blob):'';
+    if(err){setError(err);return;}
+    const id=++state.loadId;
+    const svg=isSvgBlob(blob);
+    let url='';
+    setBusy(true);
+    (svg?prepareSvg(blob):Promise.resolve(blob))
+      .then(function(b){url=URL.createObjectURL(b);return decodeUrl(url,false);})
+      .then(function(img){
+        if(!state||id!==state.loadId){return;}
+        setImage(rasterize(img,svg));
+      })
+      .catch(function(e){
+        if(state&&id===state.loadId){setError((e&&e.userMessage)||MSG.decode);}
+      })
+      .then(function(){
+        if(url){URL.revokeObjectURL(url);}
+        if(state&&id===state.loadId){setBusy(false);}
+      });
+  }
+
+  function loadSrc(src){
+    if(!state){return;}
+    if(/^(data|blob):/i.test(src)){
+      fetch(src).then(function(r){return r.blob();})
+        .then(function(b){loadBlob(b,false);})
+        .catch(function(){setError(MSG.decode);});
+      return;
+    }
+    const id=++state.loadId;
+    setBusy(true);
+    decodeUrl(src,/^https?:/i.test(src))
+      .then(function(img){
+        if(!state||id!==state.loadId){return;}
+        setImage(rasterize(img,/\.svg(\?|#|$)/i.test(src)));
+      })
+      .catch(function(e){
+        if(state&&id===state.loadId){setError((e&&e.userMessage)||MSG.cors);}
+      })
+      .then(function(){if(state&&id===state.loadId){setBusy(false);}});
+  }
+
+  /* ---------- состояние и геометрия ----------
+     Координаты изображения — в долях области содержимого (рамка минус отступ):
+     x, y — левый верхний угол, s — доля области на 1 пиксель исходника. */
+  function freshState(options){
+    const bg=options.background==='brand'?'color':(options.background==='white'?'white':'transparent');
+    return {
+      img:null,levels:null,w:0,h:0,
+      s:1,x:0,y:0,fitS:1,coverS:1,minS:1,maxS:1,
+      bg:bg,
+      color:toHex(options.color)||toHex(token('--primary'))||'#4f46e5',
+      pad:0,shape:'square',
+      pointers:new Map(),loadId:0
+    };
+  }
+
+  function setImage(canvas){
+    state.img=canvas;
+    state.levels=[canvas];
+    state.w=canvas.width;state.h=canvas.height;
+    state.fitS=Math.min(1/state.w,1/state.h);
+    state.coverS=Math.max(1/state.w,1/state.h);
+    state.minS=state.fitS*.5;
+    state.maxS=Math.max(state.fitS*8,state.coverS*4);
+    setError('');
+    showStage(true);
+    fit();
+    // фокус со скрытой зоны загрузки — на сцену
+    const active=document.activeElement;
+    if(!active||active===document.body||active===el.panel||el.drop.contains(active)){
+      try{el.stage.focus({preventScroll:true});}catch(e){el.stage.focus();}
+    }
+  }
+
+  // Уровень «мип-карты» не меньше нужной ширины
+  function sourceFor(targetW){
+    const levels=state.levels;
+    let i=0;
+    while(levels[i].width/2>=targetW&&levels[i].width>1&&levels[i].height>1){
+      if(!levels[i+1]){
+        const cur=levels[i];
+        const next=makeCanvas(cur.width/2,cur.height/2);
+        smooth(next.getContext('2d')).drawImage(cur,0,0,next.width,next.height);
+        levels[i+1]=next;
+      }
+      i++;
+    }
+    return levels[i];
+  }
+
+  // Хотя бы часть изображения всегда остаётся в рамке
+  function clampPan(){
+    const W=state.w*state.s,H=state.h*state.s;
+    const mx=Math.min(.1,W/2),my=Math.min(.1,H/2);
+    state.x=clamp(state.x,mx-W,1-mx);
+    state.y=clamp(state.y,my-H,1-my);
+  }
+
+  function centerAt(s){
+    state.s=s;
+    state.x=(1-state.w*s)/2;
+    state.y=(1-state.h*s)/2;
+    clampPan();syncZoom();requestRender();
+  }
+  function fit(){if(state&&state.img){centerAt(state.fitS);}}
+  function cover(){if(state&&state.img){centerAt(state.coverS);}}
+
+  // Масштаб вокруг точки (px, py) в координатах содержимого
+  function zoomTo(ns,px,py){
+    if(!state||!state.img){return;}
+    ns=clamp(ns,state.minS,state.maxS);
+    if(px==null){px=.5;py=.5;}
+    const k=ns/state.s;
+    state.x=px-(px-state.x)*k;
+    state.y=py-(py-state.y)*k;
+    state.s=ns;
+    clampPan();syncZoom();requestRender();
+  }
+
+  function panBy(dx,dy){
+    if(!state||!state.img){return;}
+    state.x+=dx;state.y+=dy;
+    clampPan();requestRender();
+  }
+
+  function syncZoom(){
+    const span=Math.log(state.maxS/state.minS)||1;
+    el.zoom.value=String(Math.round(1000*Math.log(state.s/state.minS)/span));
+    const pct=Math.round(state.s/state.fitS*100)+'%';
+    el.zoomOut.textContent=pct;
+    el.zoom.setAttribute('aria-valuetext',pct+' от размера «Вписать»');
+  }
+
+  // Экранная точка -> координаты области содержимого
+  function toContent(clientX,clientY){
+    const r=el.canvas.getBoundingClientRect();
+    const frameSize=r.width*STAGE_FRAME;
+    const size=frameSize*(1-2*state.pad)||1;
+    const ox=r.left+r.width*STAGE_INSET+frameSize*state.pad;
+    const oy=r.top+r.height*STAGE_INSET+frameSize*state.pad;
+    return {x:(clientX-ox)/size,y:(clientY-oy)/size,size:size};
+  }
+
+  /* ---------- отрисовка ---------- */
+  function shapePath(ctx,x,y,size){
+    ctx.beginPath();
+    const r=size*RADIUS[state.shape];
+    if(r>0){roundRectPath(ctx,x,y,size,size,r);}else{ctx.rect(x,y,size,size);}
+  }
+
+  function bgColor(){
+    if(state.bg==='white'){return '#ffffff';}
+    if(state.bg==='color'){return state.color;}
+    return '';
+  }
+
+  // ox, oy, size — рамка итоговой иконки на холсте; stage — режим сцены
+  function compose(ctx,ox,oy,size,stage){
+    const pad=size*state.pad;
+    const cx=ox+pad,cy=oy+pad,cs=size-2*pad;
+    const dw=state.w*state.s*cs,dh=state.h*state.s*cs;
+    const dx=cx+state.x*cs,dy=cy+state.y*cs;
+    const src=sourceFor(dw);
+    const fill=bgColor();
+    smooth(ctx);
+    if(!stage){
+      ctx.save();
+      shapePath(ctx,ox,oy,size);
+      ctx.clip();
+      if(fill){ctx.fillStyle=fill;ctx.fillRect(ox,oy,size,size);}
+      ctx.beginPath();ctx.rect(cx,cy,cs,cs);ctx.clip();
+      ctx.drawImage(src,0,0,src.width,src.height,dx,dy,dw,dh);
+      ctx.restore();
+      return;
+    }
+    const W=ctx.canvas.width,H=ctx.canvas.height;
+    const dpr=W/(el.canvas.clientWidth||W);
+    ctx.clearRect(0,0,W,H);
+    // всё изображение, вне формы — под вуалью
+    ctx.drawImage(src,0,0,src.width,src.height,dx,dy,dw,dh);
+    ctx.save();
+    shapePath(ctx,ox,oy,size);
+    ctx.rect(0,0,W,H);
+    ctx.fillStyle=token('--veil')||'rgba(255,255,255,.6)';
+    ctx.fill('evenodd');
+    ctx.restore();
+    // внутри формы — ровно то, что попадёт в результат
+    ctx.save();
+    shapePath(ctx,ox,oy,size);
+    ctx.clip();
+    ctx.clearRect(ox,oy,size,size);
+    if(fill){ctx.fillStyle=fill;ctx.fillRect(ox,oy,size,size);}
+    ctx.beginPath();ctx.rect(cx,cy,cs,cs);ctx.clip();
+    ctx.drawImage(src,0,0,src.width,src.height,dx,dy,dw,dh);
+    ctx.restore();
+    // пунктир области содержимого при отступе
+    if(pad>0){
+      ctx.save();
+      ctx.setLineDash([4*dpr,3*dpr]);
+      ctx.lineWidth=dpr;
+      ctx.strokeStyle=token('--primary-border')||token('--primary');
+      ctx.strokeRect(cx+.5*dpr,cy+.5*dpr,cs-dpr,cs-dpr);
+      ctx.restore();
+    }
+    // контур формы
+    ctx.save();
+    ctx.lineWidth=1.5*dpr;
+    ctx.strokeStyle=token('--primary');
+    shapePath(ctx,ox-.75*dpr,oy-.75*dpr,size+1.5*dpr);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Итог: рисуем в 2× и уменьшаем — ровнее края формы
+  function renderOutput(){
+    const big=makeCanvas(OUT*2,OUT*2);
+    compose(big.getContext('2d'),0,0,OUT*2,false);
+    const out=makeCanvas(OUT,OUT);
+    smooth(out.getContext('2d')).drawImage(big,0,0,OUT,OUT);
+    return out;
+  }
+
+  function renderStage(){
+    const c=el.canvas;
+    const css=c.clientWidth;
+    if(!css){return;}
+    const dpr=Math.min(3,window.devicePixelRatio||1);
+    const px=Math.round(css*dpr);
+    if(c.width!==px||c.height!==px){c.width=px;c.height=px;}
+    compose(c.getContext('2d'),px*STAGE_INSET,px*STAGE_INSET,px*STAGE_FRAME,true);
+  }
+
+  function renderPreview(){
+    let url='';
+    if(state&&state.img){
+      try{url=renderOutput().toDataURL('image/png');}catch(e){url='';}
+    }
+    previews.forEach(function(img){
+      if(url){img.src=url;}else{img.removeAttribute('src');}
+    });
+  }
+
+  function requestRender(){
+    if(frame){return;}
+    frame=(window.requestAnimationFrame||setTimeout)(function(){
+      frame=0;
+      if(!state||!state.img||!modal.classList.contains('open')){return;}
+      renderStage();
+      renderPreview();
+    });
+  }
+
+  /* ---------- интерфейс ---------- */
+  function setError(message){
+    el.error.textContent=message||'';
+    el.error.hidden=!message;
+  }
+
+  function setBusy(busy){
+    el.drop.classList.toggle('is-busy',busy);
+    el.wrap.setAttribute('aria-busy',busy?'true':'false');
+    el.dropTitle.textContent=busy?'Загрузка…':DROP_TITLE;
+  }
+
+  function showStage(loaded){
+    el.drop.hidden=loaded;
+    el.stage.hidden=!loaded;
+    el.hint.hidden=!loaded;
+    el.controls.hidden=!loaded;
+    el.options.disabled=!loaded;
+    el.apply.disabled=!loaded;
+    // начальный фокус для UiKit: зона загрузки или сцена
+    el.file.toggleAttribute('data-autofocus',!loaded);
+    el.stage.toggleAttribute('data-autofocus',loaded);
+  }
+
+  function syncOptions(){
+    modal.querySelectorAll('input[name="iconEditorBg"]').forEach(function(r){r.checked=r.value===state.bg;});
+    modal.querySelectorAll('input[name="iconEditorShape"]').forEach(function(r){r.checked=r.value===state.shape;});
+    el.color.value=state.color;
+    el.color.hidden=state.bg!=='color';
+    el.pad.value=String(Math.round(state.pad*100));
+    el.padOut.textContent=Math.round(state.pad*100)+'%';
+  }
+
+  function onPointerDown(e){
+    if(!state||!state.img||(e.pointerType==='mouse'&&e.button!==0)){return;}
+    e.preventDefault();
+    try{el.stage.focus({preventScroll:true});}catch(err){}
+    try{el.stage.setPointerCapture(e.pointerId);}catch(err){}
+    state.pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    el.stage.classList.add('is-grabbing');
+  }
+
+  function onPointerMove(e){
+    if(!state||!state.pointers.has(e.pointerId)){return;}
+    const pts=state.pointers;
+    const ids=Array.from(pts.keys());
+    if(ids.length===1){
+      const p=pts.get(e.pointerId);
+      const size=toContent(0,0).size;
+      pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+      panBy((e.clientX-p.x)/size,(e.clientY-p.y)/size);
+      return;
+    }
+    // щипок: учитываем первые два указателя
+    const a0=pts.get(ids[0]),b0=pts.get(ids[1]);
+    pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(ids.indexOf(e.pointerId)>1){return;}
+    const a1=pts.get(ids[0]),b1=pts.get(ids[1]);
+    const d0=Math.hypot(b0.x-a0.x,b0.y-a0.y)||1,d1=Math.hypot(b1.x-a1.x,b1.y-a1.y)||1;
+    const m0=toContent((a0.x+b0.x)/2,(a0.y+b0.y)/2);
+    const m1=toContent((a1.x+b1.x)/2,(a1.y+b1.y)/2);
+    panBy(m1.x-m0.x,m1.y-m0.y);
+    zoomTo(state.s*d1/d0,m1.x,m1.y);
+  }
+
+  function onPointerUp(e){
+    if(!state){return;}
+    state.pointers.delete(e.pointerId);
+    if(!state.pointers.size){el.stage.classList.remove('is-grabbing');}
+  }
+
+  function onWheel(e){
+    if(!state||!state.img){return;}
+    e.preventDefault();
+    const unit=e.deltaMode===1?16:(e.deltaMode===2?240:1);
+    const p=toContent(e.clientX,e.clientY);
+    zoomTo(state.s*Math.exp(-e.deltaY*unit*.0015),p.x,p.y);
+  }
+
+  function onStageKey(e){
+    if(!state||!state.img||e.altKey||e.ctrlKey||e.metaKey){return;}
+    const step=(e.shiftKey?8:1)/OUT;
+    switch(e.key){
+      case 'ArrowLeft':panBy(-step,0);break;
+      case 'ArrowRight':panBy(step,0);break;
+      case 'ArrowUp':panBy(0,-step);break;
+      case 'ArrowDown':panBy(0,step);break;
+      case '+':case '=':zoomTo(state.s*1.1);break;
+      case '-':case '_':zoomTo(state.s/1.1);break;
+      case '0':fit();break;
+      default:return;
+    }
+    e.preventDefault();
+  }
+
+  function onPaste(e){
+    if(!pending||!state){return;}
+    const items=(e.clipboardData&&e.clipboardData.items)||[];
+    for(let i=0;i<items.length;i++){
+      if(items[i].kind==='file'&&/^image\//.test(items[i].type)){
+        const file=items[i].getAsFile();
+        if(file){e.preventDefault();loadBlob(file,true);return;}
+      }
+    }
+    if(modal.contains(document.activeElement)){setError(MSG.paste);}
+  }
+
+  function hasFiles(e){
+    const types=e.dataTransfer&&e.dataTransfer.types;
+    return !!types&&Array.prototype.indexOf.call(types,'Files')>=0;
+  }
+
+  function bindDrop(){
+    const over=function(e){
+      if(!hasFiles(e)){return;}
+      e.preventDefault();
+      e.dataTransfer.dropEffect='copy';
+      el.wrap.classList.add('is-dragover');
+    };
+    el.wrap.addEventListener('dragenter',over);
+    el.wrap.addEventListener('dragover',over);
+    el.wrap.addEventListener('dragleave',function(e){
+      if(!el.wrap.contains(e.relatedTarget)){el.wrap.classList.remove('is-dragover');}
+    });
+    el.wrap.addEventListener('drop',function(e){
+      e.preventDefault();
+      el.wrap.classList.remove('is-dragover');
+      const file=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0];
+      if(file){loadBlob(file,true);}else{setError(MSG.drop);}
+    });
+  }
+
+  function apply(){
+    if(!state||!state.img){return;}
+    let url='';
+    try{url=renderOutput().toDataURL('image/png');}catch(e){setError(MSG.export);return;}
+    if(!/^data:image\/png;base64,/.test(url)){setError(MSG.export);return;}
+    if(url.length>MAX_URL){setError(MSG.big+' ('+Math.ceil(url.length/1024)+' КБ)');return;}
+    finish(url);
+  }
+
+  function finish(value){
+    const resolve=pending;
+    pending=null;
+    document.removeEventListener('paste',onPaste);
+    if(modal){modal.classList.remove('open');}
+    if(state){state.loadId++;state.img=null;state.levels=null;state.pointers.clear();}
+    if(el.stage){el.stage.classList.remove('is-grabbing');}
+    previews.forEach(function(img){img.removeAttribute('src');});
+    if(resolve){resolve(value);}
+  }
+
+  function build(){
+    if(modal){return;}
+    modal=document.createElement('div');
+    modal.id='iconEditorModal';
+    modal.className='modal modal-top ie-modal';
+    modal.innerHTML=TEMPLATE;
+    document.body.appendChild(modal);
+    el.panel=modal.querySelector('.panel');
+    modal.querySelectorAll('[data-ie]').forEach(function(node){el[node.getAttribute('data-ie')]=node;});
+
+    [el.tileLight,el.tileDark].forEach(function(tile){
+      SIZES.forEach(function(n){
+        const img=document.createElement('img');
+        img.width=n;img.height=n;img.alt='';
+        tile.appendChild(img);
+        previews.push(img);
+      });
+    });
+
+    el.apply.addEventListener('click',apply);
+    el.cancel.addEventListener('click',function(){finish(null);});
+    // без UiKit Esc обрабатываем сами
+    modal.addEventListener('keydown',function(e){
+      if(e.key==='Escape'&&!e.defaultPrevented&&!(window.UiKit&&window.UiKit.isModalOpen)){
+        e.preventDefault();
+        finish(null);
+      }
+    });
+
+    const onFile=function(input){
+      return function(){
+        const file=input.files&&input.files[0];
+        input.value='';
+        if(file){loadBlob(file,true);}
+      };
+    };
+    el.file.addEventListener('change',onFile(el.file));
+    el.replaceFile.addEventListener('change',onFile(el.replaceFile));
+    el.replace.addEventListener('click',function(){el.replaceFile.click();});
+    el.fit.addEventListener('click',fit);
+    el.cover.addEventListener('click',cover);
+    el.zoom.addEventListener('input',function(){
+      if(!state||!state.img){return;}
+      zoomTo(state.minS*Math.pow(state.maxS/state.minS,Number(el.zoom.value)/1000));
+    });
+
+    el.stage.addEventListener('pointerdown',onPointerDown);
+    el.stage.addEventListener('pointermove',onPointerMove);
+    el.stage.addEventListener('pointerup',onPointerUp);
+    el.stage.addEventListener('pointercancel',onPointerUp);
+    el.stage.addEventListener('lostpointercapture',onPointerUp);
+    el.stage.addEventListener('wheel',onWheel,{passive:false});
+    el.stage.addEventListener('keydown',onStageKey);
+    bindDrop();
+
+    modal.addEventListener('change',function(e){
+      const t=e.target;
+      if(!state){return;}
+      if(t.name==='iconEditorBg'){state.bg=t.value;el.color.hidden=state.bg!=='color';requestRender();}
+      else if(t.name==='iconEditorShape'){state.shape=t.value;requestRender();}
+    });
+    el.color.addEventListener('input',function(){if(state){state.color=el.color.value;requestRender();}});
+    el.pad.addEventListener('input',function(){
+      if(!state){return;}
+      state.pad=Number(el.pad.value)/100;
+      el.padOut.textContent=el.pad.value+'%';
+      requestRender();
+    });
+
+    if(window.ResizeObserver){
+      new ResizeObserver(function(){if(state&&state.img){requestRender();}}).observe(el.stage);
+    }
+  }
+
+  function open(options){
+    options=options||{};
+    build();
+    if(pending){finish(null);}
+    state=freshState(options);
+    el.title.textContent=options.title||'Иконка источника';
+    setError('');
+    setBusy(false);
+    showStage(false);
+    syncOptions();
+    el.wrap.classList.remove('is-dragover');
+    return new Promise(function(resolve){
+      pending=resolve;
+      document.addEventListener('paste',onPaste);
+      modal.classList.add('open');
+      if(options.file){loadBlob(options.file,true);}
+      else if(options.src){loadSrc(String(options.src));}
+    });
+  }
+
+  window.IconEditor={open:open};
+})();
+</script>

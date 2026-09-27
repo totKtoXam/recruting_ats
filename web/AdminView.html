@@ -1,228 +1,277 @@
 <div class="page-header">
   <div>
-    <h2>Админ-панель</h2>
-    <p class="page-description">Справочники, вакансии и шаблоны интервью.</p>
+    <h2 id="adminPageTitle">Вакансии</h2>
+    <p id="adminPageDescription" class="page-description">Вакансии и шаблоны интервью по этапам.</p>
   </div>
 
   <div class="page-actions">
-    <button class="button button-secondary" onclick="refreshAdminPage(this)">
-      <span class="button-icon">↻</span>
-      <span>Обновить</span>
-    </button>
+    <button class="icon-btn" data-tip="Обновить" aria-label="Обновить" onclick="refreshAdminPage(this)"><svg class="icon"><use href="#i-refresh"/></svg></button>
   </div>
 </div>
 
-<div class="tabs admin-tabs">
-  <button class="tab active" onclick="showAdminTab('vacancies', this)">Вакансии</button>
-  <button class="tab" onclick="showAdminTab('sources', this)">Источники</button>
-  <button class="tab" onclick="showAdminTab('responsibles', this)">Ответственные</button>
-</div>
+<!-- Вкладки страницы «Настройки» (рисует renderSettingsTabs). -->
+<nav id="settingsTabs" class="tabs settings-tabs" aria-label="Разделы настроек" hidden></nav>
 
+<!-- ===================== Вакансии ===================== -->
 <section id="admin-vacancies" class="admin-page-section active">
-  <div class="directory-layout vacancy-directory-layout">
+  <div class="directory-layout directory-single">
     <div class="admin-list-card directory-table-card">
-      <div class="section-title-row">
-        <div>
-          <h3>Вакансии</h3>
-          <p class="muted">Нажмите на строку для редактирования.</p>
+      <div class="section-title-row table-toolbar">
+        <h3>Вакансии</h3>
+        <div class="header-actions">
+          <div class="segmented state-switch" data-table="vacancies"></div>
+          <button type="button" class="button button-primary" onclick="resetVacancyForm()"><svg class="icon"><use href="#i-plus"/></svg><span class="btn-label">Новая вакансия</span></button>
         </div>
-        <span id="vacancyCount" class="counter-badge"></span>
       </div>
-      <div id="vacancyList"></div>
+      <div id="vacancyTable"></div>
     </div>
+  </div>
 
-    <aside id="vacancyForm" class="admin-form-card directory-form-card vacancy-form-card">
-      <div class="section-title-row">
-        <div>
+  <!-- Боковая панель (Drawer); переносится в <body> при инициализации. -->
+  <div id="vacancyDrawer" class="drawer drawer-lg" aria-hidden="true">
+    <aside id="vacancyForm" class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="vacancyFormTitle" tabindex="-1">
+      <header class="drawer-header">
+        <div class="drawer-title">
           <div class="eyebrow">Вакансия</div>
           <h3 id="vacancyFormTitle">Новая вакансия</h3>
         </div>
-        <button class="button button-ghost button-small" onclick="resetVacancyForm()">Сброс</button>
-      </div>
+        <div class="header-actions" id="vacancyFormActions"></div>
+        <span class="toolbar-divider" aria-hidden="true"></span>
+        <button type="button" class="icon-btn" data-drawer-close data-tip="Закрыть (Esc)" aria-label="Закрыть"><svg class="icon"><use href="#i-close"/></svg></button>
+      </header>
 
-      <input id="vacancyId" type="hidden">
+      <div class="drawer-body">
+        <section class="drawer-section">
+          <input id="vacancyId" type="hidden">
+          <div id="vacancyLifecycleNote"></div>
 
-      <div class="vacancy-editor-grid">
-        <section class="vacancy-editor-main">
           <div class="field">
             <label for="vacancyName">Название *</label>
-            <input id="vacancyName" placeholder="Middle .NET Developer">
+            <input id="vacancyName" placeholder="Например, Middle .NET Developer" oninput="this.classList.remove('input-error')">
+            <small id="vacancyNameError" class="field-error" hidden></small>
           </div>
 
-          <div class="field">
-            <label for="vacancyStatus">Статус *</label>
-            <select id="vacancyStatus">
-              <option value="Открыта">Открыта</option>
-              <option value="На паузе">На паузе</option>
-              <option value="Закрыта">Закрыта</option>
-            </select>
-          </div>
-
-          <div class="field">
-            <label for="vacancyComment">Комментарий</label>
-            <textarea id="vacancyComment" placeholder="Описание или примечание"></textarea>
-          </div>
-
-          <div class="actions">
-            <button class="button button-primary" onclick="saveVacancyForm(this)">Сохранить вакансию</button>
+          <div class="field" id="vacancyStatusField" hidden>
+            <label>Статус</label>
+            <div class="status-row">
+              <span id="vacancyStatusChip"></span>
+              <span id="vacancyStatusActions" class="status-actions"></span>
+            </div>
           </div>
         </section>
 
-        <section class="vacancy-editor-templates">
-          <div class="nested-panel-header">
-            <div>
-              <div class="eyebrow">Шаблоны интервью</div>
-              <h4>Вопросы по этапам</h4>
+        <section class="drawer-section">
+          <div class="drawer-section-head">
+            <h4>Публикации</h4>
+            <div class="header-actions">
+              <button id="vacancyLinkAdd" type="button" class="button button-secondary button-small" onclick="addVacancyLink()"><svg class="icon"><use href="#i-plus"/></svg><span>Ссылка</span></button>
             </div>
-            <span id="vacancyTemplateCount" class="counter-badge">0</span>
           </div>
+          <div id="vacancyLinks" class="vacancy-links"></div>
+          <div id="vacancyLinksEmpty" class="empty-state compact">Добавьте ссылки на вакансию на hh, в Telegram-канале, LinkedIn — площадка определится автоматически.</div>
+        </section>
 
-          <div id="vacancyTemplateEmpty" class="empty-state compact">
-            Сначала сохраните или выберите вакансию.
+        <section class="drawer-section" data-drawer-ignore>
+          <div class="drawer-section-head">
+            <h4>Шаблоны интервью <span id="vacancyTemplateCount" class="counter-badge">0</span></h4>
+            <div class="header-actions">
+              <label class="checkbox-line">
+                <input id="templateShowAll" type="checkbox" onchange="loadVacancyTemplates()">
+                <span>Показать архивные</span>
+              </label>
+              <button id="templateAddButton" type="button" class="button button-secondary button-small" onclick="openTemplateModal()" disabled><svg class="icon"><use href="#i-plus"/></svg><span>Шаблон</span></button>
+            </div>
           </div>
+          <div id="vacancyTemplateEmpty" class="empty-state compact">Сначала сохраните вакансию — после этого можно добавить шаблоны.</div>
+          <div id="vacancyTemplateList" class="template-list"></div>
+        </section>
 
-          <div id="templateEditor" hidden>
-            <input id="templateId" type="hidden">
-
-            <div class="field">
-              <label for="templateName">Название шаблона *</label>
-              <input id="templateName" placeholder="Техническое интервью">
-            </div>
-
-            <div class="field">
-              <label for="templateStage">Этап *</label>
-              <select id="templateStage"></select>
-            </div>
-
-            <label class="checkbox-line">
-              <input id="templateRequired" type="checkbox">
-              <span>Обязательный шаблон для перехода с этого этапа</span>
-            </label>
-
-            <div class="field">
-              <div class="field-header">
-                <label>Вопросы</label>
-                <button class="button button-ghost button-small" type="button" onclick="addTemplateQuestion()">＋ Вопрос</button>
-              </div>
-              <div id="templateQuestionsList" class="question-list"></div>
-            </div>
-
-            <div class="actions compact-actions">
-              <button class="button button-ghost" onclick="resetTemplateForm()">Сброс</button>
-              <button class="button button-primary" onclick="saveTemplateForm(this)">Сохранить шаблон</button>
-            </div>
-
-            <div id="vacancyTemplateList" class="template-list"></div>
-          </div>
+        <!-- Заголовок «Комментарии» рисует сама лента (Comments.html). -->
+        <section class="drawer-section" data-drawer-ignore>
+          <div id="vacancyComments" class="comments-host"></div>
         </section>
       </div>
     </aside>
   </div>
 </section>
 
+<!-- ===================== Источники ===================== -->
 <section id="admin-sources" class="admin-page-section">
-  <div class="directory-layout">
-    <div class="admin-list-card directory-table-card directory-table-narrow">
-      <div class="section-title-row">
-        <div>
-          <h3>Источники</h3>
-          <p class="muted">Нажмите на строку для редактирования.</p>
+  <div class="directory-layout directory-single">
+    <div class="admin-list-card directory-table-card">
+      <div class="section-title-row table-toolbar">
+        <h3>Источники вакансий</h3>
+        <div class="header-actions">
+          <div class="segmented state-switch" data-table="sources"></div>
+          <button type="button" class="button button-primary" onclick="resetSourceForm()"><svg class="icon"><use href="#i-plus"/></svg><span class="btn-label">Новый источник</span></button>
         </div>
-        <span id="sourceCount" class="counter-badge"></span>
       </div>
-      <div id="sourceList"></div>
+      <div id="sourceTable"></div>
     </div>
+  </div>
 
-    <aside id="sourceForm" class="admin-form-card directory-form-card directory-form-narrow">
-      <div class="section-title-row">
-        <div>
+  <div id="sourceDrawer" class="drawer" aria-hidden="true">
+    <aside id="sourceForm" class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="sourceFormTitle" tabindex="-1">
+      <header class="drawer-header">
+        <div class="drawer-title">
           <div class="eyebrow">Источник</div>
           <h3 id="sourceFormTitle">Новый источник</h3>
         </div>
-        <button class="button button-ghost button-small" onclick="resetSourceForm()">Сброс</button>
-      </div>
+        <div class="header-actions" id="sourceFormActions"></div>
+        <span class="toolbar-divider" aria-hidden="true"></span>
+        <button type="button" class="icon-btn" data-drawer-close data-tip="Закрыть (Esc)" aria-label="Закрыть"><svg class="icon"><use href="#i-close"/></svg></button>
+      </header>
 
-      <input id="sourceId" type="hidden">
+      <div class="drawer-body">
+        <input id="sourceId" type="hidden">
+        <div id="sourceLifecycleNote"></div>
 
-      <div class="field">
-        <label for="sourceName">Название *</label>
-        <div class="input-with-brand">
-          <span id="sourceFormIcon" class="brand-icon brand-generic">•</span>
-          <input id="sourceName" placeholder="LinkedIn" oninput="renderSourceFormIcon()">
+        <div class="field">
+          <label for="sourceName">Название *</label>
+          <div class="input-with-brand">
+            <span id="sourceFormIcon" class="brand-icon brand-generic" aria-hidden="true"><svg class="icon"><use href="#i-globe"/></svg></span>
+            <input id="sourceName" placeholder="Например, LinkedIn" oninput="renderSourceFormIcon()">
+          </div>
         </div>
-      </div>
 
-      <div class="actions">
-        <button class="button button-primary" onclick="saveSourceForm(this)">Сохранить</button>
+        <div class="field">
+          <span class="field-label" id="sourceIconLabel">Иконка</span>
+          <div id="sourceIconPicker" class="icon-picker" role="group" aria-labelledby="sourceIconLabel"></div>
+          <small class="field-hint">«Авто» подбирает значок по названию. Можно выбрать готовый или загрузить свою картинку и подогнать её по размеру.</small>
+        </div>
       </div>
     </aside>
   </div>
 </section>
 
-<section id="admin-responsibles" class="admin-page-section">
-  <div class="directory-layout">
+<!-- ===================== Пользователи (они же ответственные) ===================== -->
+<section id="admin-users" class="admin-page-section">
+  <div class="directory-layout directory-single">
     <div class="admin-list-card directory-table-card">
-      <div class="section-title-row">
-        <div>
-          <h3>Ответственные</h3>
-          <p class="muted">Нажмите на строку для редактирования.</p>
+      <div class="section-title-row table-toolbar">
+        <h3>Пользователи</h3>
+        <div class="header-actions">
+          <div class="segmented state-switch" data-table="users"></div>
+          <button type="button" class="button button-primary" onclick="resetUserForm()"><svg class="icon"><use href="#i-plus"/></svg><span class="btn-label">Добавить пользователя</span></button>
         </div>
-        <span id="responsibleCount" class="counter-badge"></span>
       </div>
-      <div id="responsibleList"></div>
+      <div id="userTable"></div>
     </div>
+  </div>
 
-    <aside id="responsibleForm" class="admin-form-card directory-form-card">
-      <div class="section-title-row">
-        <div>
-          <div class="eyebrow">Ответственный</div>
-          <h3 id="responsibleFormTitle">Новый ответственный</h3>
+  <div id="userDrawer" class="drawer" aria-hidden="true">
+    <aside id="userForm" class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="userFormTitle" tabindex="-1">
+      <header class="drawer-header">
+        <div class="drawer-title">
+          <div class="eyebrow">Пользователь</div>
+          <h3 id="userFormTitle">Новый пользователь</h3>
         </div>
-        <button class="button button-ghost button-small" onclick="resetResponsibleForm()">Сброс</button>
-      </div>
+        <div class="header-actions" id="userFormActions"></div>
+        <span class="toolbar-divider" aria-hidden="true"></span>
+        <button type="button" class="icon-btn" data-drawer-close data-tip="Закрыть (Esc)" aria-label="Закрыть"><svg class="icon"><use href="#i-close"/></svg></button>
+      </header>
 
-      <input id="responsibleId" type="hidden">
+      <div class="drawer-body">
+      <input id="userId" type="hidden">
+      <div id="userLifecycleNote"></div>
 
       <div class="form-grid form-grid-3">
         <div class="field">
-          <label for="responsibleLastName">Фамилия *</label>
-          <input id="responsibleLastName">
+          <label for="userLastName">Фамилия *</label>
+          <input id="userLastName" autocomplete="off">
         </div>
         <div class="field">
-          <label for="responsibleFirstName">Имя *</label>
-          <input id="responsibleFirstName">
+          <label for="userFirstName">Имя *</label>
+          <input id="userFirstName" autocomplete="off">
         </div>
         <div class="field">
-          <label for="responsibleMiddleName">Отчество</label>
-          <input id="responsibleMiddleName">
+          <label for="userMiddleName">Отчество</label>
+          <input id="userMiddleName" autocomplete="off">
         </div>
       </div>
 
       <div class="field">
-        <label for="responsibleEmail">Email</label>
-        <input
-          id="responsibleEmail"
-          type="email"
-          placeholder="name@example.com"
-          oninput="normalizeEmailInput(this)"
-          onblur="validateEmailField(this)"
-        >
+        <label for="userEmail">Email Google Account *</label>
+        <input id="userEmail" type="email" placeholder="name@company.com" oninput="normalizeEmailInput(this)">
+        <small id="userEmailHint" class="field-hint">Любой домен. Человек войдёт через Google с этим адресом.</small>
       </div>
 
       <div class="field">
-        <label for="responsibleUserId">Пользователь</label>
-        <select id="responsibleUserId"></select>
-        <div class="field-hint">Привязка необязательная. Один пользователь может быть привязан только к одному ответственному.</div>
+        <label for="userTelegram">Telegram</label>
+        <div class="input-with-status">
+          <input id="userTelegram" placeholder="@username" autocomplete="off">
+          <span id="userTelegramStatus" class="state-badge" hidden></span>
+        </div>
+        <small class="field-hint">Подтверждается самим пользователем: «Профиль → Уведомления → Привязать Telegram». Ник, указанный здесь, считается неподтверждённым.</small>
       </div>
 
       <div class="field">
-        <label>Доступные этапы *</label>
-        <div id="responsibleStages" class="stage-multiselect"></div>
+        <label>Ответственный за этапы</label>
+        <div id="userStages" class="stage-checks"></div>
+        <small class="field-hint">Отмеченные этапы делают пользователя ответственным: его можно назначить рекрутером (все этапы), HR или проф. интервьювером кандидата. Доступ в ATS для этого не обязателен.</small>
       </div>
 
-      <div class="actions">
-        <button class="button button-primary" onclick="saveResponsibleForm(this)">Сохранить</button>
+      <label class="checkbox-line" id="userNewAccessField">
+        <input id="userActive" type="checkbox" checked>
+        <span>Открыть доступ в ATS</span>
+      </label>
+
+      <label class="checkbox-line">
+        <input id="userAdmin" type="checkbox">
+        <span>Администратор — управляет пользователями и корзиной</span>
+      </label>
+
+      <div id="userMeta" class="user-meta" hidden></div>
       </div>
     </aside>
   </div>
 </section>
+
+<!-- ===================== Интеграции (только администраторы) ===================== -->
+<section id="admin-integrations" class="admin-page-section">
+  <div id="integrationsRoot"><div class="empty-state compact">Загрузка…</div></div>
+</section>
+
+<!-- Переносится в <body> при инициализации: внутри скрытого раздела модальное окно не отобразится. -->
+<div id="templateModal" class="modal modal-top">
+  <div class="panel">
+    <div class="panel-header">
+      <div>
+        <div class="eyebrow">Шаблон интервью</div>
+        <h2 id="templateModalTitle">Новый шаблон</h2>
+        <div id="templateModalVacancy" class="muted"></div>
+      </div>
+      <div class="header-actions" id="templateFormActions"></div>
+    </div>
+
+    <section id="templateForm" class="form-card form-card-flat">
+      <input id="templateId" type="hidden">
+
+      <div class="form-grid">
+        <div class="field">
+          <label for="templateName">Название шаблона *</label>
+          <input id="templateName" placeholder="Например, Проф. интервью .NET">
+        </div>
+
+        <div class="field">
+          <label for="templateStage">Этап *</label>
+          <select id="templateStage"></select>
+          <small class="field-hint">Вопросы задаются при переводе кандидата на этот этап.</small>
+        </div>
+      </div>
+
+      <label class="checkbox-line">
+        <input id="templateRequired" type="checkbox">
+        <span>Обязательный при переходе на этот этап</span>
+      </label>
+
+      <div class="field">
+        <div class="field-header">
+          <label>Вопросы *</label>
+          <button class="button button-ghost button-small" type="button" onclick="addTemplateQuestion()"><svg class="icon icon-sm"><use href="#i-plus"/></svg><span>Добавить вопрос</span></button>
+        </div>
+        <div id="templateQuestionsList" class="question-list"></div>
+      </div>
+    </section>
+  </div>
+</div>

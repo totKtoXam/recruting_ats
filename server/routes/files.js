@@ -5,6 +5,7 @@ import { formatDateTime } from '../lib/dates.js';
 import { downloadStream, driveFolderUrl, getFileMeta, isNotFound } from '../lib/drive.js';
 import { composeFullName, isUuid } from '../lib/validation.js';
 import { fileUrl } from '../services/mappers.js';
+import { getSourceIcon } from '../services/references.js';
 import { requireUserPage } from './auth.js';
 import { escapeHtml } from './html.js';
 
@@ -21,6 +22,19 @@ function contentDisposition(fileName, mimeType) {
 
 export function filesRouter() {
   const router = express.Router();
+
+  // Своя иконка источника (PNG 64×64 из БД). Адрес содержит ?v=<время изменения>,
+  // поэтому ответ можно кэшировать надолго.
+  router.get('/source-icons/:id', requireUserPage, async (req, res, next) => {
+    try {
+      const png = isUuid(req.params.id) ? await getSourceIcon(req.params.id) : null;
+      if (!png) return res.status(404).type('text').send('Иконка не найдена.');
+      res.set('Cache-Control', 'private, max-age=31536000, immutable');
+      res.type('png').send(png);
+    } catch (error) {
+      next(error);
+    }
+  });
 
   // Файлы приватны: сервер отдаёт их из Google Drive только авторизованным пользователям,
   // поэтому пользователям ATS не нужен собственный доступ к папке в Drive.

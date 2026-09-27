@@ -1,0 +1,280 @@
+<style>
+/* =====================================================================
+   Drawer (side sheet) — правая выезжающая панель для форм.
+   Разметка:
+     <div id="xDrawer" class="drawer [drawer-lg]">
+       <aside class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="xTitle" tabindex="-1">
+         <header class="drawer-header">
+           <div class="drawer-title"><div class="eyebrow">…</div><h3 id="xTitle">…</h3></div>
+           <div class="header-actions">…кнопки формы…</div>
+           <button class="icon-btn" data-drawer-close …>×</button>
+         </header>
+         <div class="drawer-body">…</div>
+       </aside>
+     </div>
+   JS: Drawer.open(id,{onClose}) / Drawer.close(id) / Drawer.requestClose(id) / Drawer.isOpen(id)
+       Drawer.register(id,{onClose,confirmMessage}) / Drawer.markClean(id) / Drawer.isDirty(id)
+   Только токены из Styles.html — светлая и тёмная темы работают без правок.
+   Над drawer (z 45) остаются .modal-top (50: шаблон, подтверждение) и тултип.
+   ===================================================================== */
+.drawer{
+  position:fixed;
+  inset:0;
+  z-index:45;
+  display:flex;
+  justify-content:flex-end;
+  background:transparent;
+  visibility:hidden;
+  pointer-events:none;
+  transition:background-color .2s ease,visibility 0s linear .22s
+}
+.drawer.open{
+  visibility:visible;
+  pointer-events:auto;
+  background:var(--overlay);
+  transition:background-color .2s ease,visibility 0s linear 0s
+}
+.drawer-panel{
+  position:relative;
+  display:flex;
+  flex-direction:column;
+  width:min(480px,100%);
+  height:100%;
+  min-height:0;
+  background:var(--surface);
+  border-left:1px solid var(--line);
+  box-shadow:var(--shadow-pop);
+  transform:translateX(100%);
+  transition:transform .22s cubic-bezier(.2,.8,.2,1);
+  outline:none
+}
+.drawer-lg .drawer-panel{width:min(640px,100%)}
+.drawer.open .drawer-panel{transform:none}
+
+.drawer-header{
+  position:sticky;
+  top:0;
+  z-index:5;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  flex:0 0 auto;
+  min-height:56px;
+  padding:10px 10px 10px 20px;
+  background:var(--surface);
+  border-bottom:1px solid var(--line)
+}
+.drawer-title{min-width:0;flex:1 1 auto}
+.drawer-title h3{font-size:16px;font-weight:650;letter-spacing:-.01em;margin:2px 0 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.drawer-header .header-actions{display:flex;flex:0 0 auto;align-items:center;gap:4px;margin:0;padding:0;border:0;background:none}
+.drawer-header .header-actions:empty{display:none}
+.drawer-header .toolbar-divider{margin:0 2px}
+
+.drawer-body{
+  flex:1 1 auto;
+  min-height:0;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  padding:16px 20px 24px
+}
+
+/* Секции внутри drawer: мелкий заголовок + содержимое. */
+.drawer-section{display:flex;flex-direction:column;gap:10px;min-width:0}
+.drawer-section+.drawer-section{padding-top:14px;border-top:1px solid var(--line)}
+.drawer-section[hidden]{display:none}
+.drawer-section-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:28px}
+.drawer-section-head h4{
+  display:flex;align-items:center;gap:6px;margin:0;
+  font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)
+}
+.drawer-section-head .header-actions{display:flex;align-items:center;gap:4px}
+/* Секция с пустой лентой комментариев (новая запись) не показывается. */
+.drawer-section:has(>.comments-host:empty){display:none}
+.drawer-section>.comments-host{margin-top:0;border-top:0;padding-top:0}
+.drawer-body>div:empty,.drawer-section>div:empty{display:none}
+.drawer-section>.template-list{margin:0;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.drawer-section>.template-list>.template-row:first-child{border-top:0}
+.drawer-section>.template-list>.template-row:last-child{border-bottom:0}
+
+body.drawer-open{overflow:hidden}
+
+@media(max-width:560px){
+  .drawer-panel,.drawer-lg .drawer-panel{width:100%;border-left:0}
+  .drawer-header{padding-left:14px}
+  .drawer-body{padding:14px 14px 20px}
+}
+
+@media(prefers-reduced-motion:reduce){
+  .drawer,.drawer.open,.drawer-panel{transition:none}
+}
+</style>
+
+<script>
+/* Drawer: боковая панель с формой. Закрывается по ×, Esc, клику по затемнению.
+   Если в форме есть несохранённые правки (события input/change внутри панели,
+   кроме узлов с [data-drawer-ignore]) — перед закрытием спрашивает showConfirm. */
+(function(){
+  if(window.Drawer){return;}
+
+  var registry={};
+  var stack=[];
+  var FOCUSABLE='a[href],button:not([disabled]),input:not([disabled]):not([type=hidden]),select:not([disabled]),textarea:not([disabled]),[contenteditable="true"],[tabindex]:not([tabindex="-1"])';
+
+  function cfg(id){return registry[id]||(registry[id]={dirty:false,onClose:null,confirmMessage:null,returnFocus:null});}
+  function rootOf(id){return document.getElementById(id);}
+  function panelOf(root){return root&&root.querySelector('.drawer-panel');}
+  function isOpen(id){var root=rootOf(id);return !!(root&&root.classList.contains('open'));}
+  function modalOpen(){return !!document.querySelector('.modal.open');}
+  function topId(){return stack.length?stack[stack.length-1]:null;}
+
+  function visibleFocusables(panel){
+    return Array.prototype.filter.call(panel.querySelectorAll(FOCUSABLE),function(node){
+      return node.offsetWidth||node.offsetHeight||node.getClientRects().length;
+    });
+  }
+
+  function bind(root,id){
+    if(root.__drawerBound){return;}
+    root.__drawerBound=true;
+    var downOnOverlay=false;
+    root.addEventListener('mousedown',function(e){downOnOverlay=e.target===root;});
+    root.addEventListener('click',function(e){
+      if(e.target===root){
+        if(downOnOverlay){requestClose(id);}
+        return;
+      }
+      var closeBtn=e.target.closest&&e.target.closest('[data-drawer-close]');
+      if(closeBtn&&root.contains(closeBtn)){e.preventDefault();requestClose(id);}
+    });
+    function markDirty(e){
+      if(!e.isTrusted||!e.target||!e.target.closest){return;}
+      if(e.target.closest('[data-drawer-ignore]')){return;}
+      // Для текстовых полей 'change' приходит при потере фокуса — уже после
+      // сохранения, — поэтому правку текста считаем только по 'input'.
+      if(e.type==='change'){
+        var t=e.target;
+        var toggle=t.tagName==='SELECT'||(t.tagName==='INPUT'&&/^(checkbox|radio|file|range|color|date|datetime-local|month|week|time)$/i.test(t.type));
+        if(!toggle){return;}
+      }
+      cfg(id).dirty=true;
+    }
+    root.addEventListener('input',markDirty);
+    root.addEventListener('change',markDirty);
+  }
+
+  function register(id,options){
+    var c=cfg(id);
+    options=options||{};
+    if('onClose' in options){c.onClose=options.onClose;}
+    if('confirmMessage' in options){c.confirmMessage=options.confirmMessage;}
+    var root=rootOf(id);
+    if(root){
+      bind(root,id);
+      // Внутри скрытого раздела страницы панель не отобразится — живёт в <body>.
+      if(root.parentNode!==document.body){document.body.appendChild(root);}
+      root.setAttribute('aria-hidden',root.classList.contains('open')?'false':'true');
+    }
+  }
+
+  function open(id,options){
+    var root=rootOf(id);
+    if(!root){return;}
+    register(id,options);
+    if(isOpen(id)){return;}
+    var c=cfg(id);
+    var active=document.activeElement;
+    c.returnFocus=active&&active!==document.body&&!root.contains(active)?active:null;
+    c.dirty=false;
+    root.classList.add('open');
+    root.setAttribute('aria-hidden','false');
+    stack.push(id);
+    document.body.classList.add('drawer-open');
+    if(window.UiKit&&window.UiKit.hideTooltip){window.UiKit.hideTooltip();}
+    var panel=panelOf(root);
+    (window.requestAnimationFrame||setTimeout)(function(){
+      if(!isOpen(id)||!panel||panel.contains(document.activeElement)){return;}
+      try{panel.focus({preventScroll:true});}catch(e){panel.focus();}
+    });
+  }
+
+  function close(id){
+    var root=rootOf(id);
+    if(!root||!isOpen(id)){return;}
+    var c=cfg(id);
+    root.classList.remove('open');
+    root.setAttribute('aria-hidden','true');
+    stack=stack.filter(function(x){return x!==id;});
+    if(!stack.length){document.body.classList.remove('drawer-open');}
+    c.dirty=false;
+    if(root.contains(document.activeElement)){document.activeElement.blur();}
+    if(typeof c.onClose==='function'){
+      try{c.onClose();}catch(e){if(window.console){console.error(e);}}
+    }
+    var back=c.returnFocus;
+    c.returnFocus=null;
+    if(back&&back.isConnected&&typeof back.focus==='function'){
+      try{back.focus({preventScroll:true});}catch(e){}
+    }
+  }
+
+  async function requestClose(id){
+    if(!isOpen(id)){return true;}
+    var c=cfg(id);
+    if(c.dirty){
+      var message=c.confirmMessage||'В форме есть несохранённые изменения. Закрыть без сохранения?';
+      var ok=typeof window.showConfirm==='function'
+        ? await window.showConfirm(message,'Несохранённые изменения')
+        : window.confirm(message);
+      if(!ok){
+        var panel=panelOf(rootOf(id));
+        if(panel&&!panel.contains(document.activeElement)){try{panel.focus({preventScroll:true});}catch(e){}}
+        return false;
+      }
+    }
+    close(id);
+    return true;
+  }
+
+  document.addEventListener('keydown',function(e){
+    var id=topId();
+    if(!id||modalOpen()){return;}
+    if(e.key==='Escape'){
+      if(e.defaultPrevented){return;}
+      e.preventDefault();
+      requestClose(id);
+      return;
+    }
+    if(e.key==='Tab'){
+      var panel=panelOf(rootOf(id));
+      if(!panel){return;}
+      var items=visibleFocusables(panel);
+      if(!items.length){e.preventDefault();panel.focus();return;}
+      var first=items[0];
+      var last=items[items.length-1];
+      var active=document.activeElement;
+      if(!panel.contains(active)){e.preventDefault();first.focus();return;}
+      if(e.shiftKey&&(active===first||active===panel)){e.preventDefault();last.focus();}
+      else if(!e.shiftKey&&active===last){e.preventDefault();first.focus();}
+    }
+  });
+
+  // Смена раздела (назад/вперёд в браузере) — панель к странице больше не относится.
+  window.addEventListener('hashchange',function(){
+    stack.slice().forEach(close);
+  });
+
+  window.Drawer={
+    register:register,
+    open:open,
+    close:close,
+    requestClose:requestClose,
+    isOpen:isOpen,
+    isDirty:function(id){return !!cfg(id).dirty;},
+    markClean:function(id){cfg(id).dirty=false;},
+    markDirty:function(id){cfg(id).dirty=true;}
+  };
+})();
+</script>

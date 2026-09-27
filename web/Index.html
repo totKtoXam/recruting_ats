@@ -1,15 +1,25 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
   <base target="_top">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recruiting ATS</title>
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#161a21" media="(prefers-color-scheme: dark)">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
   <?!= include('Styles'); ?>
+  <?!= include('AppStyles'); ?>
 </head>
 <body>
+  <a class="skip-link" href="#" onclick="event.preventDefault();UiKit.focusMain()">Перейти к содержимому</a>
+  <?!= include('Icons'); ?>
   <header class="topbar">
     <div class="brand">
-      <div class="brand-mark">R</div>
+      <div class="brand-mark" aria-hidden="true">R</div>
       <div>
         <h1>Recruiting ATS</h1>
         <div class="subtitle">Кандидаты и процесс найма</div>
@@ -17,22 +27,43 @@
     </div>
 
     <nav class="top-actions">
-      <span id="dataSyncStatus" class="sync-status">Загрузка данных…</span>
-      <div id="currentUserBadge" class="current-user-badge" hidden>
-        <img id="currentUserAvatar" class="current-user-avatar" alt="">
-        <span class="current-user-text">
-          <strong id="currentUserName"></strong>
-          <small id="currentUserEmail"></small>
-        </span>
+      <div class="notify-wrap">
+        <button type="button" id="notifyBell" class="icon-btn notify-bell" data-tip="Уведомления" aria-label="Уведомления" aria-haspopup="dialog" aria-expanded="false" onclick="toggleNotifyPopover()"><svg class="icon"><use href="#i-bell"/></svg><span id="notifyBadge" class="notify-badge" hidden></span></button>
+        <div id="notifyPopover" class="notify-popover" role="dialog" aria-label="Уведомления" hidden></div>
       </div>
-      <button id="navCandidates" class="nav-button" onclick="navigateTo('candidates')">Кандидаты</button>
-      <button id="navAdmin" class="nav-button" onclick="navigateTo('admin')">Админ-панель</button>
-      <form method="post" action="/auth/logout" class="logout-form">
-        <button type="submit" class="nav-button">Выйти</button>
-      </form>
+      <div class="profile-wrap">
+        <button type="button" id="currentUserBadge" class="current-user-badge profile-trigger" aria-haspopup="menu" aria-expanded="false" aria-label="Профиль и настройки" onclick="toggleProfileMenu()" hidden>
+          <img id="currentUserAvatar" class="current-user-avatar" alt="" referrerpolicy="no-referrer" hidden>
+          <span id="currentUserInitials" class="avatar-initials" hidden></span>
+          <span class="current-user-text">
+            <strong id="currentUserName"></strong>
+            <small id="currentUserEmail"></small>
+          </span>
+          <svg class="icon chevron"><use href="#i-chevron-down"/></svg>
+        </button>
+        <div id="profileMenu" class="notify-popover profile-menu" role="menu" aria-label="Профиль" hidden></div>
+      </div>
+      <form id="logoutForm" method="post" action="/auth/logout" hidden></form>
     </nav>
   </header>
 
+  <div class="app-shell">
+    <aside id="sidebar" class="sidebar" aria-label="Основное меню">
+      <nav class="sidebar-nav">
+        <div class="sidebar-group" data-group="recruiting">
+          <button type="button" class="sidebar-group-toggle" aria-expanded="true" onclick="toggleSidebarGroup('recruiting')"><svg class="icon"><use href="#i-kanban"/></svg><span>Рекрутинг</span><svg class="icon chevron"><use href="#i-chevron-right"/></svg></button>
+          <div class="sidebar-group-items" id="sidebarGroup-recruiting">
+          <a class="sidebar-link" href="#/candidates" data-route="candidates" data-short="Кандидаты"><svg class="icon"><use href="#i-users"/></svg><span>Кандидаты</span></a>
+          <a class="sidebar-link" href="#/vacancies" data-route="vacancies" data-short="Вакансии"><svg class="icon"><use href="#i-briefcase"/></svg><span>Вакансии</span></a>
+          </div>
+        </div>
+        <!-- Все настройки — одна страница с вкладками (источники, пользователи, интеграции). -->
+        <a class="sidebar-link sidebar-link-top" href="#/settings/sources" data-route="settings" data-short="Настройки"><svg class="icon"><use href="#i-settings"/></svg><span>Настройки</span></a>
+      </nav>
+      <button id="sidebarToggle" class="icon-btn sidebar-toggle" data-tip="Свернуть меню" aria-label="Свернуть меню" onclick="toggleSidebar()"><svg class="icon"><use href="#i-chevrons-left"/></svg></button>
+    </aside>
+
+    <div class="app-content" id="appContent">
   <main id="viewCandidates" class="page app-view">
     <div class="page-header">
       <div>
@@ -41,55 +72,117 @@
       </div>
 
       <div class="page-actions">
-        <button class="button button-secondary" onclick="refreshCandidatesPage(this)">
-          <span class="button-icon">↻</span>
-          <span>Обновить</span>
-        </button>
-        <button class="button button-primary" onclick="openCandidate()">
-          <span class="button-icon">＋</span>
-          <span>Новый кандидат</span>
-        </button>
+        <button type="button" id="boardFoldToggle" class="icon-btn" data-tip="Свернуть все колонки" aria-label="Свернуть все колонки" onclick="toggleAllColumns()"><svg class="icon"><use href="#i-fold-horizontal"/></svg></button>
+        <button type="button" id="filtersToggle" class="icon-btn filters-toggle" aria-controls="candidateFilters" aria-expanded="false" data-tip="Фильтры" aria-label="Фильтры" onclick="toggleCandidateFilters()"><svg class="icon"><use href="#i-filter"/></svg><span id="filtersBadge" class="filters-badge" hidden></span></button>
+        <button class="icon-btn" data-tip="Обновить" aria-label="Обновить" onclick="refreshCandidatesPage(this)"><svg class="icon"><use href="#i-refresh"/></svg></button>
+        <button type="button" class="button button-primary" onclick="openCandidate()"><svg class="icon"><use href="#i-plus"/></svg><span class="btn-label">Новый кандидат</span></button>
       </div>
     </div>
 
-    <section class="surface filters">
+    <section id="candidateFilters" class="surface filters">
       <div class="field compact search-field">
-        <label>Поиск</label>
-        <input id="filterSearch" type="search" placeholder="Фамилия, имя, телефон, email, Telegram..." oninput="renderBoard()">
+        <label for="filterSearch">Поиск</label>
+        <div class="input-with-icon">
+          <svg class="icon icon-sm"><use href="#i-search"/></svg>
+          <input id="filterSearch" type="search" autocomplete="off" placeholder="Фамилия, имя, телефон, email, Telegram…" oninput="renderBoard()">
+        </div>
       </div>
 
       <div class="field compact">
-        <label>Вакансия</label>
-        <select id="filterVacancy" onchange="renderBoard()"></select>
+        <label for="filterResponsible">Рекрутер</label>
+        <select id="filterResponsible" multiple data-placeholder="Все рекрутеры" onchange="renderBoard()"></select>
       </div>
 
       <div class="field compact">
-        <label>Рекрутер</label>
-        <select id="filterResponsible" onchange="renderBoard()"></select>
+        <label for="filterSource">Источник</label>
+        <select id="filterSource" multiple data-placeholder="Все источники" onchange="renderBoard()"></select>
       </div>
 
       <div class="field compact">
-        <label>Источник</label>
-        <select id="filterSource" onchange="renderBoard()"></select>
+        <span class="field-label" id="boardStateLabel">Показать</span>
+        <div class="segmented" id="boardStateSwitch" role="radiogroup" aria-labelledby="boardStateLabel">
+          <label class="segmented-option" data-state="active"><input type="radio" name="boardState" value="active" checked onchange="setBoardState(this.value)"><span><svg class="icon seg-icon" aria-hidden="true"><use href="#i-dot"/></svg>Активные</span></label>
+          <label class="segmented-option" data-state="archived"><input type="radio" name="boardState" value="archived" onchange="setBoardState(this.value)"><span><svg class="icon seg-icon" aria-hidden="true"><use href="#i-archive"/></svg>Архив</span></label>
+          <label class="segmented-option" data-state="deleted" data-admin-only hidden><input type="radio" name="boardState" value="deleted" onchange="setBoardState(this.value)"><span><svg class="icon seg-icon" aria-hidden="true"><use href="#i-trash"/></svg>Корзина</span></label>
+          <label class="segmented-option" data-state="all"><input type="radio" name="boardState" value="all" onchange="setBoardState(this.value)"><span><svg class="icon seg-icon" aria-hidden="true"><use href="#i-list"/></svg>Все</span></label>
+        </div>
+        <!-- Прежний флажок «Архив» — для совместимости со старым кодом. -->
+        <input id="filterArchived" type="checkbox" hidden>
       </div>
-
-      <label class="toggle">
-        <input id="filterArchived" type="checkbox" onchange="toggleArchivedFilter()">
-        <span>Архив</span>
-      </label>
     </section>
 
-    <section id="stats" class="stats"></section>
+    <section id="stats" class="stats" hidden></section>
     <section id="vacancyStats" class="vacancy-stats"></section>
     <section id="board" class="board"></section>
+  </main>
+
+  <main id="viewProfile" class="page app-view" hidden>
+    <div class="page-header">
+      <div>
+        <h2>Профиль</h2>
+        <p class="page-description">Личные настройки: уведомления, Telegram, оформление.</p>
+      </div>
+    </div>
+
+    <div class="profile-page">
+      <div class="segmented profile-tabs" role="tablist">
+        <label class="segmented-option"><input type="radio" name="profileTab" value="" onchange="navigateTo('profile')"><span><svg class="icon icon-sm"><use href="#i-user"/></svg>Профиль</span></label>
+        <label class="segmented-option"><input type="radio" name="profileTab" value="notifications" onchange="navigateTo('profile/notifications')"><span><svg class="icon icon-sm"><use href="#i-bell"/></svg>Уведомления</span></label>
+        <label class="segmented-option"><input type="radio" name="profileTab" value="log" onchange="navigateTo('profile/log')"><span><svg class="icon icon-sm"><use href="#i-history"/></svg>Журнал</span></label>
+      </div>
+
+      <div id="profileTabMain" class="profile-grid">
+        <div class="admin-list-card">
+          <div class="section-title-row"><h3>Аккаунт</h3></div>
+          <div id="profileAccount"></div>
+        </div>
+        <div class="admin-list-card">
+          <div class="section-title-row"><h3>Оформление</h3></div>
+          <div id="profileTheme"></div>
+        </div>
+      </div>
+
+    <div id="notifyTabSettings" class="notify-settings-grid">
+        <div class="admin-list-card">
+          <div class="section-title-row"><h3>Каналы</h3></div>
+          <div id="notifyChannels" class="notify-channels"><div class="empty-state compact">Загрузка…</div></div>
+        </div>
+  
+        <div class="admin-list-card">
+          <div class="section-title-row">
+            <div>
+              <h3>Что присылать</h3>
+              <p class="muted notify-hint">Уведомления приходят по кандидатам, где вы назначены рекрутером, HR или проф. интервьювером, и по тем, за которыми вы следите (<svg class="icon icon-sm"><use href="#i-eye"/></svg> в карточке кандидата). О своих действиях уведомлений нет.</p>
+            </div>
+          </div>
+          <div id="notifyMatrix"></div>
+        </div>
+      </div>
+
+    <div id="notifyTabLog" class="admin-list-card directory-table-card" hidden>
+        <div class="section-title-row table-toolbar">
+          <h3>Журнал уведомлений</h3>
+          <div class="header-actions">
+            <button class="icon-btn" data-tip="Отметить все как прочитанные" aria-label="Отметить все как прочитанные" onclick="markAllNotificationsRead(this)"><svg class="icon"><use href="#i-check-check"/></svg></button>
+          </div>
+        </div>
+        <div id="notificationLogTable"></div>
+      </div>
+    </div>
   </main>
 
   <main id="viewAdmin" class="page app-view" hidden>
     <?!= include('AdminView'); ?>
   </main>
+    </div>
+  </div>
 
   <div id="candidateModal" class="modal">
     <div class="panel candidate-panel">
+      <!-- Появляется, когда над карточкой тащат файл: резюме можно бросить в любое место карточки. -->
+      <div id="resumeDropOverlay" class="resume-drop-overlay" hidden aria-hidden="true">
+        <div class="resume-drop-overlay-box"><svg class="icon"><use href="#i-upload"/></svg><strong id="resumeDropOverlayTitle">Отпустите резюме здесь</strong><small id="resumeDropOverlayText">ФИО и контакты заполнятся автоматически</small></div>
+      </div>
       <div class="candidate-header">
         <div class="candidate-header-title">
           <div class="eyebrow">Кандидат <span id="candidateNumberLabel"></span></div>
@@ -102,17 +195,13 @@
         </div>
 
         <div class="candidate-header-actions">
-          <button id="shareCandidateButton" class="button button-secondary" onclick="copyCandidateLink(this)" hidden>
-            <span>🔗</span>
-            <span>Поделиться</span>
-          </button>
-          <button id="archiveCandidateButton" class="button button-danger" onclick="archiveCurrentCandidate(this)" hidden>
-            Архивировать
-          </button>
-          <button class="button button-primary" onclick="saveCandidateForm(this)">
-            Сохранить
-          </button>
-          <button class="icon-close" onclick="closeCandidate()" aria-label="Закрыть">×</button>
+          <button id="watchCandidateButton" class="icon-btn" data-tip="Следить за кандидатом" aria-label="Следить за кандидатом" aria-pressed="false" onclick="toggleCandidateWatch(this)" hidden><svg class="icon"><use href="#i-eye"/></svg></button>
+          <button id="historyCandidateButton" class="icon-btn" data-tip="История изменений" aria-label="История изменений" onclick="openHistory('candidate',currentCandidate.ID,fullNameOf(currentCandidate))" hidden><svg class="icon"><use href="#i-history"/></svg></button>
+          <button id="shareCandidateButton" class="icon-btn" data-tip="Скопировать ссылку" aria-label="Скопировать ссылку" onclick="copyCandidateLink(this)" hidden><svg class="icon"><use href="#i-share"/></svg></button>
+          <span id="candidateLifecycleActions" class="header-actions"></span>
+          <button type="button" id="candidateSaveButton" class="button button-primary" onclick="saveCandidateForm(this)"><svg class="icon"><use href="#i-save"/></svg><span>Сохранить</span></button>
+          <span class="toolbar-divider" aria-hidden="true"></span>
+          <button type="button" class="icon-btn" data-modal-close data-tip="Закрыть (Esc)" aria-label="Закрыть" onclick="closeCandidate()"><svg class="icon"><use href="#i-close"/></svg></button>
         </div>
       </div>
 
@@ -126,7 +215,15 @@
               <h3>Основные данные</h3>
               <p>ФИО, контакты и назначение.</p>
             </div>
+            <!-- Только для нового кандидата: выбор файла резюме с автозаполнением полей. -->
+            <div id="resumeFillWrap" class="resume-fill-wrap" hidden>
+              <button type="button" id="resumeFillButton" class="button resume-fill-btn" onclick="chooseResumeForAutofill()"><svg class="icon"><use href="#i-sparkles"/></svg><span>Заполнить из резюме</span></button>
+              <div id="resumeFillHint" class="resume-fill-hint" role="status" hidden>Загрузите резюме — ФИО и контакты заполнятся сами. Файл можно перетащить в поле «Резюме».</div>
+            </div>
           </div>
+
+          <div id="resumeAutofillPanel" class="autofill-panel" hidden></div>
+          <div id="candidateRejectedInfo" class="rejected-info" hidden></div>
 
           <div class="candidate-fields">
             <div class="name-grid">
@@ -143,6 +240,9 @@
                 <input id="candidateMiddleName" autocomplete="additional-name">
               </div>
             </div>
+
+            <!-- Похожие кандидаты по ФИО и контактам — предупреждение о дубле; только для нового кандидата. -->
+            <div id="candidateSimilar" class="similar-panel" role="status" aria-live="polite" hidden></div>
 
             <div class="field">
               <label>Вакансия *</label>
@@ -161,14 +261,14 @@
             </div>
 
             <div class="field">
-              <label>Ответственный тех. интервьювер *</label>
+              <label>Проф. интервьювер *</label>
               <select id="candidateTechInterviewer"></select>
             </div>
 
             <div class="field">
               <label>Источник</label>
               <div class="select-with-brand">
-                <span id="candidateSourceIcon" class="brand-icon brand-generic">•</span>
+                <span id="candidateSourceIcon" class="brand-icon brand-generic" aria-hidden="true"><svg class="icon"><use href="#i-globe"/></svg></span>
                 <select id="candidateSource" onchange="renderCandidateSourceIcon()"></select>
               </div>
             </div>
@@ -203,7 +303,7 @@
               <input
                 id="candidateSalary"
                 inputmode="numeric"
-                placeholder="500 000"
+                placeholder="Например, 500 000"
                 oninput="formatMoneyInput(this, 10000000)"
               >
               <small class="field-hint">Максимум 10 000 000</small>
@@ -211,19 +311,19 @@
 
             <div class="social-grid">
               <div class="field">
-                <label><span class="social-icon telegram">✈</span> Telegram</label>
+                <label><span class="social-icon telegram" aria-hidden="true"><svg class="icon"><use href="#i-send"/></svg></span>Telegram</label>
                 <input id="candidateTelegram" oninput="renderSocialPreviews()" placeholder="@username">
                 <a id="telegramPreview" class="preview-link" target="_blank" rel="noopener"></a>
               </div>
 
               <div class="field">
-                <label><span class="social-icon github">GH</span> GitHub</label>
+                <label><span class="social-icon github" aria-hidden="true"><svg class="icon"><use href="#i-github"/></svg></span>GitHub</label>
                 <input id="candidateGithub" oninput="renderSocialPreviews()" placeholder="username или URL">
                 <a id="githubPreview" class="preview-link" target="_blank" rel="noopener"></a>
               </div>
 
               <div class="field">
-                <label><span class="social-icon linkedin">in</span> LinkedIn</label>
+                <label><span class="social-icon linkedin" aria-hidden="true"><svg class="icon"><use href="#i-linkedin"/></svg></span>LinkedIn</label>
                 <input id="candidateLinkedin" oninput="renderSocialPreviews()" placeholder="username или URL">
                 <a id="linkedinPreview" class="preview-link" target="_blank" rel="noopener"></a>
               </div>
@@ -235,22 +335,22 @@
           <div class="section-heading compact-heading">
             <div>
               <h3>Материалы</h3>
-              <p>Резюме, папка, комментарии и ссылки.</p>
+              <p>Резюме, папка, ссылки и комментарии.</p>
             </div>
           </div>
 
           <div class="field">
             <label>Резюме *</label>
-            <label class="file-drop">
-              <input
+            <label class="file-drop" id="resumeDropZone" ondragenter="resumeDragOver(event)" ondragover="resumeDragOver(event)" ondragleave="resumeDragLeave(event)" ondrop="resumeDrop(event)">
+              <input class="sr-only"
                 id="candidateResumeFile"
                 type="file"
                 accept=".pdf,.doc,.docx"
-                onchange="renderSelectedResumeFile()"
+                onchange="onResumeFileChange()"
               >
-              <span class="file-drop-icon">⇧</span>
+              <span class="file-drop-icon"><svg class="icon"><use href="#i-upload"/></svg></span>
               <span>
-                <strong>Выберите файл</strong>
+                <strong>Выберите файл или перетащите сюда</strong>
                 <small>PDF / DOC / DOCX до 10 МБ</small>
               </span>
             </label>
@@ -265,17 +365,19 @@
           </div>
 
           <div class="field">
-            <label>Комментарий</label>
-            <textarea id="candidateComment" placeholder="Дополнительная информация о кандидате"></textarea>
-          </div>
-
-          <div class="field">
             <div class="field-header">
               <label>Иные ссылки</label>
-              <button class="button button-ghost button-small" type="button" onclick="addCandidateLink()">＋ Добавить</button>
+              <button class="button button-ghost button-small" type="button" onclick="addCandidateLink()"><svg class="icon icon-sm"><use href="#i-plus"/></svg><span>Добавить</span></button>
             </div>
             <div id="candidateLinks"></div>
           </div>
+
+          <!-- Новый кандидат: первый комментарий; существующий: лента комментариев. -->
+          <div id="candidateFirstCommentField" class="field">
+            <label>Комментарий</label>
+            <textarea id="candidateComment" data-rich placeholder="Дополнительная информация о кандидате"></textarea>
+          </div>
+          <div id="candidateComments" class="comments-host"></div>
         </section>
 
         <section class="candidate-column candidate-column-interviews">
@@ -296,10 +398,13 @@
       <div class="panel-header">
         <div>
           <div class="eyebrow">Переход этапа</div>
-          <h2>Результат интервью</h2>
+          <h2>Результат этапа</h2>
           <div id="transitionTitle" class="muted"></div>
         </div>
-        <button class="icon-close" onclick="closeTransition()">×</button>
+        <div class="header-actions">
+          <button type="button" class="button button-primary" onclick="submitTransition(this)"><svg class="icon"><use href="#i-check"/></svg><span>Сохранить и перейти</span></button>
+          <button type="button" class="icon-btn" data-modal-close data-tip="Отмена (Esc)" aria-label="Отмена" onclick="closeTransition()"><svg class="icon"><use href="#i-close"/></svg></button>
+        </div>
       </div>
 
       <section id="transitionForm" class="form-card form-card-flat">
@@ -310,27 +415,21 @@
           </div>
 
           <div class="field">
-            <label>Ответственный на следующем этапе</label>
+            <label>Ответственный за этап</label>
             <input id="transitionResponsibleDisplay" readonly>
           </div>
 
           <div id="transitionQuestions" class="field full"></div>
 
           <div class="field full">
-            <label>Комментарии</label>
-            <textarea id="transitionComment"></textarea>
+            <label>Комментарий</label>
+            <textarea id="transitionComment" data-rich placeholder="Попадёт в ленту комментариев этого результата"></textarea>
           </div>
 
           <div class="field full">
             <label>Результат *</label>
-            <textarea id="transitionResult"></textarea>
+            <textarea id="transitionResult" data-rich placeholder="Итог этапа"></textarea>
           </div>
-        </div>
-
-        <div class="actions">
-          <button class="button button-primary" onclick="submitTransition(this)">
-            Сохранить и перейти
-          </button>
         </div>
       </section>
     </div>
@@ -340,25 +439,89 @@
     <div class="panel">
       <div class="panel-header">
         <h2>Редактирование результата</h2>
-        <button class="icon-close" onclick="closeInterviewEdit()">×</button>
+        <div class="header-actions">
+          <button type="button" class="button button-primary" onclick="saveInterviewEdit(this)"><svg class="icon"><use href="#i-save"/></svg><span>Сохранить</span></button>
+          <button type="button" class="icon-btn" data-modal-close data-tip="Отмена (Esc)" aria-label="Отмена" onclick="closeInterviewEdit()"><svg class="icon"><use href="#i-close"/></svg></button>
+        </div>
       </div>
 
       <section id="interviewEditForm" class="form-card form-card-flat">
         <div id="editInterviewQuestions"></div>
 
         <div class="field">
-          <label>Комментарий</label>
-          <textarea id="editInterviewComment"></textarea>
+          <label>Результат *</label>
+          <textarea id="editInterviewResult" data-rich></textarea>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div id="rejectionModal" class="modal modal-top">
+    <div class="panel">
+      <div class="panel-header">
+        <div>
+          <div class="eyebrow">Перевод в «Отказано»</div>
+          <h2 id="rejectionTitle">Отказ кандидату</h2>
+          <div id="rejectionSubtitle" class="muted"></div>
+        </div>
+        <div class="header-actions">
+          <button type="button" class="button button-danger" onclick="submitRejection(this)"><svg class="icon"><use href="#i-reject"/></svg><span>Отказать</span></button>
+          <button type="button" class="icon-btn" data-modal-close data-tip="Отмена (Esc)" aria-label="Отмена" onclick="closeRejection()"><svg class="icon"><use href="#i-close"/></svg></button>
+        </div>
+      </div>
+
+      <section id="rejectionForm" class="form-card form-card-flat rejection-panel">
+        <div class="field">
+          <label>Кем отказано *</label>
+          <div class="segmented">
+            <label class="segmented-option">
+              <input type="radio" name="rejectionByType" value="responsible" checked onchange="renderRejectionForm()">
+              <span>Ответственный</span>
+            </label>
+            <label class="segmented-option">
+              <input type="radio" name="rejectionByType" value="candidate" onchange="renderRejectionForm()">
+              <span>Кандидат</span>
+            </label>
+          </div>
+        </div>
+
+        <div id="rejectionResponsibleField" class="field">
+          <label for="rejectionResponsible">Ответственный *</label>
+          <select id="rejectionResponsible"></select>
         </div>
 
         <div class="field">
-          <label>Результат</label>
-          <textarea id="editInterviewResult"></textarea>
+          <label for="rejectionReason">Причина *</label>
+          <select id="rejectionReason" onchange="renderRejectionCommentHint()"></select>
         </div>
 
-        <div class="actions">
-          <button class="button button-danger left" onclick="softDeleteInterview(this)">Удалить</button>
-          <button class="button button-primary" onclick="saveInterviewEdit(this)">Сохранить</button>
+        <div class="field">
+          <label id="rejectionCommentLabel" for="rejectionComment">Комментарий</label>
+          <textarea id="rejectionComment" data-rich></textarea>
+          <small id="rejectionCommentHint" class="field-error" hidden>Для причины «Другое» опишите причину отказа.</small>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div id="restoreModal" class="modal modal-top">
+    <div class="panel">
+      <div class="panel-header">
+        <div>
+          <div class="eyebrow">Возврат из «Отказано»</div>
+          <h2 id="restoreTitle">Вернуть кандидата</h2>
+          <div id="restoreSubtitle" class="muted"></div>
+        </div>
+        <div class="header-actions">
+          <button type="button" class="button button-primary" onclick="submitRestore(this)"><svg class="icon"><use href="#i-restore"/></svg><span>Вернуть на этап</span></button>
+          <button type="button" class="icon-btn" data-modal-close data-tip="Отмена (Esc)" aria-label="Отмена" onclick="closeRestore()"><svg class="icon"><use href="#i-close"/></svg></button>
+        </div>
+      </div>
+
+      <section id="restoreForm" class="form-card form-card-flat">
+        <div class="field">
+          <label for="restoreComment">Комментарий</label>
+          <textarea id="restoreComment" data-rich placeholder="Почему кандидат возвращается в воронку"></textarea>
         </div>
       </section>
     </div>
@@ -366,15 +529,17 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <div id="confirmModal" class="modal modal-top">
+  <div id="confirmModal" class="modal modal-top" data-alert data-backdrop-close>
     <div class="panel confirm-panel">
-      <div class="confirm-icon">!</div>
-      <h2 id="confirmTitle">Подтверждение</h2>
-      <p id="confirmMessage"></p>
+      <div id="confirmIcon" class="confirm-icon" aria-hidden="true"><svg class="icon"><use href="#i-alert"/></svg></div>
+      <div class="confirm-body">
+        <h2 id="confirmTitle">Подтверждение</h2>
+        <p id="confirmMessage" data-modal-desc></p>
+      </div>
 
       <div class="actions">
-        <button class="button button-secondary" onclick="closeConfirm(false)">Отмена</button>
-        <button id="confirmActionButton" class="button button-danger" onclick="closeConfirm(true)">Подтвердить</button>
+        <button type="button" class="button button-secondary" data-modal-close data-autofocus onclick="closeConfirm(false)">Отмена</button>
+        <button type="button" id="confirmActionButton" class="button button-danger" onclick="closeConfirm(true)"><span>Подтвердить</span></button>
       </div>
     </div>
   </div>
@@ -384,7 +549,18 @@
     window.__INITIAL_DRAFT_TOKEN__ = '<?= initialDraftToken ?>';
   </script>
 
+  <?!= include('UiKit'); ?>
+  <?!= include('Select'); ?>
+  <?!= include('IconEditor'); ?>
+  <?!= include('History'); ?>
+  <?!= include('Drawer'); ?>
+  <?!= include('Editor'); ?>
+  <?!= include('Comments'); ?>
   <?!= include('Scripts'); ?>
   <?!= include('AdminScripts'); ?>
+  <?!= include('Notifications'); ?>
+  <?!= include('Integrations'); ?>
+  <?!= include('Profile'); ?>
+  <?!= include('ResumeAutofill'); ?>
 </body>
 </html>

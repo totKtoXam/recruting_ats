@@ -1,0 +1,487 @@
+<script>
+/* ThemeManager: 'system' | 'light' | 'dark', persisted in localStorage['ats:theme'].
+   system -> no data-theme attribute (CSS follows prefers-color-scheme);
+   light/dark -> <html data-theme="...">. Applied immediately on load.
+   Toggle buttons: any element with [data-theme-toggle] gets data-tip/aria-label
+   and its inner <use href> synced to the current mode (wire onclick="ThemeManager.cycle()"). */
+(function(){
+  if(window.ThemeManager){return;}
+  var KEY='ats:theme';
+  var MODES=['system','light','dark'];
+  var LABELS={system:'Тема: системная',light:'Тема: светлая',dark:'Тема: тёмная'};
+  var ICONS={system:'#i-monitor',light:'#i-sun',dark:'#i-moon'};
+  var root=document.documentElement;
+  var mq=null;
+  try{mq=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark)'):null;}catch(e){}
+  var mode='system';
+  var bound=false;
+
+  function valid(m){return MODES.indexOf(m)>=0;}
+  function read(){
+    try{var v=window.localStorage.getItem(KEY);return valid(v)?v:'system';}catch(e){return 'system';}
+  }
+  function write(m){
+    try{window.localStorage.setItem(KEY,m);}catch(e){}
+  }
+  function effective(){
+    if(mode!=='system'){return mode;}
+    return mq&&mq.matches?'dark':'light';
+  }
+  function syncToggles(){
+    var nodes;
+    try{nodes=document.querySelectorAll('[data-theme-toggle]');}catch(e){return;}
+    for(var i=0;i<nodes.length;i++){
+      var el=nodes[i];
+      if(el.getAttribute('data-theme-mode')===mode){continue;}
+      el.setAttribute('data-theme-mode',mode);
+      el.setAttribute('data-tip',LABELS[mode]);
+      el.setAttribute('aria-label',LABELS[mode]);
+      var use=el.querySelector('use');
+      if(use){
+        use.setAttribute('href',ICONS[mode]);
+        if(use.hasAttribute('xlink:href')){use.setAttribute('xlink:href',ICONS[mode]);}
+      }
+    }
+  }
+  function apply(){
+    if(mode==='system'){root.removeAttribute('data-theme');}
+    else{root.setAttribute('data-theme',mode);}
+    syncToggles();
+  }
+  function emit(){
+    try{window.dispatchEvent(new CustomEvent('themechange',{detail:{mode:mode,effective:effective()}}));}catch(e){}
+  }
+  function onSystemChange(){
+    if(mode==='system'){emit();}
+  }
+
+  window.ThemeManager={
+    init:function(){
+      mode=read();
+      apply();
+      if(!bound&&mq){
+        bound=true;
+        if(mq.addEventListener){mq.addEventListener('change',onSystemChange);}
+        else if(mq.addListener){mq.addListener(onSystemChange);}
+      }
+      if(document.readyState==='loading'){
+        document.addEventListener('DOMContentLoaded',syncToggles);
+      }
+      return mode;
+    },
+    get:function(){return mode;},
+    effective:effective,
+    set:function(m){
+      if(!valid(m)){m='system';}
+      mode=m;
+      write(m);
+      apply();
+      emit();
+      return mode;
+    },
+    cycle:function(){
+      return window.ThemeManager.set(MODES[(MODES.indexOf(mode)+1)%MODES.length]);
+    },
+    sync:syncToggles
+  };
+  window.ThemeManager.init();
+})();
+
+/* UiKit: global tooltip for any element with data-tip="Текст".
+   One position:fixed element on <body>, delegated listeners -> never clipped by overflow/modals. */
+(function(){
+  if(window.__uiKitTooltip){return;}
+  window.__uiKitTooltip=true;
+
+  var GAP=6;
+  var MARGIN=6;
+  var tip=null;
+  var current=null;
+
+  function ensureTip(){
+    if(!tip){
+      tip=document.createElement('div');
+      tip.className='tooltip';
+      tip.id='uiTooltip';
+      tip.setAttribute('role','tooltip');
+      document.body.appendChild(tip);
+    }
+    return tip;
+  }
+
+  function findTarget(node){
+    while(node&&node.nodeType===1){
+      if(node.hasAttribute('data-tip')){return node;}
+      node=node.parentElement;
+    }
+    return null;
+  }
+
+  function labelIfIconOnly(el){
+    var text=el.getAttribute('data-tip');
+    if(text&&!el.hasAttribute('aria-label')&&!(el.textContent||'').trim()){
+      el.setAttribute('aria-label',text);
+    }
+  }
+
+  function position(el){
+    var t=ensureTip();
+    var r=el.getBoundingClientRect();
+    var tr=t.getBoundingClientRect();
+    var vw=document.documentElement.clientWidth||window.innerWidth;
+    var vh=document.documentElement.clientHeight||window.innerHeight;
+    var below=false;
+    var top=r.top-tr.height-GAP;
+    if(top<MARGIN){
+      top=r.bottom+GAP;
+      below=true;
+      if(top+tr.height>vh-MARGIN){top=Math.max(MARGIN,vh-tr.height-MARGIN);}
+    }
+    var left=r.left+r.width/2-tr.width/2;
+    left=Math.max(MARGIN,Math.min(left,vw-tr.width-MARGIN));
+    t.style.left=Math.round(left)+'px';
+    t.style.top=Math.round(top)+'px';
+    t.classList.toggle('tooltip-below',below);
+  }
+
+  function show(el){
+    var text=el.getAttribute('data-tip');
+    if(!text||!el.isConnected){hide();return;}
+    labelIfIconOnly(el);
+    var t=ensureTip();
+    t.textContent=text;
+    t.style.left='0px';
+    t.style.top='0px';
+    t.classList.add('tooltip-visible');
+    position(el);
+    current=el;
+  }
+
+  function hide(){
+    if(tip){tip.classList.remove('tooltip-visible');}
+    current=null;
+  }
+
+  document.addEventListener('mouseover',function(e){
+    var el=findTarget(e.target);
+    if(el===current&&el){return;}
+    if(el){show(el);}   /* instant: no hover delay */
+    else if(current){hide();}
+  });
+
+  document.addEventListener('mouseout',function(e){
+    var el=findTarget(e.target);
+    if(!el){return;}
+    if(e.relatedTarget&&el.contains(e.relatedTarget)){return;}
+    hide();
+  });
+
+  document.addEventListener('focusin',function(e){
+    var el=findTarget(e.target);
+    if(!el){return;}
+    var keyboard=true;
+    try{keyboard=e.target.matches(':focus-visible');}catch(err){}
+    if(keyboard){show(el);}
+  });
+
+  document.addEventListener('focusout',function(){hide();});
+  document.addEventListener('click',hide,true);
+  document.addEventListener('scroll',hide,true);
+  window.addEventListener('resize',hide);
+  window.addEventListener('blur',hide);
+  document.addEventListener('keydown',function(e){if(e.key==='Escape'&&current){hide();}});
+
+  /* Give icon-only [data-tip] controls an accessible name. */
+  function labelAll(){
+    var nodes=document.querySelectorAll('[data-tip]:not([aria-label])');
+    for(var i=0;i<nodes.length;i++){labelIfIconOnly(nodes[i]);}
+  }
+  var pending=false;
+  function queueLabel(){
+    if(pending){return;}
+    pending=true;
+    (window.requestAnimationFrame||setTimeout)(function(){pending=false;labelAll();if(window.ThemeManager){window.ThemeManager.sync();}});
+  }
+  if(window.MutationObserver){
+    new MutationObserver(function(){
+      queueLabel();
+      if(current&&!current.isConnected){hide();}
+    }).observe(document.body,{childList:true,subtree:true});
+  }
+  queueLabel();
+
+  /* Icon markup helper: icon('save') / icon('trash','icon-sm').
+     Defined only if the app scripts don't provide their own. */
+  function iconHtml(name,cls){
+    return '<svg class="icon'+(cls?' '+cls:'')+'" aria-hidden="true" focusable="false"><use href="#i-'+
+      String(name).replace(/[^a-z0-9-]/gi,'')+'"/></svg>';
+  }
+  if(typeof window.icon!=='function'){window.icon=iconHtml;}
+
+  window.UiKit=window.UiKit||{};
+  window.UiKit.hideTooltip=hide;
+  window.UiKit.icon=iconHtml;
+})();
+
+/* UiKit a11y layer — applied to static and dynamically rendered markup.
+   - decorative <svg class="icon"> are hidden from assistive tech;
+   - .field labels get for=<control id>; a trailing "*" becomes <span class="req">
+     and the control gets aria-required="true";
+   - .modal dialogs: role/aria-modal/aria-labelledby, initial focus, Tab trap,
+     Esc (clicks the [data-modal-close] control), focus returns to the opener;
+   - UiKit.showFieldErrors(): errors under the fields, first invalid gets focus. */
+(function(){
+  if(window.__uiKitA11y){return;}
+  window.__uiKitA11y=true;
+
+  var CONTROL='input:not([type=hidden]):not([type=checkbox]):not([type=radio]),select,textarea';
+  var FOCUSABLE='a[href],button:not([disabled]),input:not([disabled]):not([type=hidden]),select:not([disabled]),textarea:not([disabled]),[contenteditable="true"],summary,[tabindex]:not([tabindex="-1"])';
+  var uid=0;
+
+  function visible(node){return !!(node.offsetWidth||node.offsetHeight||node.getClientRects().length);}
+
+  function hideDecorativeIcons(root){
+    var nodes=root.querySelectorAll('svg.icon:not([aria-hidden])');
+    for(var i=0;i<nodes.length;i++){
+      if(nodes[i].hasAttribute('aria-label')||nodes[i].hasAttribute('role')){continue;}
+      nodes[i].setAttribute('aria-hidden','true');
+      nodes[i].setAttribute('focusable','false');
+    }
+  }
+
+  function fieldControl(field,label){
+    var nodes=field.querySelectorAll(CONTROL);
+    for(var i=0;i<nodes.length;i++){
+      if(!label.contains(nodes[i])){return nodes[i];}
+    }
+    return null;
+  }
+
+  /* Labels may be re-rendered with textContent (e.g. "Опишите причину *"),
+     so the check is repeated on every scan and is idempotent. */
+  function markRequired(label,control){
+    if(label.querySelector('.req')){return;}
+    var last=label.lastChild;
+    while(last&&last.nodeType===3&&!last.nodeValue.trim()){last=last.previousSibling;}
+    if(!last||last.nodeType!==3||!/\*\s*$/.test(last.nodeValue)){
+      if(control&&control.__autoRequired){control.removeAttribute('aria-required');control.__autoRequired=false;}
+      return;
+    }
+    last.nodeValue=last.nodeValue.replace(/\s*\*\s*$/,'');
+    var star=document.createElement('span');
+    star.className='req';
+    star.setAttribute('aria-hidden','true');
+    star.textContent='*';
+    label.appendChild(star);
+    if(control){control.setAttribute('aria-required','true');control.__autoRequired=true;}
+  }
+
+  function enhanceFields(root){
+    var labels=root.querySelectorAll('.field > label, .field > .field-header > label');
+    for(var i=0;i<labels.length;i++){
+      var label=labels[i];
+      if(label.classList.contains('file-drop')||label.querySelector('input,select,textarea')){continue;}
+      var field=label.closest('.field');
+      var control=field?fieldControl(field,label):null;
+      if(control&&!label.htmlFor&&!control.hasAttribute('data-rich')){
+        if(!control.id){control.id='fld-'+(++uid);}
+        label.htmlFor=control.id;
+      }
+      markRequired(label,control);
+    }
+  }
+
+  /* ---------- Modals ---------- */
+  var modalStack=[];
+
+  function topModal(){return modalStack.length?modalStack[modalStack.length-1]:null;}
+  function focusables(root){return Array.prototype.filter.call(root.querySelectorAll(FOCUSABLE),visible);}
+
+  function prepareModal(modal){
+    var panel=modal.querySelector('.panel')||modal;
+    if(panel.__modalReady){return panel;}
+    panel.__modalReady=true;
+    panel.setAttribute('role',modal.hasAttribute('data-alert')?'alertdialog':'dialog');
+    panel.setAttribute('aria-modal','true');
+    panel.setAttribute('tabindex','-1');
+    var heading=panel.querySelector('h2,h3');
+    if(heading){
+      if(!heading.id){heading.id='dlg-title-'+(++uid);}
+      panel.setAttribute('aria-labelledby',heading.id);
+    }
+    var desc=panel.querySelector('[data-modal-desc]');
+    if(desc){
+      if(!desc.id){desc.id='dlg-desc-'+(++uid);}
+      panel.setAttribute('aria-describedby',desc.id);
+    }
+    return panel;
+  }
+
+  function onOpen(modal){
+    if(modalStack.indexOf(modal)>=0){return;}
+    var panel=prepareModal(modal);
+    var active=document.activeElement;
+    modal.__returnFocus=active&&active!==document.body&&!modal.contains(active)?active:null;
+    modalStack.push(modal);
+    if(window.UiKit&&window.UiKit.hideTooltip){window.UiKit.hideTooltip();}
+    (window.requestAnimationFrame||setTimeout)(function(){
+      if(modalStack.indexOf(modal)<0||panel.contains(document.activeElement)){return;}
+      var target=modal.querySelector('[data-autofocus]')||panel;
+      try{target.focus({preventScroll:true});}catch(e){target.focus();}
+    });
+  }
+
+  function onClose(modal){
+    var index=modalStack.indexOf(modal);
+    if(index<0){return;}
+    modalStack.splice(index,1);
+    var back=modal.__returnFocus;
+    modal.__returnFocus=null;
+    if(back&&back.isConnected&&visible(back)){
+      try{back.focus({preventScroll:true});}catch(e){}
+    }
+  }
+
+  function requestClose(modal){
+    var closer=modal.querySelector('[data-modal-close]');
+    if(closer){closer.click();}
+  }
+
+  function watchModal(modal){
+    if(modal.__modalWatched){return;}
+    modal.__modalWatched=true;
+    prepareModal(modal);
+    if(modal.classList.contains('open')){onOpen(modal);}
+    new MutationObserver(function(){
+      if(modal.classList.contains('open')){onOpen(modal);}else{onClose(modal);}
+    }).observe(modal,{attributes:true,attributeFilter:['class']});
+  }
+
+  document.addEventListener('keydown',function(e){
+    var modal=topModal();
+    if(!modal){return;}
+    if(e.key==='Escape'){
+      /* Popovers inside the dialog (link editor, emoji picker) close first. */
+      if(e.defaultPrevented){return;}
+      e.preventDefault();
+      requestClose(modal);
+      return;
+    }
+    if(e.key!=='Tab'){return;}
+    var panel=modal.querySelector('.panel')||modal;
+    var items=focusables(panel);
+    if(!items.length){e.preventDefault();panel.focus();return;}
+    var first=items[0],last=items[items.length-1],active=document.activeElement;
+    if(!panel.contains(active)){e.preventDefault();first.focus();return;}
+    if(e.shiftKey&&(active===first||active===panel)){e.preventDefault();last.focus();}
+    else if(!e.shiftKey&&active===last){e.preventDefault();first.focus();}
+  });
+
+  /* ---------- Inline field errors ---------- */
+  function resolve(node){return typeof node==='string'?document.getElementById(node):node;}
+
+  function clearFieldError(control){
+    control=resolve(control);
+    if(!control){return;}
+    control.classList.remove('input-error');
+    control.removeAttribute('aria-invalid');
+    var msg=control.__errorNode;
+    if(msg&&msg.parentNode){msg.parentNode.removeChild(msg);}
+    control.__errorNode=null;
+    var ids=(control.getAttribute('aria-describedby')||'').split(' ').filter(function(id){return id&&(!msg||id!==msg.id);});
+    if(ids.length){control.setAttribute('aria-describedby',ids.join(' '));}
+    else{control.removeAttribute('aria-describedby');}
+  }
+
+  function showFieldError(control,message){
+    control=resolve(control);
+    if(!control){return null;}
+    clearFieldError(control);
+    control.classList.add('input-error');
+    control.setAttribute('aria-invalid','true');
+    var field=control.closest('.field')||control.parentNode;
+    var msg=document.createElement('small');
+    msg.className='field-error';
+    msg.id='err-'+(++uid);
+    msg.textContent=message;
+    field.appendChild(msg);
+    control.__errorNode=msg;
+    control.setAttribute('aria-describedby',((control.getAttribute('aria-describedby')||'')+' '+msg.id).trim());
+    if(!control.__errorBound){
+      control.__errorBound=true;
+      var clear=function(){if(control.__errorNode){clearFieldError(control);}};
+      control.addEventListener('input',clear);
+      control.addEventListener('change',clear);
+    }
+    return msg;
+  }
+
+  /* errors: [{field: element|id, message}] -> true when the list is empty. */
+  function showFieldErrors(errors){
+    var first=null;
+    (errors||[]).forEach(function(item){
+      var control=resolve(item.field);
+      if(!control){return;}
+      showFieldError(control,item.message);
+      if(!first){first=control;}
+    });
+    if(!first){return true;}
+    /* Deferred: validation often runs inside runUiTask while the form is still
+       disabled; focus lands after the form is re-enabled. */
+    setTimeout(function(){
+      var target=first;
+      if(!visible(target)){
+        var wrap=target.closest('.field');
+        var area=wrap&&wrap.querySelector('[contenteditable="true"]');
+        if(area){target=area;}
+      }
+      var reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if(target.scrollIntoView){target.scrollIntoView({block:'center',behavior:reduce?'auto':'smooth'});}
+      try{target.focus({preventScroll:true});}catch(e){}
+    },0);
+    return false;
+  }
+
+  function clearFieldErrors(scope){
+    scope=resolve(scope)||document;
+    var nodes=scope.querySelectorAll('[aria-invalid="true"]');
+    for(var i=0;i<nodes.length;i++){clearFieldError(nodes[i]);}
+  }
+
+  /* ---------- Main content focus (skip link, route change) ---------- */
+  function focusMain(){
+    var view=document.querySelector('.app-view:not([hidden])');
+    var target=view&&(view.querySelector('.page-header h2')||view);
+    if(!target){return;}
+    if(!target.hasAttribute('tabindex')){target.setAttribute('tabindex','-1');}
+    try{target.focus({preventScroll:true});}catch(e){target.focus();}
+  }
+
+  function scan(root){
+    hideDecorativeIcons(root);
+    enhanceFields(root);
+    var modals=root.querySelectorAll('.modal');
+    for(var i=0;i<modals.length;i++){watchModal(modals[i]);}
+  }
+
+  var queued=false;
+  function queueScan(){
+    if(queued){return;}
+    queued=true;
+    (window.requestAnimationFrame||setTimeout)(function(){queued=false;scan(document);});
+  }
+  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',function(){scan(document);});}
+  else{scan(document);}
+  if(window.MutationObserver){
+    new MutationObserver(queueScan).observe(document.documentElement,{childList:true,subtree:true});
+  }
+
+  window.UiKit=window.UiKit||{};
+  window.UiKit.showFieldErrors=showFieldErrors;
+  window.UiKit.showFieldError=showFieldError;
+  window.UiKit.clearFieldError=clearFieldError;
+  window.UiKit.clearFieldErrors=clearFieldErrors;
+  window.UiKit.focusMain=focusMain;
+  window.UiKit.isModalOpen=function(){return modalStack.length>0;};
+})();
+</script>

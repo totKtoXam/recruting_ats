@@ -1,15 +1,10 @@
 import { APP_CONFIG } from '../config.js';
 import { db, transaction } from '../db/pool.js';
 import { fail } from '../lib/errors.js';
-import {
-  clean,
-  composeFullName,
-  normalizeNamePart,
-  optionalUuid,
-  toBoolean,
-  validateEmail
-} from '../lib/validation.js';
-import { toResponsible, toSource, toTemplate, toVacancy } from './mappers.js';
+import { clean, optionalUuid, toBoolean, validateHttpUrl } from '../lib/validation.js';
+import { normalizeTemplateQuestions, toSource, toTemplate, toVacancy } from './mappers.js';
+import { getResponsibles } from './users.js';
+import { recordChanges, recordEvent } from './audit.js';
 
 const TEMPLATE_SELECT = `
   SELECT t.*, v.name AS vacancy_name
@@ -17,238 +12,239 @@ const TEMPLATE_SELECT = `
   JOIN vacancies v ON v.id = t.vacancy_id
 `;
 
+// Записи, доступные для выбора в формах: не в архиве и не в корзине.
+const ACTIVE = 'archived_at IS NULL AND deleted_at IS NULL';
+
 // ---------- Вакансии ----------
 
 export async function getVacancies() {
-  const rows = await db.many(
-    'SELECT * FROM vacancies WHERE deleted_at IS NULL ORDER BY number'
-  );
+  const rows = await db.many(`SELECT * FROM vacancies WHERE ${ACTIVE} ORDER BY number`);
   return rows.map(toVacancy);
 }
 
-export async function saveVacancy(input = {}) {
+// Переходы между статусами вакансии (кнопки в таблице и на форме).
+export const VACANCY_STATUS_TRANSITIONS = Object.freeze({
+  'Открыта': ['На паузе', 'Закрыта'],
+  'На паузе': ['Открыта', 'Закрыта'],
+  'Закрыта': ['Открыта']
+});
+
+// Публикации вакансии: [{ url, name }] — ссылки на hh, Telegram, LinkedIn и т.д.
+const MAX_VACANCY_LINKS = 20;
+
+function normalizeVacancyLinks(links) {
+  const seen = new Set();
+  const result = [];
+  for (const link of Array.isArray(links) ? links : []) {
+    const url = validateHttpUrl(link && link.url);
+    if (!url || seen.has(url.toLowerCase())) continue;
+    seen.add(url.toLowerCase());
+    result.push({ url, name: clean(link && link.name).slice(0, 120) });
+  }
+  if (result.length > MAX_VACANCY_LINKS) {
+    fail(`Не больше ${MAX_VACANCY_LINKS} ссылок на публикации.`);
+  }
+  return result;
+}
+
+// Карточка вакансии: название и ссылки на публикации. Новая вакансия создаётся открытой,
+// статус меняется кнопками перехода (setVacancyStatus).
+export async function saveVacancy(input = {}, actor) {
   const name = clean(input.name);
-  const status = clean(input.status);
-  const comment = clean(input.comment);
   const id = optionalUuid(input.id, 'Вакансия не найдена.');
+  const links = input.links === undefined ? undefined : normalizeVacancyLinks(input.links);
 
   if (!name) {
     fail('Название вакансии обязательно.');
   }
 
-  if (!APP_CONFIG.VACANCY_STATUSES.includes(status)) {
-    fail('Некорректный статус вакансии.');
-  }
+  return transaction(async tx => {
+    // Дополнительно гарантируется уникальным индексом vacancies_name_active_uq.
+    const duplicate = await tx.one(
+      `SELECT number FROM vacancies
+       WHERE lower(btrim(name)) = lower($1) AND deleted_at IS NULL AND id IS DISTINCT FROM $2`,
+      [name, id]
+    );
 
-  const row = id
-    ? await db.one(
-        `UPDATE vacancies
-         SET name = $2, status = $3, comment = $4, updated_at = now(), deleted_at = NULL
-         WHERE id = $1
-         RETURNING *`,
-        [id, name, status, comment]
-      )
-    : await db.one(
-        `INSERT INTO vacancies (name, status, comment) VALUES ($1, $2, $3) RETURNING *`,
-        [name, status, comment]
-      );
+    if (duplicate) {
+      fail(`Вакансия с названием «${name}» уже существует (№${duplicate.number}).`, 409);
+    }
 
-  if (!row) {
+    const before = id ? await tx.one('SELECT * FROM vacancies WHERE id = $1 FOR UPDATE', [id]) : null;
+
+    if (id && !before) {
+      fail('Вакансия не найдена.', 404);
+    }
+
+    const row = before
+      ? await tx.one(
+          'UPDATE vacancies SET name = $2, links = COALESCE($3::jsonb, links), updated_at = now() WHERE id = $1 RETURNING *',
+          [id, name, links === undefined ? null : JSON.stringify(links)]
+        )
+      : await tx.one(
+          `INSERT INTO vacancies (name, status, links) VALUES ($1, 'Открыта', $2) RETURNING *`,
+          [name, JSON.stringify(links || [])]
+        );
+
+    if (before) {
+      await recordChanges(tx, 'vacancy', before, row, actor);
+    } else {
+      await recordEvent(tx, { entityType: 'vacancy', entityId: row.id, action: 'create', newDisplay: row.name, actor });
+    }
+
+    return { ok: true, vacancy: toVacancy(row) };
+  });
+}
+
+export async function setVacancyStatus(input = {}, actor) {
+  const id = optionalUuid(input.id, 'Вакансия не найдена.');
+  const status = clean(input.status);
+  const vacancy = id ? await db.one('SELECT * FROM vacancies WHERE id = $1', [id]) : null;
+
+  if (!vacancy) {
     fail('Вакансия не найдена.', 404);
   }
 
-  return { ok: true, vacancy: toVacancy(row) };
-}
+  if (vacancy.archived_at || vacancy.deleted_at) {
+    fail('Вакансия в архиве — сначала верните её.');
+  }
 
-export async function deleteVacancy(id) {
-  const vacancyId = optionalUuid(id, 'Запись не найдена.');
+  if (!(VACANCY_STATUS_TRANSITIONS[vacancy.status] || []).includes(status)) {
+    fail(`Переход «${vacancy.status}» → «${status}» не разрешён.`);
+  }
 
-  return transaction(async tx => {
-    const row = await tx.one(
-      `UPDATE vacancies SET deleted_at = now(), updated_at = now()
-       WHERE id = $1 RETURNING *`,
-      [vacancyId]
+  const row = await transaction(async tx => {
+    const updated = await tx.one(
+      'UPDATE vacancies SET status = $2, updated_at = now() WHERE id = $1 RETURNING *',
+      [id, status]
     );
-
-    if (!row) {
-      fail('Запись не найдена.', 404);
-    }
-
-    await tx.query(
-      `UPDATE interview_templates SET deleted_at = now(), updated_at = now()
-       WHERE vacancy_id = $1 AND deleted_at IS NULL`,
-      [vacancyId]
-    );
-
-    return { ok: true, entity: toVacancy(row) };
+    await recordEvent(tx, {
+      entityType: 'vacancy', entityId: id, action: 'status', field: 'status', fieldLabel: 'Статус',
+      oldDisplay: vacancy.status, newDisplay: status, actor
+    });
+    return updated;
   });
+
+  return { ok: true, vacancy: toVacancy(row) };
 }
 
 // ---------- Источники ----------
 
 export async function getSources() {
-  const rows = await db.many(
-    'SELECT * FROM sources WHERE deleted_at IS NULL ORDER BY number'
-  );
+  const rows = await db.many(`SELECT * FROM sources WHERE ${ACTIVE} ORDER BY number`);
   return rows.map(toSource);
 }
 
-export async function saveSource(input = {}) {
+// Иконка источника: пресет (ключ) либо своя картинка — PNG до 64 КБ (редактор отдаёт 64×64).
+export const SOURCE_ICON_KEYS = Object.freeze([
+  'linkedin', 'github', 'telegram', 'instagram', 'facebook', 'whatsapp', 'hh', 'habr', 'djinni',
+  'enbek', 'olx', 'indeed', 'glassdoor', 'superjob', 'jooble', 'vk', 'youtube', 'x',
+  'website', 'referral', 'direct', 'internal', 'agency', 'event', 'other'
+]);
+const MAX_ICON_BYTES = 64 * 1024;
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+function decodeIconPng(value) {
+  const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(String(value || ''));
+  if (!match) fail('Иконка должна быть PNG-изображением.');
+  const buffer = Buffer.from(match[1], 'base64');
+  if (buffer.length > MAX_ICON_BYTES) fail('Иконка слишком большая (до 64 КБ).');
+  if (!buffer.subarray(0, 8).equals(PNG_SIGNATURE)) fail('Иконка должна быть PNG-изображением.');
+  return buffer;
+}
+
+export async function saveSource(input = {}, actor) {
   const name = clean(input.name);
   const id = optionalUuid(input.id, 'Источник не найден.');
+  const iconKey = input.iconKey === undefined ? undefined : clean(input.iconKey);
+  // iconData: undefined — не менять; '' — убрать свою картинку; data URL — новая картинка.
+  const iconPng = input.iconData === undefined ? undefined : input.iconData ? decodeIconPng(input.iconData) : null;
 
   if (!name) {
     fail('Название источника обязательно.');
   }
 
-  // Дубликаты дополнительно ловит уникальный индекс sources_name_active_uq.
-  const row = id
-    ? await db.one(
-        `UPDATE sources SET name = $2, updated_at = now(), deleted_at = NULL
-         WHERE id = $1 RETURNING *`,
-        [id, name]
-      )
-    : await db.one('INSERT INTO sources (name) VALUES ($1) RETURNING *', [name]);
-
-  if (!row) {
-    fail('Источник не найден.', 404);
+  if (iconKey && !SOURCE_ICON_KEYS.includes(iconKey)) {
+    fail('Неизвестная иконка источника.');
   }
 
-  return { ok: true, source: toSource(row) };
-}
+  return transaction(async tx => {
+    const before = id ? await tx.one('SELECT * FROM sources WHERE id = $1 FOR UPDATE', [id]) : null;
 
-export async function deleteSource(id) {
-  const row = await db.one(
-    `UPDATE sources SET deleted_at = now(), updated_at = now()
-     WHERE id = $1 RETURNING *`,
-    [optionalUuid(id, 'Запись не найдена.')]
-  );
-
-  if (!row) {
-    fail('Запись не найдена.', 404);
-  }
-
-  return { ok: true, entity: toSource(row) };
-}
-
-// ---------- Ответственные ----------
-
-export async function getResponsibles() {
-  const rows = await db.many(
-    'SELECT * FROM responsibles WHERE deleted_at IS NULL ORDER BY number'
-  );
-  return rows.map(toResponsible);
-}
-
-export async function saveResponsible(input = {}) {
-  const id = optionalUuid(input.id, 'Ответственный не найден.');
-  const lastName = normalizeNamePart(input.lastName);
-  const firstName = normalizeNamePart(input.firstName);
-  const middleName = normalizeNamePart(input.middleName);
-  const email = validateEmail(input.email);
-  const userId = optionalUuid(input.userId, 'Выбранный пользователь не найден.');
-  const stages = Array.isArray(input.stages) ? input.stages.map(clean) : [];
-
-  if (!lastName || !firstName) {
-    fail('Фамилия и имя ответственного обязательны.');
-  }
-
-  if (!stages.length) {
-    fail('Выберите хотя бы один доступный этап.');
-  }
-
-  const invalid = stages.filter(stage => !APP_CONFIG.PIPELINE_STATUSES.includes(stage));
-
-  if (invalid.length) {
-    fail('Некорректные этапы ответственного: ' + invalid.join(', '));
-  }
-
-  if (userId) {
-    const user = await db.one('SELECT id FROM users WHERE id = $1', [userId]);
-
-    if (!user) {
-      fail('Выбранный пользователь не найден.');
+    if (id && !before) {
+      fail('Источник не найден.', 404);
     }
 
-    const linked = await db.one(
-      `SELECT last_name, first_name, middle_name FROM responsibles
-       WHERE user_id = $1 AND deleted_at IS NULL AND id IS DISTINCT FROM $2`,
-      [userId, id]
-    );
+    const nextKey = iconKey === undefined ? (before ? before.icon_key : '') : iconKey;
+    const nextPng = iconPng === undefined ? (before ? before.icon_png : null) : iconPng;
+    const iconChanged = !before || nextKey !== before.icon_key || iconPng !== undefined;
 
-    if (linked) {
-      fail(
-        'Этот пользователь уже привязан к ответственному "' +
-          composeFullName(linked.last_name, linked.first_name, linked.middle_name) +
-          '".'
-      );
+    // Дубликаты дополнительно ловит уникальный индекс sources_name_active_uq.
+    const row = before
+      ? await tx.one(
+          `UPDATE sources SET name = $2, icon_key = $3, icon_png = $4,
+             icon_updated_at = CASE WHEN $5 THEN now() ELSE icon_updated_at END, updated_at = now()
+           WHERE id = $1 RETURNING *`,
+          [id, name, nextKey, nextPng, iconChanged]
+        )
+      : await tx.one(
+          `INSERT INTO sources (name, icon_key, icon_png, icon_updated_at)
+           VALUES ($1, $2, $3, CASE WHEN $3::bytea IS NOT NULL THEN now() END) RETURNING *`,
+          [name, nextKey, nextPng]
+        );
+
+    if (before) {
+      await recordChanges(tx, 'source', before, row, actor);
+    } else {
+      await recordEvent(tx, { entityType: 'source', entityId: row.id, action: 'create', newDisplay: row.name, actor });
     }
-  }
 
-  const params = [lastName, firstName, middleName, email, userId, stages];
-
-  const row = id
-    ? await db.one(
-        `UPDATE responsibles
-         SET last_name = $2, first_name = $3, middle_name = $4, email = $5,
-             user_id = $6, stages = $7, updated_at = now(), deleted_at = NULL
-         WHERE id = $1 RETURNING *`,
-        [id, ...params]
-      )
-    : await db.one(
-        `INSERT INTO responsibles (last_name, first_name, middle_name, email, user_id, stages)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-        params
-      );
-
-  if (!row) {
-    fail('Ответственный не найден.', 404);
-  }
-
-  return { ok: true, responsible: toResponsible(row) };
+    return { ok: true, source: toSource(row) };
+  });
 }
 
-export async function deleteResponsible(id) {
-  const row = await db.one(
-    `UPDATE responsibles SET deleted_at = now(), updated_at = now()
-     WHERE id = $1 RETURNING *`,
-    [optionalUuid(id, 'Запись не найдена.')]
-  );
-
-  if (!row) {
-    fail('Запись не найдена.', 404);
-  }
-
-  return { ok: true, entity: toResponsible(row) };
+// Своя картинка источника (для <img src="/source-icons/:id">).
+export async function getSourceIcon(id) {
+  const sourceId = optionalUuid(id, 'Источник не найден.');
+  const row = sourceId ? await db.one('SELECT icon_png FROM sources WHERE id = $1', [sourceId]) : null;
+  return row && row.icon_png ? row.icon_png : null;
 }
 
 // ---------- Шаблоны интервью ----------
 
 export async function getInterviewTemplates(executor = db) {
   const rows = await executor.many(
-    TEMPLATE_SELECT + ' WHERE t.deleted_at IS NULL ORDER BY t.number'
+    TEMPLATE_SELECT + ' WHERE t.archived_at IS NULL AND t.deleted_at IS NULL ORDER BY t.number'
   );
+  return rows.map(toTemplate);
+}
+
+// Все шаблоны вакансии, включая архивные и удалённые (для админки).
+export async function listVacancyTemplates(vacancyId) {
+  const id = optionalUuid(vacancyId, 'Вакансия не найдена.');
+  if (!id) return [];
+
+  const rows = await db.many(TEMPLATE_SELECT + ' WHERE t.vacancy_id = $1 ORDER BY t.number', [id]);
   return rows.map(toTemplate);
 }
 
 export async function getTemplatesFor(vacancyId, stage, executor = db) {
   const rows = await executor.many(
     TEMPLATE_SELECT +
-      ' WHERE t.deleted_at IS NULL AND t.vacancy_id = $1 AND t.stage = $2 ORDER BY t.number',
+      ` WHERE t.archived_at IS NULL AND t.deleted_at IS NULL
+          AND t.vacancy_id = $1 AND t.stage = $2 ORDER BY t.number`,
     [vacancyId, stage]
   );
   return rows.map(toTemplate);
 }
 
-export async function saveInterviewTemplate(input = {}) {
+export async function saveInterviewTemplate(input = {}, actor) {
   const id = optionalUuid(input.id, 'Шаблон не найден.');
   const name = clean(input.name);
   const vacancyId = optionalUuid(input.vacancyId, 'Вакансия не найдена.');
   const stage = clean(input.stage);
   const required = toBoolean(input.required);
-  const questions = Array.isArray(input.questions)
-    ? input.questions.map(clean).filter(Boolean)
-    : [];
+  const questions = normalizeTemplateQuestions(input.questions);
 
   if (!name) {
     fail('Название шаблона обязательно.');
@@ -266,10 +262,7 @@ export async function saveInterviewTemplate(input = {}) {
     fail('Добавьте хотя бы один вопрос.');
   }
 
-  const vacancy = await db.one(
-    'SELECT id FROM vacancies WHERE id = $1 AND deleted_at IS NULL',
-    [vacancyId]
-  );
+  const vacancy = await db.one(`SELECT id FROM vacancies WHERE id = $1 AND deleted_at IS NULL`, [vacancyId]);
 
   if (!vacancy) {
     fail('Вакансия не найдена.');
@@ -277,43 +270,38 @@ export async function saveInterviewTemplate(input = {}) {
 
   const params = [name, vacancyId, stage, required, JSON.stringify(questions)];
 
-  const saved = id
-    ? await db.one(
-        `UPDATE interview_templates
-         SET name = $2, vacancy_id = $3, stage = $4, required = $5, questions = $6,
-             updated_at = now(), deleted_at = NULL
-         WHERE id = $1 RETURNING id`,
-        [id, ...params]
-      )
-    : await db.one(
-        `INSERT INTO interview_templates (name, vacancy_id, stage, required, questions)
-         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-        params
-      );
+  const saved = await transaction(async tx => {
+    const before = id ? await tx.one('SELECT * FROM interview_templates WHERE id = $1 FOR UPDATE', [id]) : null;
 
-  if (!saved) {
-    fail('Шаблон не найден.', 404);
-  }
+    if (id && !before) {
+      fail('Шаблон не найден.', 404);
+    }
+
+    const row = before
+      ? await tx.one(
+          `UPDATE interview_templates
+           SET name = $2, vacancy_id = $3, stage = $4, required = $5, questions = $6, updated_at = now()
+           WHERE id = $1 RETURNING *`,
+          [id, ...params]
+        )
+      : await tx.one(
+          `INSERT INTO interview_templates (name, vacancy_id, stage, required, questions)
+           VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+          params
+        );
+
+    if (before) {
+      await recordChanges(tx, 'template', before, row, actor);
+    } else {
+      await recordEvent(tx, { entityType: 'template', entityId: row.id, action: 'create', newDisplay: row.name, actor });
+    }
+
+    return row;
+  });
 
   const row = await db.one(TEMPLATE_SELECT + ' WHERE t.id = $1', [saved.id]);
 
   return { ok: true, template: toTemplate(row) };
-}
-
-export async function deleteInterviewTemplate(id) {
-  const saved = await db.one(
-    `UPDATE interview_templates SET deleted_at = now(), updated_at = now()
-     WHERE id = $1 RETURNING id`,
-    [optionalUuid(id, 'Запись не найдена.')]
-  );
-
-  if (!saved) {
-    fail('Запись не найдена.', 404);
-  }
-
-  const row = await db.one(TEMPLATE_SELECT + ' WHERE t.id = $1', [saved.id]);
-
-  return { ok: true, entity: toTemplate(row) };
 }
 
 // ---------- Справочники ----------
@@ -346,6 +334,18 @@ export async function getReferenceData() {
     interviewTemplates,
     dictionaries,
     transitions: APP_CONFIG.TRANSITIONS,
-    pipelineStatuses: APP_CONFIG.PIPELINE_STATUSES
+    pipelineStatuses: APP_CONFIG.PIPELINE_STATUSES,
+    rejectedStatus: APP_CONFIG.REJECTED_STATUS,
+    profInterviewStatus: APP_CONFIG.PROF_INTERVIEW_STATUS,
+    rejectionReasons: {
+      candidate: dictionaries[APP_CONFIG.REJECTION_REASON_CATEGORIES.candidate] || [],
+      responsible: dictionaries[APP_CONFIG.REJECTION_REASON_CATEGORIES.responsible] || []
+    },
+    otherReason: APP_CONFIG.OTHER_REASON,
+    vacancyStatusTransitions: VACANCY_STATUS_TRANSITIONS,
+    sourceIconKeys: SOURCE_ICON_KEYS,
+    trashRetentionDays: APP_CONFIG.TRASH_RETENTION_DAYS
   };
 }
+
+export { getResponsibles };
