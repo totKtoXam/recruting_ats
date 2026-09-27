@@ -9,7 +9,9 @@ import * as lifecycle from './services/lifecycle.js';
 import * as lists from './services/lists.js';
 import * as notifications from './services/notifications.js';
 import * as references from './services/references.js';
+import * as resumeParse from './services/resume-parse.js';
 import * as settings from './services/settings.js';
+import * as similar from './services/similar.js';
 import * as telegram from './services/telegram.js';
 import * as users from './services/users.js';
 
@@ -70,6 +72,10 @@ export const rpcHandlers = {
   getAllowedTransitions: id => candidates.getAllowedTransitions(id),
   getCandidateTransitionStatusLog: id => candidates.getCandidateTransitionStatusLog(id),
   getCandidateDraft: token => drafts.getCandidateDraft(token),
+  // Автозаполнение карточки из файла резюме: разбирает файл, ничего не сохраняет.
+  parseResume: input => resumeParse.parseResume(input),
+  // Похожие кандидаты по ФИО (нечётко) и контактам (точно) — предупреждение о дубле при заполнении формы.
+  findSimilarCandidates: input => similar.findSimilarCandidates(input),
 
   getInterviews: id => interviews.getInterviews(id),
   getInterviewContext: input => interviews.getInterviewContext(input),
