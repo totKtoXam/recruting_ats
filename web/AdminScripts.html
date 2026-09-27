@@ -463,13 +463,21 @@ function setVacancyNameError(message){
   node.textContent=message||'';
   node.hidden=!message;
   el('vacancyName').classList.toggle('input-error',!!message);
+  if(message){
+    el('vacancyName').setAttribute('aria-invalid','true');
+    el('vacancyName').setAttribute('aria-describedby','vacancyNameError');
+    el('vacancyName').focus();
+  }else{
+    el('vacancyName').removeAttribute('aria-invalid');
+    el('vacancyName').removeAttribute('aria-describedby');
+  }
 }
 
 function renderVacancyFormActions(vacancy){
   const readOnly=vacancy&&vacancy.state==='deleted';
   formActions('vacancyFormActions',[
-    readOnly?'':iconBtn('save','Сохранить вакансию','saveVacancyForm(this)','icon-btn-primary'),
-    vacancy?lifecycleButtons('vacancy',vacancy['Vacancy ID'],vacancy.state):''
+    vacancy?lifecycleButtons('vacancy',vacancy['Vacancy ID'],vacancy.state):'',
+    readOnly?'':textBtn('save','Сохранить','saveVacancyForm(this)')
   ]);
 }
 
@@ -716,9 +724,10 @@ function openTemplateModal(id){
   el('templateModalVacancy').innerHTML=(currentVacancy?'Вакансия: '+escapeHtml(currentVacancy['Вакансия']):'')+(template?' '+stateBadge(template):'');
 
   formActions('templateFormActions',[
-    readOnly?'':iconBtn('save','Сохранить шаблон','saveTemplateForm(this)','icon-btn-primary'),
-    iconBtn('close','Отмена','closeTemplateModal()'),
-    template?lifecycleButtons('template',template['Template ID'],template.state):''
+    template?lifecycleButtons('template',template['Template ID'],template.state):'',
+    readOnly?'':textBtn('save','Сохранить','saveTemplateForm(this)'),
+    '<span class="toolbar-divider" aria-hidden="true"></span>',
+    '<button type="button" class="icon-btn" data-modal-close data-tip="Закрыть (Esc)" aria-label="Закрыть" onclick="closeTemplateModal()">'+icon('close')+'</button>'
   ]);
 
   el('templateQuestionsList').innerHTML='';
@@ -744,8 +753,11 @@ async function saveTemplateForm(button){
   const questions=collectTemplateQuestions();
 
   if(!vacancyId){showToast('Сначала сохраните вакансию.','error');return}
-  if(!name){showToast('Укажите название шаблона.','error');return}
-  if(!stage){showToast('Выберите этап.','error');return}
+  const templateErrors=[
+    [!name,'templateName','Укажите название шаблона.'],
+    [!stage,'templateStage','Выберите этап.']
+  ].filter(([bad])=>bad).map(([,field,message])=>({field,message}));
+  if(!UiKit.showFieldErrors(templateErrors))return;
   if(!questions.length){showToast('Добавьте хотя бы один вопрос.','error');return}
 
   await runUiTask({button,formId:'templateForm',label:'Сохранение…'},async()=>{
@@ -765,14 +777,14 @@ function renderSourceFormIcon(){
   if(!node)return;
   const brand=sourceBrand(value('sourceName'));
   node.className='brand-icon brand-'+brand.key;
-  node.textContent=brand.text;
+  node.innerHTML=brandInnerHtml(brand);
 }
 
 function renderSourceFormActions(source){
   const readOnly=source&&source.state==='deleted';
   formActions('sourceFormActions',[
-    readOnly?'':iconBtn('save','Сохранить источник','saveSourceForm(this)','icon-btn-primary'),
-    source?lifecycleButtons('source',source['Source ID'],source.state):''
+    source?lifecycleButtons('source',source['Source ID'],source.state):'',
+    readOnly?'':textBtn('save','Сохранить','saveSourceForm(this)')
   ]);
 }
 
@@ -819,7 +831,7 @@ async function reopenSource(id){
 
 async function saveSourceForm(button){
   const name=value('sourceName').trim();
-  if(!name){showToast('Укажите название источника.','error');return}
+  if(!name){UiKit.showFieldErrors([{field:'sourceName',message:'Укажите название источника.'}]);return}
 
   await runUiTask({button,formId:'sourceForm',label:'Сохранение…'},async()=>{
     const {source}=await rpc('saveSource',{id:value('sourceId'),name});
@@ -850,8 +862,8 @@ function renderUserStageOptions(selected){
 function renderUserFormActions(user){
   const readOnly=user&&user.state==='deleted';
   formActions('userFormActions',[
-    readOnly?'':iconBtn('save','Сохранить','saveUserForm(this)','icon-btn-primary'),
-    user?lifecycleButtons('user',user['User ID'],user.state):''
+    user?lifecycleButtons('user',user['User ID'],user.state):'',
+    readOnly?'':textBtn('save','Сохранить','saveUserForm(this)')
   ]);
 }
 
@@ -947,8 +959,12 @@ async function saveUserForm(button){
   const id=value('userId');
   const lastName=value('userLastName').trim();
   const firstName=value('userFirstName').trim();
-  if(!lastName||!firstName){showToast('Фамилия и имя обязательны.','error');return}
-  if(!value('userEmail').trim()){showToast('Укажите email.','error');return}
+  const userErrors=[
+    [!lastName,'userLastName','Укажите фамилию.'],
+    [!firstName,'userFirstName','Укажите имя.'],
+    [!value('userEmail').trim(),'userEmail','Укажите email Google Account.']
+  ].filter(([bad])=>bad).map(([,field,message])=>({field,message}));
+  if(!UiKit.showFieldErrors(userErrors))return;
   if(!el('userEmail').readOnly&&!validateEmailField(el('userEmail')))return;
 
   await runUiTask({button,formId:'userForm',label:'Сохранение…'},async()=>{

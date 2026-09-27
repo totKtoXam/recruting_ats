@@ -3,9 +3,9 @@
 .notify-wrap{position:relative;display:inline-flex}
 .notify-bell{position:relative}
 .notify-badge{
-  position:absolute;top:2px;right:2px;min-width:16px;height:16px;padding:0 4px;
+  position:absolute;top:0;right:0;min-width:18px;height:18px;padding:0 5px;
   border-radius:999px;background:var(--danger);color:var(--on-danger);
-  font-size:10px;font-weight:700;line-height:16px;text-align:center;pointer-events:none;
+  font-size:12px;font-weight:700;line-height:18px;text-align:center;pointer-events:none;font-variant-numeric:tabular-nums;
   box-shadow:0 0 0 2px var(--topbar-bg)
 }
 
@@ -22,12 +22,12 @@
   display:flex;align-items:center;gap:6px;padding:8px 8px 8px 14px;
   border-bottom:1px solid var(--line-soft)
 }
-.notify-pop-head h3{margin:0;font-size:14px;font-weight:600;flex:1}
+.notify-pop-head h3{margin:0;font-size:15px;font-weight:600;flex:1}
 .notify-views{display:inline-flex;gap:2px;padding:2px;border-radius:var(--radius);background:var(--surface-3)}
 .notify-views .icon-btn{width:28px;height:28px;border:0;background:transparent}
 .notify-views .icon-btn.active{background:var(--surface);color:var(--primary);box-shadow:0 1px 2px rgba(0,0,0,.08)}
 .notify-list{overflow:auto;flex:1;min-height:80px}
-.notify-empty{padding:32px 16px;text-align:center;color:var(--muted);font-size:13px}
+.notify-empty{padding:32px 16px;text-align:center;color:var(--muted);font-size:14px}
 .notify-empty .icon{width:28px;height:28px;display:block;margin:0 auto 8px;opacity:.5}
 .notify-more{display:block;width:100%;padding:8px;border:0;border-top:1px solid var(--line-soft);background:transparent;color:var(--primary);font-size:12px;cursor:pointer}
 .notify-more:hover{background:var(--hover)}
@@ -53,13 +53,13 @@
 .notify-kind.kind-stage_responsible{background:var(--success-tint);color:var(--success)}
 .notify-kind.kind-status_changed{background:var(--warning-tint);color:var(--text-2)}
 .notify-body{flex:1;min-width:0}
-.notify-title{font-size:13px;font-weight:600;line-height:1.35;color:var(--text);overflow-wrap:anywhere}
+.notify-title{font-size:14px;font-weight:600;line-height:1.35;color:var(--text);overflow-wrap:anywhere}
 .notify-item.read .notify-title{font-weight:500}
 .notify-text{
   margin-top:2px;font-size:12px;line-height:1.4;color:var(--text-2);
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere
 }
-.notify-meta{margin-top:4px;font-size:11px;color:var(--muted);display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.notify-meta{margin-top:4px;font-size:12px;color:var(--muted);display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .notify-actions{display:flex;flex-direction:column;gap:2px;opacity:.55;transition:opacity .1s}
 .notify-item:hover .notify-actions,.notify-item:focus-within .notify-actions{opacity:1}
 .notify-actions .icon-btn{width:24px;height:24px}
@@ -74,8 +74,8 @@
 .delivery-row{display:grid;grid-template-columns:18px 1fr auto;gap:6px;align-items:center;font-size:12px;padding:3px 0}
 .delivery-row .icon{width:14px;height:14px;color:var(--text-2)}
 .delivery-target{min-width:0;overflow-wrap:anywhere;color:var(--text-2)}
-.delivery-error{grid-column:2 / -1;font-size:11px;color:var(--muted);margin-top:-2px}
-.delivery-status{font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;white-space:nowrap;background:var(--surface-3);color:var(--muted)}
+.delivery-error{grid-column:2 / -1;font-size:12px;color:var(--muted);margin-top:-2px}
+.delivery-status{font-size:12px;font-weight:600;padding:1px 7px;border-radius:999px;white-space:nowrap;background:var(--surface-3);color:var(--muted)}
 .delivery-status.st-sent{background:var(--success-tint);color:var(--success)}
 .delivery-status.st-pending{background:var(--primary-soft);color:var(--primary)}
 .delivery-status.st-failed{background:var(--danger-tint);color:var(--danger)}
@@ -100,7 +100,7 @@
 .channel-card{display:flex;gap:10px;align-items:flex-start;padding:10px;border:1px solid var(--line-soft);border-radius:var(--radius);background:var(--surface-2)}
 .channel-card>.icon{flex:0 0 auto;width:18px;height:18px;margin-top:1px;color:var(--text-2)}
 .channel-card-body{flex:1;min-width:0}
-.channel-card-title{font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.channel-card-title{font-size:14px;font-weight:600;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .channel-card-text{font-size:12px;color:var(--text-2);margin-top:2px;overflow-wrap:anywhere}
 .channel-card-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .tg-link-box{margin-top:8px;padding:8px;border-radius:var(--radius);background:var(--surface);border:1px dashed var(--line);font-size:12px;color:var(--text-2)}
@@ -118,7 +118,7 @@
 .notify-matrix th.unavailable{color:var(--muted)}
 .notify-matrix td:first-child,.notify-matrix th:first-child{text-align:left;width:auto}
 .notify-matrix td:not(:first-child),.notify-matrix th:not(:first-child){width:96px}
-.matrix-kind{font-size:13px;font-weight:600}
+.matrix-kind{font-size:14px;font-weight:600}
 .matrix-desc{font-size:12px;color:var(--muted);margin-top:2px}
 .matrix-scroll{overflow-x:auto}
 
@@ -133,7 +133,7 @@ tr:not(.row-unread) .log-title{font-weight:500}
 /* Текстовая кнопка (действия в карточках каналов). */
 .text-btn{
   display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:var(--radius);
-  border:1px solid var(--line);background:var(--surface);color:var(--text);font-size:13px;font-weight:500;cursor:pointer
+  border:1px solid var(--line);background:var(--surface);color:var(--text);font-size:14px;font-weight:500;cursor:pointer
 }
 .text-btn:hover:not(:disabled){background:var(--hover);border-color:var(--line-strong)}
 .text-btn:disabled{opacity:.6;cursor:default}
@@ -624,7 +624,7 @@ const notificationLogTable=createServerTable({
     {label:'Статус',sort:'read',width:'110px',filter:{key:'read',type:'select',options:()=>[
       {value:'unread',label:'Непрочитанные'},{value:'read',label:'Прочитанные'}
     ]},render:item=>item.read?'<span class="muted">Прочитано</span>':'<strong>Новое</strong>'},
-    {label:'',width:'76px',filter:{key:'important',type:'select',options:()=>[{value:'yes',label:'★ Важные'},{value:'no',label:'Обычные'}]},render:item=>
+    {label:'',width:'76px',filter:{key:'important',type:'select',options:()=>[{value:'yes',label:'Важные'},{value:'no',label:'Обычные'}]},render:item=>
       '<div class="row-actions" onclick="event.stopPropagation()">'+
         '<button type="button" class="icon-btn icon-btn-sm" data-tip="'+(item.read?'Отметить непрочитанным':'Отметить прочитанным')+'" aria-label="Прочитано" onclick="markNotificationRead(\''+escJs(item.id)+'\','+(!item.read)+')">'+icon(item.read?'dot':'check','icon-sm')+'</button>'+
         '<button type="button" class="icon-btn icon-btn-sm'+(item.important?' is-important':'')+'" data-tip="'+(item.important?'Снять «Важное»':'Отметить как важное')+'" aria-label="Важное" onclick="toggleNotifyImportant(\''+escJs(item.id)+'\',this)">'+icon('star','icon-sm')+'</button>'+
