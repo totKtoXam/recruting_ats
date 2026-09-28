@@ -13,3 +13,6 @@ npm-debug.log*
 
 # Эталонные резюме для теста автозаполнения (test/fixtures/resumes) — реальные персональные данные, не коммитить.
 test/fixtures/resumes/
+
+# Рабочие копии (worktrees), которые создаёт приложение Claude Code для параллельных сессий.
+.claude/worktrees/
