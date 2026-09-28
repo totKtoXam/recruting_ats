@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import express from 'express';
-import { config } from '../config.js';
+import { config, withBase } from '../config.js';
 import { AppError, toPublicError } from '../lib/errors.js';
 import { runtime } from '../services/settings.js';
 import { ACCESS_DENIED_MESSAGE, getActiveUser, upsertUserOnLogin } from '../services/users.js';
@@ -29,7 +29,7 @@ function loginPage({ error = '', next = '/' } = {}) {
     </svg>`;
   const body =
     config.auth.mode === 'dev'
-      ? `<form method="post" action="/auth/dev-login">
+      ? `<form method="post" action="${withBase('/auth/dev-login')}">
            ${nextField}
            <label for="email">Email</label>
            <input id="email" name="email" type="email" autocomplete="email" required autofocus>
@@ -37,7 +37,7 @@ function loginPage({ error = '', next = '/' } = {}) {
            <input id="name" name="name" autocomplete="name">
            <button type="submit" class="button button-primary">Войти (dev)</button>
          </form>`
-      : `<a class="button button-google" href="/auth/google?next=${encodeURIComponent(next)}">${googleMark}<span>Войти через Google</span></a>`;
+      : `<a class="button button-google" href="${withBase('/auth/google')}?next=${encodeURIComponent(next)}">${googleMark}<span>Войти через Google</span></a>`;
 
   return `<!doctype html>
 <html lang="ru"><head><meta charset="utf-8">
@@ -125,7 +125,7 @@ async function signIn(req, res, identity, returnTo) {
 
   await regenerateSession(req);
   req.session.userId = user.id;
-  res.redirect(safeReturnTo(returnTo));
+  res.redirect(withBase(safeReturnTo(returnTo)));
 }
 
 export function authRouter() {
@@ -137,8 +137,8 @@ export function authRouter() {
 
   router.post('/auth/logout', (req, res) => {
     req.session.destroy(() => {
-      res.clearCookie('ats.sid');
-      res.redirect('/auth/login');
+      res.clearCookie(config.sessionCookieName, { path: config.basePath || '/' });
+      res.redirect(withBase('/auth/login'));
     });
   });
 
@@ -285,7 +285,10 @@ export function requireUserApi(req, res, next) {
 
 export function requireUserPage(req, res, next) {
   if (!req.user) {
-    return res.redirect(`/auth/login?next=${encodeURIComponent(req.originalUrl)}`);
+    // next — путь внутри приложения, без BASE_PATH.
+    let next = req.originalUrl.slice(config.basePath.length);
+    if (!next.startsWith('/')) next = '/' + next;
+    return res.redirect(`${withBase('/auth/login')}?next=${encodeURIComponent(next)}`);
   }
   next();
 }

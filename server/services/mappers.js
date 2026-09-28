@@ -3,7 +3,7 @@
 import { formatDateTime } from '../lib/dates.js';
 import { composeFullName } from '../lib/validation.js';
 
-import { APP_CONFIG } from '../config.js';
+import { APP_CONFIG, withBase } from '../config.js';
 
 // Состояние записи: активная, в архиве или в корзине (с датой окончательного удаления).
 export function lifecycleFields(row) {
@@ -20,8 +20,8 @@ export function lifecycleFields(row) {
   };
 }
 
-export const fileUrl = fileId => (fileId ? `/files/${fileId}` : '');
-export const candidateFolderUrl = candidateId => `/candidates/${candidateId}/files`;
+export const fileUrl = fileId => (fileId ? withBase(`/files/${fileId}`) : '');
+export const candidateFolderUrl = candidateId => withBase(`/candidates/${candidateId}/files`);
 
 function softDeleteFields(row) {
   return {
@@ -49,7 +49,7 @@ export function toSource(row) {
     'Название': row.name,
     // Иконка: своя картинка важнее пресета; пустой ключ — определить по названию.
     iconKey: row.icon_key || '',
-    iconUrl: row.icon_png ? `/source-icons/${row.id}?v=${row.icon_updated_at ? new Date(row.icon_updated_at).getTime() : 0}` : '',
+    iconUrl: row.icon_png ? withBase('/source-icons/') + `${row.id}?v=${row.icon_updated_at ? new Date(row.icon_updated_at).getTime() : 0}` : '',
     ...softDeleteFields(row)
   };
 }
