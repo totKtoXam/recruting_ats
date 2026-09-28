@@ -65,6 +65,12 @@
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere
 }
 .notify-meta{margin-top:4px;font-size:12px;color:var(--muted);display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+/* Прямая ссылка на карточку кандидата: в колокольчике, журнале и на главной. */
+.notify-link{display:inline-flex;align-items:center;gap:4px;color:var(--primary);font-size:12px;font-weight:500;text-decoration:none;white-space:nowrap}
+.notify-link:hover{text-decoration:underline}
+.notify-link:focus-visible{outline:none;box-shadow:0 0 0 2px var(--primary-ring);border-radius:var(--radius-sm)}
+.notify-link .icon{width:12px;height:12px}
+.log-body+.notify-link,.log-title+.notify-link{margin-top:3px}
 .notify-actions{display:flex;flex-direction:column;gap:2px;opacity:.55;transition:opacity .1s}
 .notify-item:hover .notify-actions,.notify-item:focus-within .notify-actions{opacity:1}
 .notify-actions .icon-btn{width:24px;height:24px}
@@ -308,7 +314,7 @@ function notifyItemHtml(item){
     '<div class="notify-body">'+
       '<div class="notify-title">'+escapeHtml(item.title)+'</div>'+
       (item.body?'<div class="notify-text">'+escapeHtml(item.body)+'</div>':'')+
-      '<div class="notify-meta"><span data-tip="'+escapeHtml(notifyFullTime(item.createdAt))+'">'+escapeHtml(notifyTime(item.createdAt))+'</span>'+
+      '<div class="notify-meta"><span data-tip="'+escapeHtml(notifyFullTime(item.createdAt))+'">'+escapeHtml(notifyTime(item.createdAt))+'</span>'+notifyCardLinkHtml(item)+
         (item.candidateState==='archived'?'<span class="state-badge state-archived">В архиве</span>':'')+
         (item.candidateState==='deleted'?'<span class="state-badge state-deleted">В корзине</span>':'')+
       '</div>'+
@@ -369,6 +375,36 @@ function renderNotifyListOnly(){
 
 function findNotify(id){
   return notify.items.find(item=>item.id===id);
+}
+
+// Ссылка на карточку кандидата: работает как обычная ссылка (новая вкладка, копирование адреса),
+// а по обычному клику ещё отмечает уведомление прочитанным.
+function notifyCardLinkHtml(item){
+  if(!item.candidateId||item.candidateState==='missing')return '';
+  const label='Открыть карточку'+(item.candidateNumber?' №'+item.candidateNumber:'');
+  return '<a class="notify-link" href="#/candidate/'+encodeURIComponent(item.candidateId)+'" data-id="'+escapeHtml(item.id)+'" onclick="return notifyLinkClick(event,this)">'+icon('user','icon-sm')+'<span>'+escapeHtml(label)+'</span></a>';
+}
+
+function notifyLinkClick(event,link){
+  event.stopPropagation();
+  if(event.button!==0||event.ctrlKey||event.metaKey||event.shiftKey)return true;
+  event.preventDefault();
+  openNotificationCard(link.dataset.id);
+  return false;
+}
+
+// Уведомление из любого списка (колокольчик, журнал, главная): прочитать и открыть карточку.
+async function openNotificationCard(id){
+  const homeItems=typeof home!=='undefined'&&Array.isArray(home.notifications)?home.notifications:null;
+  const item=findNotify(id)||logItem(id)||(homeItems||[]).find(entry=>entry.id===id);
+  if(!item)return;
+  if(!item.read)await markNotificationRead(id,true);
+  if(homeItems){
+    home.notifications=homeItems.filter(entry=>entry.id!==id);
+    if(typeof homeVisible==='function'&&homeVisible())renderHome();
+  }
+  if(notify.open)toggleNotifyPopover(false);
+  if(item.candidateId&&item.candidateState!=='missing')openCandidateFromNotification(item.candidateId);
 }
 
 // Клик по уведомлению: отмечаем прочитанным и открываем карточку кандидата.
@@ -641,7 +677,7 @@ const notificationLogTable=createServerTable({
     ]).map(kind=>({value:kind.key,label:kind.label}))},render:item=>
       '<span class="log-kind"><span class="notify-kind kind-'+escapeHtml(item.kind)+'">'+icon(NOTIFY_KIND_ICONS[item.kind]||'bell')+'</span>'+escapeHtml(item.kindLabel)+'</span>'},
     {label:'Уведомление',sort:'title',filter:{key:'q',type:'text'},render:item=>
-      '<div class="log-title">'+escapeHtml(item.title)+'</div>'+(item.body?'<div class="log-body">'+escapeHtml(item.body)+'</div>':'')},
+      '<div class="log-title">'+escapeHtml(item.title)+'</div>'+(item.body?'<div class="log-body">'+escapeHtml(item.body)+'</div>':'')+notifyCardLinkHtml(item)},
     {label:'Каналы',width:'120px',filter:{key:'delivery',type:'select',options:()=>[
       {value:'sent',label:'Доставлено'},{value:'pending',label:'В очереди'},{value:'failed',label:'Ошибка'},
       {value:'skipped',label:'Не отправлено'},{value:'app',label:'Только в приложении'}

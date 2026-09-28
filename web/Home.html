@@ -1,0 +1,729 @@
+<style>
+/* ---------- Главная: быстрые действия и дашборды ---------- */
+.home-page{display:flex;flex-direction:column;gap:16px;padding:16px var(--page-pad) var(--page-pad);max-width:1600px}
+.home-page.is-loading .home-card:not(.home-actions-card),.home-page.is-loading .home-kpis{opacity:.55;pointer-events:none}
+.home-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:16px}
+.home-card{
+  grid-column:span 12;min-width:0;display:flex;flex-direction:column;
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow)
+}
+.home-card.span-8{grid-column:span 8}
+.home-card.span-6{grid-column:span 6}
+.home-card.span-4{grid-column:span 4}
+.home-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:50px;padding:10px 16px;border-bottom:1px solid var(--line-soft)}
+.home-card-title{min-width:0}
+.home-card-head h3{display:flex;align-items:center;gap:6px;font-size:15px;font-weight:650}
+.home-card-head .muted{margin-top:1px}
+.home-card-body{padding:12px 16px 16px;flex:1 1 auto;min-width:0}
+.home-card-body.flush{padding:0}
+.home-card-body .empty-state{margin:0}
+.home-card-body.flush .empty-state{margin:12px 16px 16px;width:auto}
+.home-greeting{font-weight:500}
+
+/* Быстрые действия */
+.home-actions{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;padding:12px 16px 16px}
+.home-action{
+  position:relative;display:flex;align-items:center;gap:10px;min-height:56px;padding:8px 12px;
+  border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface);
+  color:var(--text);font:inherit;text-align:left;cursor:pointer;
+  transition:border-color var(--dur-fast),background-color var(--dur-fast),box-shadow var(--dur-fast)
+}
+.home-action:hover{border-color:var(--primary-border);background:var(--primary-tint)}
+.home-action:focus-visible{outline:none;box-shadow:var(--focus-ring)}
+.home-action-icon{
+  flex:0 0 36px;width:36px;height:36px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;
+  background:var(--primary-soft);color:var(--primary)
+}
+.home-action-text{display:flex;flex-direction:column;min-width:0;line-height:1.3}
+.home-action-text strong{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home-action-text small{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home-action.is-primary{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
+.home-action.is-primary:hover{background:var(--primary-strong);border-color:var(--primary-strong)}
+.home-action.is-primary .home-action-icon{background:color-mix(in srgb,var(--on-primary) 18%,transparent);color:var(--on-primary)}
+.home-action.is-primary .home-action-text small{color:var(--on-primary);opacity:.8}
+.home-action-badge{
+  margin-left:auto;min-width:20px;height:20px;padding:0 6px;border-radius:999px;
+  background:var(--danger);color:var(--on-danger);font-size:12px;font-weight:700;line-height:20px;text-align:center
+}
+
+/* Ключевые показатели */
+.home-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.home-tile{
+  display:flex;flex-direction:column;gap:2px;min-width:0;padding:12px 14px;
+  border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface);box-shadow:var(--shadow);
+  color:var(--text);font:inherit;text-align:left
+}
+button.home-tile{cursor:pointer;transition:border-color var(--dur-fast),background-color var(--dur-fast)}
+button.home-tile:hover{border-color:var(--primary-border);background:var(--surface-hover)}
+button.home-tile:focus-visible{outline:none;box-shadow:var(--focus-ring)}
+.home-tile-label{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.home-tile-value{font-size:26px;font-weight:600;line-height:1.15;letter-spacing:-.01em}
+.home-tile-foot{font-size:12px;color:var(--text-3);min-height:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home-delta{display:inline-flex;align-items:center;gap:2px;font-weight:600}
+.home-delta .icon{width:12px;height:12px}
+.home-delta.is-good{color:var(--success)}
+.home-delta.is-bad{color:var(--danger)}
+.home-delta.is-flat{color:var(--muted);font-weight:500}
+.home-tile.skeleton{min-height:88px;border:0}
+
+/* Горизонтальные столбики: воронка, источники, причины, нагрузка */
+.home-bars{display:flex;flex-direction:column;gap:6px}
+.home-bar-row{display:grid;grid-template-columns:minmax(120px,40%) minmax(0,1fr) auto;gap:10px;align-items:center;min-height:24px}
+.home-bar-row.is-divider{margin-top:6px;padding-top:8px;border-top:1px solid var(--line-soft)}
+.home-bar-label{display:flex;align-items:center;gap:6px;min-width:0;font-size:13px;color:var(--text-2)}
+.home-bar-label>span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home-bar-label .brand-icon{width:18px;height:18px;flex-basis:18px;font-size:9px}
+.home-bar-track{height:10px;border-radius:3px;background:var(--surface-3);overflow:hidden}
+.home-bar-fill{height:100%;border-radius:0 3px 3px 0;background:var(--primary);transition:width var(--dur) var(--ease-out)}
+.home-bar-row.is-muted .home-bar-fill,.home-bar-row.is-other .home-bar-fill{background:var(--status-neutral)}
+.home-bar-value{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;min-width:24px;text-align:right}
+.home-foot{margin-top:10px;font-size:12px;color:var(--muted)}
+
+/* График новых кандидатов */
+.home-chart{position:relative;min-height:200px}
+.home-chart-svg{display:block;width:100%;height:auto;overflow:visible}
+.home-grid-line{stroke:var(--line-soft);stroke-width:1}
+.home-axis{fill:var(--muted);font-size:11px;font-family:inherit}
+.home-col-fill{fill:var(--primary);transition:fill var(--dur-fast)}
+.home-col:hover .home-col-fill,.home-col:focus .home-col-fill{fill:var(--primary-strong)}
+.home-col{outline:none;cursor:default}
+.home-col:focus-visible .home-hit{stroke:var(--primary-ring);stroke-width:2;rx:3}
+.home-hit{fill:transparent}
+.home-chart-tip{
+  position:absolute;z-index:5;padding:6px 8px;border-radius:var(--radius);pointer-events:none;
+  background:var(--tooltip-bg);color:var(--tooltip-fg);font-size:12px;line-height:1.4;white-space:nowrap;
+  box-shadow:var(--shadow-pop);transform:translate(-50%,calc(-100% - 6px))
+}
+.home-chart-tip b{font-weight:700}
+
+/* Таблицы и списки */
+.home-table{width:100%;border-collapse:collapse;font-size:13px}
+.home-table th{padding:6px 8px;text-align:left;font-size:12px;font-weight:600;color:var(--muted);border-bottom:1px solid var(--line);white-space:nowrap}
+.home-table td{padding:7px 8px;border-bottom:1px solid var(--line-soft);vertical-align:middle}
+.home-table tbody tr:last-child td{border-bottom:0}
+.home-table tbody tr[tabindex]{cursor:pointer}
+.home-table tbody tr[tabindex]:hover{background:var(--hover)}
+.home-table tbody tr[tabindex]:focus-visible{outline:none;background:var(--primary-tint)}
+.home-table .num{text-align:right;font-variant-numeric:tabular-nums;width:1%;white-space:nowrap}
+.home-table th:first-child,.home-table td:first-child{padding-left:16px}
+.home-table th:last-child,.home-table td:last-child{padding-right:16px}
+.home-table .home-cell-main{display:block;min-width:0;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+
+.home-list{display:flex;flex-direction:column}
+.home-row{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;padding:8px 16px;
+  border:0;border-bottom:1px solid var(--line-soft);background:transparent;color:var(--text);font:inherit;text-align:left;cursor:pointer
+}
+.home-row:last-child{border-bottom:0}
+.home-row:hover{background:var(--hover)}
+.home-row:focus-visible{outline:none;background:var(--primary-tint)}
+.home-row-main{display:flex;flex-direction:column;min-width:0;line-height:1.3}
+.home-row-main strong{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home-row-main small{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home-row-side{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+.home-days{min-width:46px;text-align:right;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.home-days.is-stale{color:var(--warning);font-weight:600}
+.home-more{padding:8px 16px;border-top:1px solid var(--line-soft)}
+
+/* Лента событий */
+.home-event{
+  display:flex;gap:10px;align-items:flex-start;width:100%;padding:8px 16px;
+  border:0;border-bottom:1px solid var(--line-soft);background:transparent;color:var(--text);font:inherit;text-align:left
+}
+button.home-event{cursor:pointer}
+button.home-event:hover{background:var(--hover)}
+button.home-event:focus-visible{outline:none;background:var(--primary-tint)}
+.home-event:last-child{border-bottom:0}
+.home-event-icon{
+  flex:0 0 26px;width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
+  background:var(--surface-3);color:var(--text-2);margin-top:1px
+}
+.home-event-icon .icon{width:13px;height:13px}
+.home-event-icon.act-create{background:var(--success-tint);color:var(--success)}
+.home-event-icon.act-delete,.home-event-icon.act-archive{background:var(--warning-tint);color:var(--warning)}
+.home-event-body{display:flex;flex-direction:column;min-width:0;font-size:13px;line-height:1.35}
+.home-event-body small{font-size:12px;color:var(--muted)}
+.home-event-text{overflow-wrap:anywhere}
+.home-event-text em{font-style:normal;color:var(--text-2)}
+.home-event-diff{display:inline-flex;align-items:center;gap:4px;margin-left:4px;vertical-align:middle}
+.home-event-diff .icon{width:12px;height:12px;color:var(--muted)}
+
+.home-notify .notify-kind{flex:0 0 28px}
+.home-row-main .notify-link{margin-top:2px}
+
+@media(max-width:1200px){
+  .home-card.span-4{grid-column:span 6}
+  .home-card.span-8{grid-column:span 12}
+}
+@media(max-width:900px){
+  .home-card.span-6,.home-card.span-4{grid-column:span 12}
+  .home-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .home-actions{grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}
+}
+@media(max-width:720px){
+  .home-page{gap:12px;padding-top:12px}
+  .home-grid{gap:12px}
+  .home-tile-value{font-size:22px}
+  .home-bar-row{grid-template-columns:minmax(96px,44%) minmax(0,1fr) auto}
+}
+</style>
+
+<script>
+// ---------- Главная страница ----------
+// Быстрые действия + сводка одним RPC getDashboardData({days}). Числа за период считаются
+// относительно предыдущего периода той же длины; списки открывают карточки без смены раздела.
+
+const HOME_PERIODS=[{days:7,label:'7 дней'},{days:30,label:'30 дней'},{days:90,label:'90 дней'}];
+const HOME_PERIOD_KEY='ats:home-period';
+const HOME_CACHE_MS=60000;
+const HOME_ACTION_ICONS={create:'plus',update:'edit',status:'arrow-right',archive:'archive',unarchive:'unarchive',delete:'trash',restore:'restore',revert:'undo'};
+const HOME_ENTITY_LABELS={candidate:'кандидата',vacancy:'вакансию',source:'источник',template:'шаблон интервью',interview:'результат интервью',user:'пользователя'};
+
+const home={
+  days:30,
+  data:null,
+  loadedAt:0,
+  loading:false,
+  error:'',
+  request:0,
+  chartTable:false,
+  notifications:null
+};
+(function(){
+  try{
+    const saved=Number(localStorage.getItem(HOME_PERIOD_KEY));
+    if(HOME_PERIODS.some(period=>period.days===saved))home.days=saved;
+  }catch(error){}
+})();
+
+function homeVisible(){
+  const view=el('viewHome');
+  return !!view&&!view.hidden;
+}
+
+function showHome(){
+  renderHomePeriod();
+  renderHome();
+  if(!home.data||Date.now()-home.loadedAt>HOME_CACHE_MS)loadHomeData();
+}
+
+async function loadHomeData(){
+  const days=home.days;
+  const request=++home.request;
+  home.loading=true;
+  home.error='';
+  renderHomeLoading();
+  try{
+    const [data,feed]=await Promise.all([
+      rpc('getDashboardData',{days}),
+      rpc('getNotificationFeed',{view:'unread',limit:5}).catch(()=>null)
+    ]);
+    if(request!==home.request)return;
+    home.data=data;
+    home.loadedAt=Date.now();
+    if(feed){
+      home.notifications=feed.items||[];
+      if(typeof setNotifyUnread==='function')setNotifyUnread(feed.unread);
+    }else if(typeof setNotifyUnread==='function'&&data){
+      setNotifyUnread(data.notificationsUnread||0);
+    }
+  }catch(error){
+    if(request!==home.request)return;
+    home.error=error&&error.message?error.message:String(error);
+    if(home.data)showToast(home.error,'error');
+  }finally{
+    if(request===home.request){
+      home.loading=false;
+      renderHome();
+    }
+  }
+}
+
+function setHomePeriod(days){
+  home.days=Number(days)||30;
+  try{localStorage.setItem(HOME_PERIOD_KEY,String(home.days))}catch(error){}
+  renderHomePeriod();
+  loadHomeData();
+}
+
+function renderHomePeriod(){
+  const root=el('homePeriod');
+  if(!root)return;
+  root.innerHTML=HOME_PERIODS.map(period=>
+    '<label class="segmented-option"><input type="radio" name="homePeriod" value="'+period.days+'"'+(period.days===home.days?' checked':'')+' onchange="setHomePeriod(this.value)"><span>'+period.label+'</span></label>'
+  ).join('');
+}
+
+async function refreshHomePage(button){
+  await runUiTask({button,pageId:'viewHome',label:'Обновление…'},async()=>{
+    await Promise.all([refreshBootstrapData(),loadHomeData()]);
+    if(!home.error)showToast('Главная обновлена.');
+  }).catch(()=>{});
+}
+
+// Пока идёт повторная загрузка, прежний рендер остаётся на месте с пониженной прозрачностью.
+function renderHomeLoading(){
+  const root=el('homeRoot');
+  if(root)root.classList.toggle('is-loading',home.loading&&!!home.data);
+}
+
+function renderHome(){
+  const root=el('homeRoot');
+  if(!root)return;
+  const data=home.data;
+  root.innerHTML=
+    homeQuickActionsHtml()+
+    (data?homeKpiHtml(data)+homeWidgetsHtml(data):home.error?homeErrorHtml():homeSkeletonHtml());
+  root.classList.toggle('is-loading',home.loading&&!!data);
+  drawHomeChart();
+}
+
+window.addEventListener('resize',(()=>{
+  let timer=null;
+  return ()=>{
+    clearTimeout(timer);
+    timer=setTimeout(()=>{if(homeVisible()&&!home.chartTable)drawHomeChart()},150);
+  };
+})());
+
+// ---------- Быстрые действия ----------
+
+function homeGreeting(){
+  const user=state.currentUser;
+  const hour=new Date().getHours();
+  const word=hour<5?'Доброй ночи':hour<12?'Доброе утро':hour<18?'Добрый день':'Добрый вечер';
+  const name=user?(user['Имя']||user['ФИО']||''):'';
+  return '<span class="muted home-greeting">'+escapeHtml(word+(name?', '+name:''))+'</span>';
+}
+
+function homeAction(iconName,label,hint,onclick,extra={}){
+  return '<button type="button" class="home-action'+(extra.primary?' is-primary':'')+'" onclick="'+onclick+'">'+
+    '<span class="home-action-icon">'+icon(iconName)+'</span>'+
+    '<span class="home-action-text"><strong>'+escapeHtml(label)+'</strong><small>'+escapeHtml(hint)+'</small></span>'+
+    (extra.badge?'<span class="home-action-badge">'+escapeHtml(extra.badge)+'</span>':'')+
+  '</button>';
+}
+
+function homeQuickActionsHtml(){
+  const admin=isAdminUser();
+  const unread=typeof notify!=='undefined'?notify.unread:0;
+  const actions=[
+    homeAction('plus','Новый кандидат','Карточка, резюме и назначение ответственных',"homeNewCandidate(false)",{primary:true}),
+    homeAction('sparkles','Заполнить из резюме','ФИО и контакты — из PDF, DOC или DOCX',"homeNewCandidate(true)"),
+    homeAction('briefcase','Новая вакансия','Название, публикации, шаблоны интервью',"homeOpenForm('vacancies','resetVacancyForm')"),
+    homeAction('globe','Новый источник','Откуда приходят кандидаты',"homeOpenForm('settings/sources','resetSourceForm')"),
+    admin?homeAction('user-plus','Добавить пользователя','Доступ, этапы и права',"homeOpenForm('settings/users','resetUserForm')"):'',
+    homeAction('kanban','Доска кандидатов','Воронка по этапам с фильтрами',"navigateTo('candidates')"),
+    homeAction('archive','Архив кандидатов','Завершённые и отложенные',"homeOpenArchive()"),
+    homeAction('list','Вакансии','Статусы, публикации и шаблоны',"navigateTo('vacancies')"),
+    homeAction('bell','Уведомления',unread?'Непрочитанных: '+unread:'Всё прочитано',"toggleNotifyPopover(true)",{badge:unread?(unread>99?'99+':String(unread)):''}),
+    admin?homeAction('link','Интеграции','Вход через Google, SMTP, Telegram',"navigateTo('settings/integrations/auth')"):'',
+    homeAction('user','Профиль','Подписки, Telegram и тема',"navigateTo('profile')")
+  ];
+  return '<section class="home-card home-actions-card" aria-label="Быстрые действия">'+
+    '<div class="home-card-head"><div class="home-card-title"><h3>Быстрые действия</h3></div>'+homeGreeting()+'</div>'+
+    '<div class="home-actions">'+actions.join('')+'</div>'+
+  '</section>';
+}
+
+function homeReferencesReady(){
+  if(state.loaded.references)return true;
+  showToast('Справочники ещё загружаются.','error');
+  return false;
+}
+
+function homeNewCandidate(autofill){
+  if(!homeReferencesReady())return;
+  openCandidate(null);
+  if(autofill&&typeof chooseResumeForAutofill==='function')chooseResumeForAutofill();
+}
+
+// Выполнить действие после перехода в раздел (hashchange срабатывает асинхронно).
+function homeAfterRoute(route,action){
+  const target='#/'+route;
+  if(location.hash===target){action();return}
+  window.addEventListener('hashchange',()=>setTimeout(action,0),{once:true});
+  location.hash=target;
+}
+
+function homeOpenForm(route,fnName){
+  if(!homeReferencesReady())return;
+  homeAfterRoute(route,()=>{
+    const fn=window[fnName];
+    if(typeof fn==='function')fn();
+  });
+}
+
+function homeOpenArchive(){
+  homeAfterRoute('candidates',()=>{if(typeof setBoardState==='function')setBoardState('archived')});
+}
+
+function homeOpenVacancy(id){
+  if(!homeReferencesReady())return;
+  homeAfterRoute('vacancies',()=>{if(typeof editVacancy==='function')editVacancy(id)});
+}
+
+// Карточка открывается поверх главной, адрес раздела не меняется.
+async function homeOpenCandidate(id){
+  if(!state.loaded.candidates||!state.loaded.references){showToast('Кандидаты ещё загружаются.','error');return}
+  if(!candidateById(id)){
+    try{await ensureArchivedCandidatesLoaded()}catch(error){}
+    if(!candidateById(id)&&isAdminUser()){
+      try{await ensureDeletedCandidatesLoaded()}catch(error){}
+    }
+  }
+  if(candidateById(id))openCandidateById(id,false);
+  else showToast('Кандидат недоступен.','error');
+}
+
+// ---------- Показатели ----------
+
+function homeNum(value){
+  return Number(value||0).toLocaleString('ru-RU');
+}
+
+function homeDelta(kpi,{goodUp=true,suffix=''}={}){
+  if(!kpi||kpi.value===null||kpi.value===undefined||kpi.previous===null||kpi.previous===undefined)return '';
+  const diff=Math.round((kpi.value-kpi.previous)*10)/10;
+  if(!diff)return '<span class="home-delta is-flat">без изменений</span>';
+  const good=goodUp?diff>0:diff<0;
+  return '<span class="home-delta '+(good?'is-good':'is-bad')+'" data-tip="Прошлый период: '+homeNum(kpi.previous)+escapeHtml(suffix)+'">'+
+    icon(diff>0?'chevron-up':'chevron-down')+(diff>0?'+':'−')+homeNum(Math.abs(diff))+escapeHtml(suffix)+'</span> · было '+homeNum(kpi.previous)+escapeHtml(suffix);
+}
+
+function homeTile(label,value,foot,onclick){
+  const tag=onclick?'button type="button"':'div';
+  return '<'+tag+' class="home-tile"'+(onclick?' onclick="'+onclick+'"':'')+'>'+
+    '<span class="home-tile-label">'+escapeHtml(label)+'</span>'+
+    '<span class="home-tile-value">'+value+'</span>'+
+    '<span class="home-tile-foot">'+(foot||'')+'</span>'+
+  '</'+(onclick?'button':'div')+'>';
+}
+
+function homePeriodLabel(data){
+  return 'за '+data.days+' дн.';
+}
+
+function homeKpiHtml(data){
+  const totals=data.totals||{};
+  const kpi=data.kpi||{};
+  const vacancies=(data.vacancies||{}).counts||{};
+  const my=data.my||{};
+  const period=homePeriodLabel(data);
+  const tth=kpi.timeToHireDays||{};
+  const hasTth=tth.value!==null&&tth.value!==undefined;
+  return '<section class="home-kpis" aria-label="Ключевые показатели">'+
+    homeTile('Активных кандидатов',homeNum(totals.active),'в работе '+homeNum(totals.inProgress)+' · наняты '+homeNum(totals.hired),"navigateTo('candidates')")+
+    homeTile('Новых '+period,homeNum((kpi.created||{}).value),homeDelta(kpi.created,{goodUp:true}))+
+    homeTile('Офферов '+period,homeNum((kpi.offers||{}).value),homeDelta(kpi.offers,{goodUp:true}))+
+    homeTile('Наймов '+period,homeNum((kpi.hired||{}).value),homeDelta(kpi.hired,{goodUp:true}))+
+    homeTile('Отказов '+period,homeNum((kpi.rejected||{}).value),homeDelta(kpi.rejected,{goodUp:false}))+
+    homeTile('Среднее время найма',hasTth?homeNum(tth.value)+' <span class="muted">дн.</span>':'—',hasTth?homeDelta(tth,{goodUp:false,suffix:' дн.'}):'наймов '+period+' нет')+
+    homeTile('Открытых вакансий',homeNum(vacancies.open),'на паузе '+homeNum(vacancies.paused)+' · закрытых '+homeNum(vacancies.closed),"navigateTo('vacancies')")+
+    homeTile('Мои кандидаты',homeNum(my.mine),'на моём этапе '+homeNum(my.queueTotal))+
+  '</section>';
+}
+
+function homeSkeletonHtml(){
+  return '<section class="home-kpis" aria-hidden="true">'+'<div class="home-tile skeleton"></div>'.repeat(8)+'</section>'+
+    '<div class="home-grid" aria-hidden="true">'+
+      '<div class="home-card span-6 skeleton" style="min-height:240px"></div>'.repeat(2)+
+      '<div class="home-card span-4 skeleton" style="min-height:200px"></div>'.repeat(3)+
+    '</div>'+
+    '<span class="sr-only" role="status">Сводка загружается…</span>';
+}
+
+function homeErrorHtml(){
+  return '<div class="empty-state">Не удалось загрузить сводку: '+escapeHtml(home.error)+'<br><button type="button" class="text-btn" style="margin-top:8px" onclick="loadHomeData()">'+icon('refresh','icon-sm')+' Повторить</button></div>';
+}
+
+// ---------- Виджеты ----------
+
+function homeCard(title,span,body,opts={}){
+  return '<section class="home-card '+span+'">'+
+    '<div class="home-card-head"><div class="home-card-title"><h3>'+escapeHtml(title)+
+      (opts.count!==undefined?'<span class="counter-badge">'+homeNum(opts.count)+'</span>':'')+'</h3>'+
+      (opts.sub?'<p class="muted">'+escapeHtml(opts.sub)+'</p>':'')+'</div>'+
+      '<div class="header-actions">'+(opts.actions||'')+
+        (opts.link?'<button type="button" class="text-btn" onclick="'+opts.link[0]+'">'+escapeHtml(opts.link[1])+icon('chevron-right','icon-sm')+'</button>':'')+
+      '</div></div>'+
+    '<div class="home-card-body'+(opts.flush?' flush':'')+'">'+body+'</div>'+
+  '</section>';
+}
+
+function homeWidgetsHtml(data){
+  const period=homePeriodLabel(data);
+  const rejections=data.rejections||{reasons:[]};
+  const stale=data.stale||{items:[],total:0,thresholdDays:14};
+  const my=data.my||{queue:[],queueTotal:0};
+  const chartToggle='<button type="button" class="icon-btn icon-btn-sm" data-tip="'+(home.chartTable?'Показать график':'Показать таблицей')+'" aria-label="'+(home.chartTable?'Показать график':'Показать таблицей')+'" aria-pressed="'+home.chartTable+'" onclick="toggleHomeChartTable()">'+icon('list','icon-sm')+'</button>';
+  return '<div class="home-grid">'+
+    homeCard('Воронка по этапам','span-6',homeFunnelHtml(data),{sub:'Активные кандидаты на каждом этапе сейчас',link:["navigateTo('candidates')",'Доска']})+
+    homeCard('Новые кандидаты','span-6','<div id="homeChart" class="home-chart"></div>',{sub:'По '+(data.series&&data.series.unit==='week'?'неделям':'дням')+' '+period+'; наймы и отказы — в подсказке и таблице',actions:chartToggle})+
+    homeCard('На моём этапе','span-6',homeCandidateListHtml(my.queue,'Кандидатов, ждущих вашего решения, нет.',stale.thresholdDays),{count:my.queueTotal,sub:'Кандидаты, где за текущий этап отвечаете вы',flush:true})+
+    homeCard('Без движения','span-6',homeCandidateListHtml(stale.items,'Все кандидаты двигаются по воронке.',stale.thresholdDays),{count:stale.total,sub:'Дольше '+stale.thresholdDays+' дней на одном этапе',flush:true})+
+    homeCard('Вакансии','span-8',homeVacanciesHtml(data.vacancies||{items:[]},period),{link:["navigateTo('vacancies')",'Все вакансии'],flush:true})+
+    homeCard('Уведомления','span-4',homeNotificationsHtml(),{count:typeof notify!=='undefined'?notify.unread:undefined,sub:'Непрочитанные',link:["openProfile('log')",'Журнал'],flush:true})+
+    homeCard('Источники','span-4',homeBarsHtml(data.sources||[],{labelHtml:item=>(item.other?brandIconHtml('other'):sourceIconHtml(item.name))+'<span>'+escapeHtml(item.name)+'</span>',empty:'Новых кандидатов '+period+' нет.'}),{sub:'Новые кандидаты '+period})+
+    homeCard('Причины отказа','span-4',homeReasonsHtml(rejections),{sub:'Отказы '+period+(rejections.total?': кандидат — '+rejections.byCandidate+', компания — '+rejections.byCompany:'')})+
+    homeCard('Нагрузка рекрутеров','span-4',homeBarsHtml(data.workload||[],{labelHtml:item=>'<span>'+escapeHtml(item.name)+'</span>',getValue:item=>item.inProgress,tip:item=>'В работе: '+item.inProgress+(item.offers?' · офферов: '+item.offers:'')+' · всего активных: '+item.total,empty:'Активных кандидатов пока нет.'}),{sub:'Кандидаты в работе по рекрутерам'})+
+    homeCard('Недавно добавлены','span-6',homeRecentHtml(data.recent||[]),{flush:true})+
+    homeCard('Последние события','span-6',homeActivityHtml(data.activity||[]),{flush:true})+
+  '</div>';
+}
+
+// Воронка: один цвет для величин, этап опознаётся чипом с названием, а не цветом столбика.
+function homeFunnelHtml(data){
+  const rows=data.funnel||[];
+  const rejectedStatus=state.rejectedStatus||'Отказано';
+  const pipeline=rows.filter(row=>row.status!==rejectedStatus);
+  const rejected=rows.find(row=>row.status===rejectedStatus);
+  const total=pipeline.reduce((sum,row)=>sum+row.count,0);
+  if(!total&&!(rejected&&rejected.count)){
+    return '<div class="empty-state compact">Активных кандидатов пока нет. Добавьте первого — «Новый кандидат» в быстрых действиях.</div>';
+  }
+  const max=Math.max(1,...pipeline.map(row=>row.count));
+  const row=(item,cls)=>{
+    const share=total?Math.round(item.count/total*100):0;
+    return '<div class="home-bar-row'+(cls?' '+cls:'')+'" data-tip="'+escapeHtml(item.status)+': '+item.count+(total&&!cls?' · '+share+'% активных':'')+'">'+
+      '<div class="home-bar-label">'+statusChip(item.status,true)+'</div>'+
+      '<div class="home-bar-track">'+(item.count?'<div class="home-bar-fill" style="width:'+(item.count/max*100)+'%"></div>':'')+'</div>'+
+      '<b class="home-bar-value">'+item.count+'</b></div>';
+  };
+  return '<div class="home-bars">'+pipeline.map(item=>row(item,'')).join('')+
+    (rejected?row(rejected,'is-divider is-muted'):'')+'</div>'+
+    '<div class="home-foot">Всего в воронке: '+homeNum(total)+(rejected?' · отказано: '+homeNum(rejected.count):'')+'</div>';
+}
+
+function homeBarsHtml(items,{labelHtml,getValue=item=>item.count,tip,empty}){
+  if(!items.length)return '<div class="empty-state compact">'+escapeHtml(empty||'Данных нет.')+'</div>';
+  const max=Math.max(1,...items.map(getValue));
+  return '<div class="home-bars">'+items.map(item=>{
+    const value=getValue(item);
+    return '<div class="home-bar-row'+(item.other?' is-other':'')+'"'+(tip?' data-tip="'+escapeHtml(tip(item))+'"':'')+'>'+
+      '<div class="home-bar-label">'+labelHtml(item)+'</div>'+
+      '<div class="home-bar-track">'+(value?'<div class="home-bar-fill" style="width:'+(value/max*100)+'%"></div>':'')+'</div>'+
+      '<b class="home-bar-value">'+homeNum(value)+'</b></div>';
+  }).join('')+'</div>';
+}
+
+function homeReasonsHtml(rejections){
+  return homeBarsHtml(rejections.reasons||[],{
+    labelHtml:item=>'<span>'+escapeHtml(item.name)+'</span>',
+    empty:'Отказов за период нет.'
+  });
+}
+
+function homeVacanciesHtml(vacancies,period){
+  const items=vacancies.items||[];
+  if(!items.length)return '<div class="empty-state compact">Вакансий пока нет. Создайте первую — «Новая вакансия» в быстрых действиях.</div>';
+  return '<div class="table-scroll"><table class="home-table"><thead><tr>'+
+    '<th>Вакансия</th><th>Статус</th><th class="num">В работе</th><th class="num">Оффер</th><th class="num">Наняты</th><th class="num">Новых '+escapeHtml(period)+'</th><th class="num">Дней открыта</th>'+
+    '</tr></thead><tbody>'+
+    items.map(item=>{
+      const open='homeOpenVacancy(\''+escJs(item.id)+'\')';
+      return '<tr tabindex="0" onclick="'+open+'" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();'+open+'}">'+
+        '<td><span class="home-cell-main">№'+escapeHtml(item.number)+' · '+escapeHtml(item.name)+'</span></td>'+
+        '<td>'+vacancyStatusChip(item.status)+'</td>'+
+        '<td class="num">'+item.inProgress+'</td><td class="num">'+item.offers+'</td><td class="num">'+item.hired+'</td><td class="num">'+item.created+'</td><td class="num">'+item.daysOpen+'</td>'+
+      '</tr>';
+    }).join('')+
+  '</tbody></table></div>';
+}
+
+function homeCandidateRow(item,side){
+  return '<button type="button" class="home-row" onclick="homeOpenCandidate(\''+escJs(item.id)+'\')">'+
+    '<span class="home-row-main"><strong>'+escapeHtml(item.name)+'</strong><small>№'+escapeHtml(item.number)+' · '+escapeHtml(item.vacancy)+(item.recruiter?' · '+escapeHtml(item.recruiter):'')+'</small></span>'+
+    '<span class="home-row-side">'+statusChip(item.status,true)+(side||'')+'</span>'+
+  '</button>';
+}
+
+function homeCandidateListHtml(items,empty,staleDays){
+  if(!items.length)return '<div class="empty-state compact">'+escapeHtml(empty)+'</div>';
+  return '<div class="home-list">'+items.map(item=>
+    homeCandidateRow(item,'<span class="home-days'+(item.days>=staleDays?' is-stale':'')+'" data-tip="На этапе с '+escapeHtml(fmtDate(item.stageSince))+'">'+item.days+' дн.</span>')
+  ).join('')+'</div>';
+}
+
+function homeRecentHtml(items){
+  if(!items.length)return '<div class="empty-state compact">Кандидатов пока нет.</div>';
+  return '<div class="home-list">'+items.map(item=>
+    '<button type="button" class="home-row" onclick="homeOpenCandidate(\''+escJs(item.id)+'\')">'+
+      '<span class="home-row-main"><strong>'+escapeHtml(item.name)+'</strong><small>№'+escapeHtml(item.number)+' · '+escapeHtml(item.vacancy)+' · '+escapeHtml(fmtDate(item.createdAt))+'</small></span>'+
+      '<span class="home-row-side">'+(item.archived?'<span class="state-badge state-archived">В архиве</span>':'')+(item.source?'<span data-tip="'+escapeHtml(item.source)+'">'+sourceIconHtml(item.source)+'</span>':'')+statusChip(item.status,true)+'</span>'+
+    '</button>'
+  ).join('')+'</div>';
+}
+
+function homeActivitySentence(event){
+  const who='<strong>'+escapeHtml(event.actorName)+'</strong>';
+  const entity=HOME_ENTITY_LABELS[event.entityType]||'запись';
+  const label=event.entityLabel?'<em>«'+escapeHtml(event.entityLabel)+'»</em>':'<em>(удалённая запись)</em>';
+  const field=event.fieldLabel?' «'+escapeHtml(event.fieldLabel)+'»':'';
+  // Создание результата интервью — это переход кандидата между этапами.
+  if(event.entityType==='interview'&&event.action==='create'){
+    const [from,to]=String(event.newDisplay||'').split(' → ');
+    const diff=from&&to?'<span class="home-event-diff">'+statusChip(from,true)+icon('arrow-right')+statusChip(to,true)+'</span>':'';
+    return who+' перевёл(а) кандидата '+label+diff;
+  }
+  switch(event.action){
+    case 'create':return who+' создал(а) '+entity+' '+label;
+    case 'update':return who+' изменил(а)'+field+' у '+entity+' '+label+(event.field==='resume'&&event.newDisplay?': '+escapeHtml(event.newDisplay):'');
+    case 'status':return who+' сменил(а) статус '+entity+' '+label+(event.oldDisplay&&event.newDisplay?': '+escapeHtml(event.oldDisplay)+' → '+escapeHtml(event.newDisplay):'');
+    case 'archive':return who+' отправил(а) в архив '+entity+' '+label;
+    case 'unarchive':return who+' вернул(а) из архива '+entity+' '+label;
+    case 'delete':return who+' удалил(а) в корзину '+entity+' '+label;
+    case 'restore':return who+' восстановил(а) из корзины '+entity+' '+label;
+    case 'revert':return who+' вернул(а) прежнее значение'+field+' у '+entity+' '+label;
+    default:return who+' — '+escapeHtml(event.action)+' '+entity+' '+label;
+  }
+}
+
+function homeActivityHtml(items){
+  if(!items.length)return '<div class="empty-state compact">Событий пока нет.</div>';
+  return '<div class="home-list">'+items.map(event=>{
+    const clickable=!!event.candidateId;
+    const tag=clickable?'button':'div';
+    return '<'+tag+(clickable?' type="button" onclick="homeOpenCandidate(\''+escJs(event.candidateId)+'\')"':'')+' class="home-event">'+
+      '<span class="home-event-icon act-'+escapeHtml(event.action)+'">'+icon(HOME_ACTION_ICONS[event.action]||'history')+'</span>'+
+      '<span class="home-event-body"><span class="home-event-text">'+homeActivitySentence(event)+'</span>'+
+      '<small data-tip="'+escapeHtml(typeof notifyFullTime==='function'?notifyFullTime(event.createdAt):'')+'">'+escapeHtml(typeof notifyTime==='function'?notifyTime(event.createdAt):event.createdAt)+'</small></span>'+
+    '</'+tag+'>';
+  }).join('')+'</div>';
+}
+
+function homeNotificationsHtml(){
+  const items=home.notifications;
+  const unread=typeof notify!=='undefined'?notify.unread:0;
+  if(items===null)return '<div class="empty-state compact">Загрузка…</div>';
+  if(!items.length)return '<div class="empty-state compact">'+icon('check-check','icon-sm')+' Непрочитанных уведомлений нет.</div>';
+  return '<div class="home-list">'+items.map(item=>
+    '<div class="home-row home-notify" role="button" tabindex="0" data-id="'+escapeHtml(item.id)+'" onclick="homeOpenNotification(this.dataset.id)" onkeydown="homeRowKeydown(event,this)">'+
+      '<span class="notify-kind kind-'+escapeHtml(item.kind)+'" data-tip="'+escapeHtml(item.kindLabel||'')+'">'+icon((typeof NOTIFY_KIND_ICONS!=='undefined'&&NOTIFY_KIND_ICONS[item.kind])||'bell')+'</span>'+
+      '<span class="home-row-main"><strong>'+escapeHtml(item.title)+'</strong><small>'+escapeHtml([item.body,typeof notifyTime==='function'?notifyTime(item.createdAt):''].filter(Boolean).join(' · '))+'</small>'+
+        (typeof notifyCardLinkHtml==='function'?notifyCardLinkHtml(item):'')+'</span>'+
+    '</div>'
+  ).join('')+'</div>'+
+  (unread>items.length?'<div class="home-more"><button type="button" class="text-btn" onclick="toggleNotifyPopover(true)">'+icon('bell','icon-sm')+' Ещё '+homeNum(unread-items.length)+'</button></div>':'');
+}
+
+// Строка-кнопка (div role="button"): Enter и пробел работают как клик.
+function homeRowKeydown(event,node){
+  if(event.key==='Enter'||event.key===' '){event.preventDefault();node.click()}
+}
+
+function homeOpenNotification(id){
+  if(typeof openNotificationCard==='function')openNotificationCard(id);
+}
+
+// ---------- График новых кандидатов ----------
+
+function toggleHomeChartTable(){
+  home.chartTable=!home.chartTable;
+  renderHome();
+}
+
+// Чистые деления оси: 0, шаг, 2×шаг.
+function homeTicks(max){
+  let magnitude=1;
+  for(;;){
+    for(const base of [1,2,5]){
+      const step=base*magnitude;
+      if(step*2>=max)return [0,step,step*2];
+    }
+    magnitude*=10;
+  }
+}
+
+function homeBucketLabel(key,unit,long){
+  const [year,month,day]=String(key).split('-').map(Number);
+  const short=day+' '+MONTHS_SHORT[month-1];
+  const withYear=short+(year!==new Date().getFullYear()?' '+year:'');
+  if(!long)return short;
+  return unit==='week'?'Неделя с '+withYear:withYear;
+}
+
+function homeShowLabel(index,total,unit){
+  const step=unit==='week'?2:total<=7?1:total<=31?5:7;
+  return (total-1-index)%step===0;
+}
+
+function homeSeriesTableHtml(series){
+  return '<div class="table-scroll"><table class="home-table"><thead><tr><th>'+(series.unit==='week'?'Неделя':'День')+'</th><th class="num">Новых</th><th class="num">Наймов</th><th class="num">Отказов</th></tr></thead><tbody>'+
+    series.points.map(point=>'<tr><td>'+escapeHtml(homeBucketLabel(point.key,series.unit,true))+'</td><td class="num">'+point.created+'</td><td class="num">'+point.hired+'</td><td class="num">'+point.rejected+'</td></tr>').join('')+
+  '</tbody></table></div>';
+}
+
+function drawHomeChart(){
+  const host=el('homeChart');
+  if(!host||!home.data)return;
+  const series=home.data.series||{unit:'day',points:[]};
+  const points=series.points||[];
+  if(home.chartTable){host.innerHTML=homeSeriesTableHtml(series);return}
+  if(!points.some(point=>point.created)){
+    host.innerHTML='<div class="empty-state compact">Новых кандидатов за период нет.</div>';
+    return;
+  }
+  const width=Math.max(280,host.clientWidth||600);
+  const height=200;
+  const pad={top:10,right:8,bottom:24,left:30};
+  const ticks=homeTicks(Math.max(1,...points.map(point=>point.created)));
+  const top=ticks[ticks.length-1];
+  const plotW=width-pad.left-pad.right;
+  const plotH=height-pad.top-pad.bottom;
+  const slot=plotW/points.length;
+  const barW=Math.min(24,Math.max(3,slot-2));
+  const baseline=pad.top+plotH;
+  const y=value=>pad.top+plotH-(value/top)*plotH;
+
+  let svg='<svg class="home-chart-svg" width="'+width+'" height="'+height+'" viewBox="0 0 '+width+' '+height+'" role="img" aria-label="Новые кандидаты по '+(series.unit==='week'?'неделям':'дням')+'">';
+  ticks.forEach(tick=>{
+    svg+='<line class="home-grid-line" x1="'+pad.left+'" x2="'+(width-pad.right)+'" y1="'+y(tick)+'" y2="'+y(tick)+'"/>'+
+      '<text class="home-axis" x="'+(pad.left-6)+'" y="'+(y(tick)+4)+'" text-anchor="end">'+tick+'</text>';
+  });
+  points.forEach((point,index)=>{
+    const cx=pad.left+slot*index+slot/2;
+    const x=cx-barW/2;
+    const yTop=y(point.created);
+    const h=baseline-yTop;
+    const r=Math.min(4,barW/2,h);
+    // Столбик: скруглённый верх (4px), прямое основание на оси.
+    const path=h>0
+      ?'M'+x+' '+baseline+'V'+(yTop+r)+'Q'+x+' '+yTop+' '+(x+r)+' '+yTop+'H'+(x+barW-r)+'Q'+(x+barW)+' '+yTop+' '+(x+barW)+' '+(yTop+r)+'V'+baseline+'Z'
+      :'';
+    svg+='<g class="home-col" tabindex="0" aria-label="'+escapeHtml(homeBucketLabel(point.key,series.unit,true))+': новых '+point.created+', наймов '+point.hired+', отказов '+point.rejected+'" '+
+      'onpointerenter="homeChartHover('+index+',this)" onfocus="homeChartHover('+index+',this)" onpointerleave="homeChartLeave()" onblur="homeChartLeave()">'+
+      '<rect class="home-hit" x="'+(pad.left+slot*index)+'" y="'+pad.top+'" width="'+slot+'" height="'+plotH+'"/>'+
+      (path?'<path class="home-col-fill" d="'+path+'"/>':'')+
+    '</g>';
+    if(homeShowLabel(index,points.length,series.unit)){
+      svg+='<text class="home-axis" x="'+cx+'" y="'+(height-6)+'" text-anchor="middle">'+escapeHtml(homeBucketLabel(point.key,series.unit,false))+'</text>';
+    }
+  });
+  svg+='</svg><div id="homeChartTip" class="home-chart-tip" hidden></div>';
+  host.innerHTML=svg;
+}
+
+function homeChartHover(index,node){
+  const tip=el('homeChartTip');
+  const data=home.data;
+  if(!tip||!data||!data.series)return;
+  const point=data.series.points[index];
+  if(!point)return;
+  const hit=node.querySelector('.home-hit');
+  const x=Number(hit.getAttribute('x'))+Number(hit.getAttribute('width'))/2;
+  let top=Number(hit.getAttribute('y'))+Number(hit.getAttribute('height'));
+  const fill=node.querySelector('.home-col-fill');
+  if(fill){try{const box=fill.getBBox();if(box.height)top=box.y}catch(error){}}
+  tip.innerHTML='<strong>'+escapeHtml(homeBucketLabel(point.key,data.series.unit,true))+'</strong><br>'+
+    'Новых: <b>'+point.created+'</b> · Наймов: <b>'+point.hired+'</b> · Отказов: <b>'+point.rejected+'</b>';
+  tip.style.left=x+'px';
+  tip.style.top=top+'px';
+  tip.hidden=false;
+}
+
+function homeChartLeave(){
+  const tip=el('homeChartTip');
+  if(tip)tip.hidden=true;
+}
+</script>

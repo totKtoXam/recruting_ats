@@ -306,7 +306,7 @@ Cookie: ats.sid=...
 | `getInterviews` | id кандидата | История результатов интервью |
 | `getInterviewContext` | объект | Шаблон и контекст для перехода |
 | `transitionCandidate` | объект | Переход статуса: `{ candidateId, toStatus, interview }` — результат этапа, на который переводят; `{ candidateId, toStatus: 'Отказано', rejection: { byType: 'candidate' \| 'responsible', responsibleId, reason, comment } }` — отказ; `{ candidateId, toStatus, comment }` — возврат из «Отказано» на этап отказа |
-| `updateInterview` | объект | Редактирование результата интервью (ответы и результат — HTML, санитизируется на сервере) |
+| `updateInterview` | объект | Редактирование результата интервью (ответы и результат — HTML, санитизируется на сервере). Ответ — `{ question, answer, skipped }`; `skipped: true` — вопрос не задавался (допускается и в обязательном шаблоне) |
 
 **Архив и корзина** (для `type`: `candidate`, `vacancy`, `source`, `template`, `interview`, `user`)
 
@@ -363,7 +363,7 @@ Cookie: ats.sid=...
 | `setVacancyStatus` | `{ id, status }` | Переход статуса вакансии; допустимые переходы — `vacancyStatusTransitions` в `getReferenceData` |
 | `listVacancyTemplates` | id вакансии | Все шаблоны вакансии, включая архивные |
 | `saveSource` | `{ id?, name }` | Источник |
-| `saveInterviewTemplate` | объект | Шаблон интервью; `questions` — массив `{ text, answers }` (answers — вероятные ответы) |
+| `saveInterviewTemplate` | объект | Шаблон интервью; `questions` — массив `{ text, answers }` (answers — предпочтительные ответы) |
 | `saveUser` | `{ id?, email, lastName, firstName, middleName, stages, isActive, isAdmin, telegram? }` | Пользователь. Непустой `stages` делает его ответственным за этапы. `isActive` учитывается только при создании. **Только администраторы** |
 | `setUserAccess` | `{ id, isActive }` | Открыть/закрыть доступ в ATS. **Только администраторы**; нельзя себе и последнему администратору |
 
