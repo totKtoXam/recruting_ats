@@ -23,9 +23,12 @@ async function main() {
   if (bot) console.log(`Telegram: бот @${bot} подключён`);
   startDeliveryWorker();
 
-  const server = createApp().listen(config.port, () => {
-    console.log(`Recruiting ATS listening on ${config.publicUrl} (port ${config.port}, auth: ${config.auth.mode})`);
-  });
+  const onListening = () => {
+    console.log(`Recruiting ATS listening on ${config.publicUrl} (${config.host || '*'}:${config.port}, auth: ${config.auth.mode})`);
+  };
+  const server = config.host
+    ? createApp().listen(config.port, config.host, onListening)
+    : createApp().listen(config.port, onListening);
 
   const shutdown = () => {
     stopTelegramBot();
