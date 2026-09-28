@@ -78,6 +78,8 @@ export const APP_CONFIG = Object.freeze({
 export const config = Object.freeze({
   env: env('NODE_ENV', 'development'),
   port: Number(env('PORT', '3040')),
+  // Адрес для прослушивания: 127.0.0.1 — только через reverse proxy. Пусто — все интерфейсы.
+  host: env('HOST'),
   publicUrl: env('PUBLIC_URL', 'http://localhost:3040').replace(/\/$/, ''),
   basePath: normalizeBasePath(env('BASE_PATH')),
   timeZone: env('APP_TIMEZONE', 'Asia/Almaty'),
