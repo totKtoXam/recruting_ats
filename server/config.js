@@ -3,6 +3,24 @@ function env(name, fallback = '') {
   return value === undefined || value === '' ? fallback : value;
 }
 
+// BASE_PATH: префикс, под которым приложение открыто за reverse proxy (например, /hr-ats).
+// Пустая строка — приложение в корне домена.
+export function normalizeBasePath(value) {
+  const trimmed = String(value || '').trim().replace(/\/+$/, '');
+
+  if (!trimmed) {
+    return '';
+  }
+
+  const withSlash = trimmed.startsWith('/') ? trimmed : '/' + trimmed;
+
+  if (!/^(\/[A-Za-z0-9._~-]+)+$/.test(withSlash)) {
+    throw new Error('Некорректный BASE_PATH: "' + value + '". Пример: /hr-ats');
+  }
+
+  return withSlash;
+}
+
 function list(name) {
   return env(name)
     .split(',')
@@ -61,6 +79,7 @@ export const config = Object.freeze({
   env: env('NODE_ENV', 'development'),
   port: Number(env('PORT', '3040')),
   publicUrl: env('PUBLIC_URL', 'http://localhost:3040').replace(/\/$/, ''),
+  basePath: normalizeBasePath(env('BASE_PATH')),
   timeZone: env('APP_TIMEZONE', 'Asia/Almaty'),
   trustProxy: env('TRUST_PROXY', 'false') === 'true',
 
@@ -72,6 +91,8 @@ export const config = Object.freeze({
   // По умолчанию выводится из SESSION_SECRET; задайте отдельно, чтобы менять SESSION_SECRET без потери секретов.
   settingsEncryptionKey: env('SETTINGS_ENCRYPTION_KEY'),
   sessionMaxAgeDays: Number(env('SESSION_MAX_AGE_DAYS', '14')),
+  // Имя cookie сессии: задайте своё, если на одном домене несколько приложений.
+  sessionCookieName: env('SESSION_COOKIE_NAME', 'ats.sid'),
 
   auth: Object.freeze({
     // google | dev
@@ -157,6 +178,10 @@ export function assertProductionConfig() {
     problems.push('GOOGLE_DRIVE_API_URL предназначен только для тестов.');
   }
 
+  if (config.basePath && new URL(config.publicUrl).pathname !== config.basePath) {
+    problems.push('PUBLIC_URL должен заканчиваться на BASE_PATH (' + config.basePath + ').');
+  }
+
   if (config.telegram.apiUrl !== 'https://api.telegram.org') {
     problems.push('TELEGRAM_API_URL предназначен только для тестов.');
   }
@@ -165,3 +190,6 @@ export function assertProductionConfig() {
     throw new Error('Некорректная конфигурация:\n- ' + problems.join('\n- '));
   }
 }
+
+// Путь внутри приложения ("/auth/login") -> путь в браузере с учётом BASE_PATH.
+export const withBase = path => config.basePath + path;
