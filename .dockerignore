@@ -10,3 +10,15 @@ test
 docs
 skills
 npm-debug.log*
+
+# Ключи Google и дампы БД не должны попадать в образ.
+client_secret*.json
+*service-account*.json
+*credentials*.json
+*.dump
+*.backup
+*.sql.gz
+tmp/
+logs/
+*.log
+.claude

@@ -16,3 +16,24 @@ test/fixtures/resumes/
 
 # Рабочие копии (worktrees), которые создаёт приложение Claude Code для параллельных сессий.
 .claude/worktrees/
+
+# Ключи Google (OAuth-клиент, сервисный аккаунт) — секреты, только через .env или GOOGLE_APPLICATION_CREDENTIALS вне репозитория.
+client_secret*.json
+*service-account*.json
+*credentials*.json
+
+# Дампы PostgreSQL с реальными кандидатами (миграции *.sql остаются в репозитории).
+*.dump
+*.backup
+*.sql.gz
+
+# Временные файлы для ручной проверки: резюме, выгрузки.
+tmp/
+
+# Локальные настройки инструментов и системы.
+.claude/settings.local.json
+docker-compose.override.yml
+Thumbs.db
+desktop.ini
+*.log
+logs/
