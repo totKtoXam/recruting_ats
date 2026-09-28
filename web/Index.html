@@ -50,6 +50,7 @@
   <div class="app-shell">
     <aside id="sidebar" class="sidebar" aria-label="Основное меню">
       <nav class="sidebar-nav">
+        <a class="sidebar-link sidebar-link-top" href="#/home" data-route="home" data-short="Главная"><svg class="icon"><use href="#i-house"/></svg><span>Главная</span></a>
         <div class="sidebar-group" data-group="recruiting">
           <button type="button" class="sidebar-group-toggle" aria-expanded="true" onclick="toggleSidebarGroup('recruiting')"><svg class="icon"><use href="#i-kanban"/></svg><span>Рекрутинг</span><svg class="icon chevron"><use href="#i-chevron-right"/></svg></button>
           <div class="sidebar-group-items" id="sidebarGroup-recruiting">
@@ -64,6 +65,23 @@
     </aside>
 
     <div class="app-content" id="appContent">
+  <!-- Главная: быстрые действия и дашборды (Home.html). -->
+  <main id="viewHome" class="page app-view" hidden>
+    <div class="page-header">
+      <div>
+        <h2>Главная</h2>
+        <p class="page-description">Быстрые действия, воронка и активность команды.</p>
+      </div>
+
+      <div class="page-actions">
+        <div class="segmented" id="homePeriod" role="radiogroup" aria-label="Период сводки"></div>
+        <button class="icon-btn" data-tip="Обновить" aria-label="Обновить" onclick="refreshHomePage(this)"><svg class="icon"><use href="#i-refresh"/></svg></button>
+      </div>
+    </div>
+
+    <div id="homeRoot" class="home-page"></div>
+  </main>
+
   <main id="viewCandidates" class="page app-view">
     <div class="page-header">
       <div>
@@ -331,63 +349,62 @@
           </div>
         </section>
 
-        <section class="candidate-column candidate-column-assets">
-          <div class="section-heading compact-heading">
-            <div>
-              <h3>Материалы</h3>
-              <p>Резюме, папка, ссылки и комментарии.</p>
+        <!-- Правая колонка: вкладки «Материалы / Комментарии / Результаты» (переключение — setCandidateTab). -->
+        <section class="candidate-column candidate-column-side">
+          <nav id="candidateTabs" class="tabs candidate-tabs" role="tablist" aria-label="Разделы карточки" onkeydown="candidateTabKeydown(event)">
+            <button type="button" class="tab active" role="tab" data-ctab="materials" aria-selected="true" aria-controls="candidateTabMaterials" onclick="setCandidateTab('materials')"><svg class="icon icon-sm"><use href="#i-file"/></svg><span>Материалы</span></button>
+            <button type="button" class="tab" role="tab" data-ctab="comments" aria-selected="false" tabindex="-1" aria-controls="candidateTabComments" onclick="setCandidateTab('comments')"><svg class="icon icon-sm"><use href="#i-message"/></svg><span>Комментарии</span><span id="candidateTabCount-comments" class="counter-badge" hidden>0</span></button>
+            <button type="button" class="tab" role="tab" data-ctab="interviews" aria-selected="false" tabindex="-1" aria-controls="candidateTabInterviews" onclick="setCandidateTab('interviews')"><svg class="icon icon-sm"><use href="#i-template"/></svg><span>Результаты</span><span id="candidateTabCount-interviews" class="counter-badge" hidden>0</span></button>
+          </nav>
+
+          <div id="candidateTabMaterials" class="candidate-tab-panel" role="tabpanel" data-ctab-panel="materials">
+            <div class="field">
+              <label>Резюме *</label>
+              <label class="file-drop" id="resumeDropZone" ondragenter="resumeDragOver(event)" ondragover="resumeDragOver(event)" ondragleave="resumeDragLeave(event)" ondrop="resumeDrop(event)">
+                <input class="sr-only"
+                  id="candidateResumeFile"
+                  type="file"
+                  accept=".pdf,.doc,.docx"
+                  onchange="onResumeFileChange()"
+                >
+                <span class="file-drop-icon"><svg class="icon"><use href="#i-upload"/></svg></span>
+                <span>
+                  <strong>Выберите файл или перетащите сюда</strong>
+                  <small>PDF / DOC / DOCX до 10 МБ</small>
+                </span>
+              </label>
+
+              <div id="candidateResumeSelected" class="resume-selected"></div>
+              <div id="candidateResumeVersions" class="resume-versions"></div>
+            </div>
+
+            <div class="field">
+              <label>Папка кандидата</label>
+              <a id="candidateFolderLink" class="resource-link" target="_blank" rel="noopener"></a>
+            </div>
+
+            <div class="field">
+              <div class="field-header">
+                <label>Иные ссылки</label>
+                <button class="button button-ghost button-small" type="button" onclick="addCandidateLink()"><svg class="icon icon-sm"><use href="#i-plus"/></svg><span>Добавить</span></button>
+              </div>
+              <div id="candidateLinks"></div>
             </div>
           </div>
 
-          <div class="field">
-            <label>Резюме *</label>
-            <label class="file-drop" id="resumeDropZone" ondragenter="resumeDragOver(event)" ondragover="resumeDragOver(event)" ondragleave="resumeDragLeave(event)" ondrop="resumeDrop(event)">
-              <input class="sr-only"
-                id="candidateResumeFile"
-                type="file"
-                accept=".pdf,.doc,.docx"
-                onchange="onResumeFileChange()"
-              >
-              <span class="file-drop-icon"><svg class="icon"><use href="#i-upload"/></svg></span>
-              <span>
-                <strong>Выберите файл или перетащите сюда</strong>
-                <small>PDF / DOC / DOCX до 10 МБ</small>
-              </span>
-            </label>
-
-            <div id="candidateResumeSelected" class="resume-selected"></div>
-            <div id="candidateResumeVersions" class="resume-versions"></div>
-          </div>
-
-          <div class="field">
-            <label>Папка кандидата</label>
-            <a id="candidateFolderLink" class="resource-link" target="_blank" rel="noopener"></a>
-          </div>
-
-          <div class="field">
-            <div class="field-header">
-              <label>Иные ссылки</label>
-              <button class="button button-ghost button-small" type="button" onclick="addCandidateLink()"><svg class="icon icon-sm"><use href="#i-plus"/></svg><span>Добавить</span></button>
+          <div id="candidateTabComments" class="candidate-tab-panel" role="tabpanel" data-ctab-panel="comments" hidden>
+            <!-- Новый кандидат: первый комментарий; существующий: лента комментариев. -->
+            <div id="candidateFirstCommentField" class="field">
+              <label>Комментарий</label>
+              <textarea id="candidateComment" data-rich placeholder="Дополнительная информация о кандидате"></textarea>
+              <small class="field-hint">Станет первым комментарием в ленте кандидата.</small>
             </div>
-            <div id="candidateLinks"></div>
+            <div id="candidateComments" class="comments-host"></div>
           </div>
 
-          <!-- Новый кандидат: первый комментарий; существующий: лента комментариев. -->
-          <div id="candidateFirstCommentField" class="field">
-            <label>Комментарий</label>
-            <textarea id="candidateComment" data-rich placeholder="Дополнительная информация о кандидате"></textarea>
+          <div id="candidateTabInterviews" class="candidate-tab-panel" role="tabpanel" data-ctab-panel="interviews" hidden>
+            <div id="interviewHistory"></div>
           </div>
-          <div id="candidateComments" class="comments-host"></div>
-        </section>
-
-        <section class="candidate-column candidate-column-interviews">
-          <div class="section-heading compact-heading">
-            <div>
-              <h3>Результаты интервью</h3>
-              <p>Вопросы, ответы и история этапов.</p>
-            </div>
-          </div>
-          <div id="interviewHistory"></div>
         </section>
       </div>
     </div>
@@ -561,6 +578,7 @@
   <?!= include('Notifications'); ?>
   <?!= include('Integrations'); ?>
   <?!= include('Profile'); ?>
+  <?!= include('Home'); ?>
   <?!= include('ResumeAutofill'); ?>
 </body>
 </html>

@@ -35,7 +35,7 @@ const DISPLAY = {
   answers: value => {
     const items = Array.isArray(value) ? value : [];
     if (!items.length) return EMPTY;
-    return truncate(items.map(item => `${item.question}: ${richToText(item.answer || '') || EMPTY}`).join('; '));
+    return truncate(items.map(item => `${item.question}: ${richToText(item.answer || '') || (item.skipped ? 'пропущен' : EMPTY)}`).join('; '));
   },
   icon: value => {
     if (!value) return EMPTY;

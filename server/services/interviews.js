@@ -78,14 +78,16 @@ export async function getInterviewContext(input = {}) {
   };
 }
 
-// Ответ — форматированный текст (HTML после очистки).
-function normalizeAnswers(answers) {
+// Ответ — форматированный текст (HTML после очистки). Пропущенный вопрос (skipped: true) —
+// вопрос не задавался: текста ответа нет, но обязательный шаблон это не блокирует.
+export function normalizeAnswers(answers) {
   return Array.isArray(answers)
     ? answers
-        .map(item => ({
-          question: clean(item && item.question),
-          answer: richFromInput(item && item.answer)
-        }))
+        .map(item => {
+          const answer = richFromInput(item && item.answer);
+          const skipped = Boolean(item && item.skipped) && !answer;
+          return { question: clean(item && item.question), answer, ...(skipped ? { skipped: true } : {}) };
+        })
         .filter(item => item.question || item.answer)
     : [];
 }
@@ -130,11 +132,11 @@ async function saveStageInterview(tx, candidate, fromStatus, toStatus, input, re
 
     const incomplete = template.questions.some((question, index) => {
       const answer = answers[index];
-      return !answer || answer.question !== question.text || !answer.answer;
+      return !answer || answer.question !== question.text || (!answer.answer && !answer.skipped);
     });
 
     if (incomplete) {
-      fail('Заполните все вопросы обязательного шаблона.');
+      fail('Заполните все вопросы обязательного шаблона или отметьте их как пропущенные.');
     }
   }
 

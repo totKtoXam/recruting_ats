@@ -3,6 +3,7 @@
 import * as candidates from './services/candidates.js';
 import * as audit from './services/audit.js';
 import * as comments from './services/comments.js';
+import * as dashboard from './services/dashboard.js';
 import * as drafts from './services/drafts.js';
 import * as interviews from './services/interviews.js';
 import * as lifecycle from './services/lifecycle.js';
@@ -64,6 +65,8 @@ export const rpcHandlers = {
     deletedCandidates: await candidates.getDeletedCandidateSummaries()
   }),
   getAdminUserData: async () => ({ users: await users.getUsers() }),
+  // Главная страница: показатели за период, воронка, очередь «на моём этапе», последние события.
+  getDashboardData: (input, { user }) => dashboard.getDashboardData(input, user),
 
   getCandidateDetails: id => candidates.getCandidateDetails(id),
   saveCandidate: (payload, { user }) => candidates.saveCandidate(payload, user),

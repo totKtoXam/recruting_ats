@@ -76,7 +76,7 @@ export function userDisplayName(row) {
   return composeFullName(row.last_name, row.first_name, row.middle_name) || row.full_name || row.email || '';
 }
 
-// Вопрос шаблона: { text, answers } — текст и список вероятных ответов.
+// Вопрос шаблона: { text, answers } — текст и список предпочтительных ответов.
 // Старый формат (строка) приводится к объекту.
 export function normalizeTemplateQuestions(questions) {
   return (Array.isArray(questions) ? questions : [])

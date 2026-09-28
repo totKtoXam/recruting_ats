@@ -532,7 +532,8 @@ function initRouter(){
   const raw=location.hash.replace(/^#\//,'');
   // Прежняя ссылка на админ-панель ведёт в «Вакансии».
   if(!raw||raw==='admin'){
-    const start=raw==='admin'||window.__INITIAL_ROUTE__==='admin'?'vacancies':'candidates';
+    const hasDraft=!!(window.__INITIAL_DRAFT_TOKEN__||new URLSearchParams(location.search).get('draft'));
+    const start=raw==='admin'||window.__INITIAL_ROUTE__==='admin'?'vacancies':hasDraft?'candidates':'home';
     history.replaceState(null,'','#/'+start);
   }
   applyRoute();
@@ -546,6 +547,10 @@ function getRoute(){
   if(LEGACY_ROUTES[raw]){
     raw=LEGACY_ROUTES[raw];
     history.replaceState(null,'','#/'+raw);
+  }
+  // Главная: быстрые действия и дашборды (#/home; сюда же ведёт пустой адрес).
+  if(raw===''||raw==='home'){
+    return {page:'home',path:'home',candidateId:''};
   }
   if(raw==='profile'||raw.startsWith('profile/')){
     return {page:'profile',path:raw,tab:raw.split('/')[1]||'',candidateId:''};
@@ -574,12 +579,14 @@ function applyRoute(){
   const route=getRoute();
   const adminRoute=ADMIN_ROUTES[route.path]||{};
   const tabLabel=adminRoute.tab&&typeof SETTINGS_TABS!=='undefined'?(SETTINGS_TABS.find(tab=>tab.key===adminRoute.tab)||{}).label:'';
-  const pageTitle=route.page==='profile'?'Профиль':route.page==='admin'?[tabLabel,adminRoute.title].filter(Boolean).join(' · '):'Кандидаты';
+  const pageTitle=route.page==='home'?'Главная':route.page==='profile'?'Профиль':route.page==='admin'?[tabLabel,adminRoute.title].filter(Boolean).join(' · '):'Кандидаты';
   document.title=(pageTitle?pageTitle+' · ':'')+'Recruiting ATS';
   el('viewCandidates').hidden=route.page!=='candidates';
   el('viewAdmin').hidden=route.page!=='admin';
   el('viewProfile').hidden=route.page!=='profile';
+  if(el('viewHome'))el('viewHome').hidden=route.page!=='home';
   if(route.page==='profile'&&typeof showProfile==='function')showProfile(route.tab);
+  if(route.page==='home'&&typeof showHome==='function')showHome();
   document.querySelectorAll('.sidebar-link').forEach(link=>{
     const active=link.dataset.route===route.path||route.path.startsWith(link.dataset.route+'/');
     link.classList.toggle('active',active);
@@ -751,6 +758,8 @@ function applyBootstrapData(data){
   if(typeof renderAdminAll==='function'){
     renderAdminAll();
   }
+  // Главная: быстрые действия и приветствие зависят от текущего пользователя.
+  if(typeof homeVisible==='function'&&homeVisible())renderHome();
 
   updateSyncStatus();
   if(typeof setNotifyUnread==='function')setNotifyUnread(data.notificationsUnread||0);
@@ -1164,6 +1173,10 @@ async function refreshAll(){
     extra.push(
       ensureAdminUsersLoaded(true)
     );
+  }
+
+  if(getRoute().page==='home'&&typeof loadHomeData==='function'){
+    extra.push(loadHomeData());
   }
 
   await Promise.all(extra);
@@ -1722,11 +1735,57 @@ async function candidateLifecycle(id,action,button){
 }
 
 // Существующий кандидат: лента комментариев; новый: поле первого комментария.
+// ---------- Вкладки карточки: материалы, комментарии, результаты ----------
+let candidateTab='materials';
+const CANDIDATE_TABS=['materials','comments','interviews'];
+
+function setCandidateTab(tab){
+  candidateTab=CANDIDATE_TABS.includes(tab)?tab:'materials';
+  document.querySelectorAll('#candidateTabs .tab').forEach(button=>{
+    const active=button.dataset.ctab===candidateTab;
+    button.classList.toggle('active',active);
+    button.setAttribute('aria-selected',String(active));
+    button.tabIndex=active?0:-1;
+  });
+  document.querySelectorAll('#candidateModal .candidate-tab-panel').forEach(panel=>{
+    panel.hidden=panel.dataset.ctabPanel!==candidateTab;
+  });
+}
+
+// Стрелки влево/вправо переключают вкладки с клавиатуры (role="tablist").
+function candidateTabKeydown(event){
+  const step={ArrowLeft:-1,ArrowRight:1}[event.key];
+  if(!step)return;
+  event.preventDefault();
+  const index=CANDIDATE_TABS.indexOf(candidateTab);
+  const next=CANDIDATE_TABS[(index+step+CANDIDATE_TABS.length)%CANDIDATE_TABS.length];
+  setCandidateTab(next);
+  const button=document.querySelector('#candidateTabs .tab[data-ctab="'+next+'"]');
+  if(button)button.focus();
+}
+
+function setCandidateTabCount(tab,count){
+  const badge=el('candidateTabCount-'+tab);
+  if(!badge)return;
+  badge.textContent=String(count||0);
+  badge.hidden=!count;
+}
+
+// Счётчик комментариев на вкладке повторяет счётчик самой ленты (с ответами).
+const candidateCommentsObserver=new MutationObserver(()=>{
+  const host=el('candidateComments');
+  const counter=host&&host.querySelector('.cmt-count');
+  setCandidateTabCount('comments',counter&&!counter.hidden?Number(counter.textContent)||0:0);
+});
+
 function renderCandidateComments(candidate){
   el('candidateFirstCommentField').hidden=!!candidate;
   if(candidateCommentThread){candidateCommentThread.destroy();candidateCommentThread=null}
+  candidateCommentsObserver.disconnect();
   el('candidateComments').innerHTML='';
+  setCandidateTabCount('comments',0);
   if(candidate&&window.CommentThread){
+    candidateCommentsObserver.observe(el('candidateComments'),{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['hidden']});
     candidateCommentThread=CommentThread.mount(el('candidateComments'),{
       entityType:'candidate',
       entityId:candidate.ID,
@@ -2132,6 +2191,9 @@ function openCandidate(candidate){
   el('candidateModal').classList.toggle('is-readonly',readOnly);
   document.querySelectorAll('#candidateModal .candidate-header-actions :is(.icon-btn-primary,.button-primary)').forEach(button=>button.hidden=readOnly);
   UiKit.clearFieldErrors('candidateWorkspace');
+  // Вкладки правой колонки: новый кандидат начинает с материалов (резюме обязательно).
+  setCandidateTab(isNew?'materials':candidateTab);
+  setCandidateTabCount('interviews',0);
 
   if(candidate){
     setCurrentInterviews(candidate.ID);
@@ -2948,26 +3010,74 @@ function renderTransitionQuestions(){
     ?'<label>'+(template&&template.required?'Вопросы и ответы *':'Вопросы и ответы')+'</label>'+questions.map((q,index)=>{
       const text=typeof q==='string'?q:q.text;
       const answers=typeof q==='string'?[]:(q.answers||[]);
-      return '<div class="qa interview-question"><div class="question-number">'+(index+1)+'</div><div>'+
-        '<strong>'+escapeHtml(text)+'</strong>'+
-        (answers.length
-          ? '<div class="answer-suggestions">'+answers.map(answer=>
-              '<button type="button" class="suggestion-chip" data-tip="Подставить ответ" onclick="applySuggestedAnswer(this)" data-answer="'+escapeHtml(answer)+'">'+escapeHtml(answer)+'</button>'
-            ).join('')+'</div>'
-          : '')+
-        '<textarea class="transition-answer" data-rich data-question="'+escapeHtml(text)+'" placeholder="Ответ кандидата"></textarea>'+
-      '</div></div>';
+      return answerQuestionHtml(index,text,{textareaClass:'transition-answer',answers});
     }).join('')
     :'<div class="empty-state compact">Для этого этапа шаблон вопросов не выбран.</div>';
-  mountRich(el('transitionQuestions'));
-  el('transitionQuestions').querySelectorAll('.transition-answer').forEach(textarea=>{
+  mountAnswerEditors(el('transitionQuestions'));
+}
+
+// Вопрос с полем ответа: предпочтительные ответы подставляются чипами, «Пропустить» помечает,
+// что вопрос не задавался — ответ не требуется даже в обязательном шаблоне.
+function answerQuestionHtml(index,text,{textareaClass,answers=[],placeholder='Ответ кандидата'}={}){
+  return '<div class="qa interview-question"><div class="question-number">'+(index+1)+'</div><div class="interview-question-body">'+
+    '<div class="question-head"><strong>'+escapeHtml(text)+'</strong>'+
+      '<button type="button" class="skip-answer" data-tip="Вопрос не задавался — ответ не нужен" aria-pressed="false" onclick="toggleSkipAnswer(this)">Пропустить</button></div>'+
+    (answers.length
+      ? '<div class="answer-suggestions"><span class="answer-suggestions-label">Предпочтительные:</span>'+answers.map(answer=>
+          '<button type="button" class="suggestion-chip" data-tip="Подставить предпочтительный ответ" onclick="applySuggestedAnswer(this)" data-answer="'+escapeHtml(answer)+'">'+escapeHtml(answer)+'</button>'
+        ).join('')+'</div>'
+      : '')+
+    '<div class="answer-editor-host"><textarea class="'+textareaClass+'" data-rich data-question="'+escapeHtml(text)+'" placeholder="'+escapeHtml(placeholder)+'"></textarea></div>'+
+    '<div class="answer-skipped" hidden>'+icon('minus','icon-sm')+'<span>Ответ пропущен — вопрос не задавался.</span></div>'+
+  '</div></div>';
+}
+
+function mountAnswerEditors(root){
+  mountRich(root);
+  root.querySelectorAll('textarea[data-question]').forEach(textarea=>{
     const editor=window.RichEditor&&RichEditor.get(textarea);
     if(editor&&editor.el)editor.el.addEventListener('input',()=>syncSuggestionState(textarea));
   });
 }
 
+function setAnswerSkipped(block,skipped){
+  const textarea=block.querySelector('textarea[data-question]');
+  const button=block.querySelector('.skip-answer');
+  block.classList.toggle('is-skipped',skipped);
+  textarea.dataset.skipped=skipped?'1':'';
+  block.querySelector('.answer-editor-host').hidden=skipped;
+  block.querySelector('.answer-skipped').hidden=!skipped;
+  button.textContent=skipped?'Ответить':'Пропустить';
+  button.dataset.tip=skipped?'Вернуть поле ответа':'Вопрос не задавался — ответ не нужен';
+  button.setAttribute('aria-pressed',String(skipped));
+}
+
+function toggleSkipAnswer(button){
+  const block=button.closest('.interview-question');
+  const skipped=!block.classList.contains('is-skipped');
+  setAnswerSkipped(block,skipped);
+  if(!skipped){
+    const editor=window.RichEditor&&RichEditor.get(block.querySelector('textarea[data-question]'));
+    if(editor)editor.focus();
+  }
+}
+
+// Ответы из формы: пропущенные — без текста, с признаком skipped.
+function collectAnswers(selector){
+  return [...document.querySelectorAll(selector)].map(textarea=>{
+    const skipped=textarea.dataset.skipped==='1';
+    return {question:textarea.dataset.question,answer:skipped?'':textarea.value.trim(),skipped};
+  });
+}
+
+function answerDisplayHtml(answer){
+  return answer&&answer.skipped
+    ?'<span class="answer-skipped-note">'+icon('minus','icon-sm')+'Ответ пропущен — вопрос не задавался</span>'
+    :richHtml(answer?answer.answer:'');
+}
+
 function applySuggestedAnswer(chip){
-  const textarea=chip.closest('.interview-question').querySelector('.transition-answer');
+  const textarea=chip.closest('.interview-question').querySelector('textarea[data-question]');
   setRich(textarea,textToRichHtml(chip.dataset.answer));
   syncSuggestionState(textarea);
   const editor=window.RichEditor&&RichEditor.get(textarea);
@@ -2985,10 +3095,7 @@ async function submitTransition(button){
   if(!pendingTransition)return;
 
   await runUiTask({button,formId:'transitionForm',label:'Сохранение…'},async()=>{
-    const answers=[...document.querySelectorAll('.transition-answer')].map(x=>({
-      question:x.dataset.question,
-      answer:x.value.trim()
-    }));
+    const answers=collectAnswers('.transition-answer');
 
     const result=richText(value('transitionResult'))?value('transitionResult'):'';
     const selectedTemplate=selectedTransitionTemplate();
@@ -3009,7 +3116,7 @@ async function submitTransition(button){
       }
 
       const missingAnswers=[...document.querySelectorAll('.transition-answer')]
-        .filter(node=>!richText(node.value.trim()))
+        .filter(node=>node.dataset.skipped!=='1'&&!richText(node.value.trim()))
         .map(node=>({field:node,message:'Ответ обязателен для этого шаблона.'}));
       if(!UiKit.showFieldErrors(missingAnswers))return;
     }
@@ -3129,6 +3236,7 @@ function interviewLifecycleButtons(i){
 }
 
 function renderInterviewHistory(){
+  setCandidateTabCount('interviews',currentInterviews.length);
   Object.values(interviewThreads).forEach(thread=>thread.destroy());
   Object.keys(interviewThreads).forEach(key=>delete interviewThreads[key]);
 
@@ -3143,7 +3251,7 @@ function renderInterviewHistory(){
           interviewLifecycleButtons(i)+
         '</div></div>'+
       '<div class="muted history-meta">'+escapeHtml(fmtDate(i['Дата']))+' · '+escapeHtml(i['Интервьюер']||'—')+' · '+escapeHtml(i['Шаблон']||'Без шаблона')+'</div>'+
-      (i.answers||[]).map((a,index)=>'<div class="qa"><strong>'+(index+1)+'. '+escapeHtml(a.question)+'</strong>'+richHtml(a.answer)+'</div>').join('')+
+      (i.answers||[]).map((a,index)=>'<div class="qa"><strong>'+(index+1)+'. '+escapeHtml(a.question)+'</strong>'+answerDisplayHtml(a)+'</div>').join('')+
       '<div class="qa"><strong>Результат</strong>'+richHtml(i['Результат'])+'</div>'+
       '<div class="history-comments" id="interviewComments-'+escapeHtml(i['Interview ID'])+'" hidden></div>'+
     '</article>'
@@ -3176,11 +3284,22 @@ async function interviewLifecycle(id,action,button){
 function editInterview(id){
   editingInterview=currentInterviews.find(i=>i['Interview ID']===id);
   if(!editingInterview)return;
+  // Предпочтительные ответы — из шаблона, по которому заполнялся результат.
+  const template=state.interviewTemplates.find(item=>item['Template ID']===editingInterview['Template ID']);
+  const suggestions=question=>{
+    const item=template?(template.questions||[]).find(q=>(typeof q==='string'?q:q.text)===question):null;
+    return item&&typeof item!=='string'?(item.answers||[]):[];
+  };
   el('editInterviewQuestions').innerHTML=(editingInterview.answers||[]).map((a,index)=>
-    '<div class="qa"><strong>'+(index+1)+'. '+escapeHtml(a.question)+'</strong><textarea class="edit-answer" data-rich data-question="'+escapeHtml(a.question)+'"></textarea></div>'
+    answerQuestionHtml(index,a.question,{textareaClass:'edit-answer',answers:suggestions(a.question)})
   ).join('');
-  mountRich(el('editInterviewQuestions'));
-  el('editInterviewQuestions').querySelectorAll('.edit-answer').forEach((textarea,index)=>setRich(textarea,editingInterview.answers[index].answer||''));
+  mountAnswerEditors(el('editInterviewQuestions'));
+  el('editInterviewQuestions').querySelectorAll('.interview-question').forEach((block,index)=>{
+    const answer=editingInterview.answers[index]||{};
+    setRich(block.querySelector('.edit-answer'),answer.answer||'');
+    if(answer.skipped)setAnswerSkipped(block,true);
+    else syncSuggestionState(block.querySelector('.edit-answer'));
+  });
   setRich('editInterviewResult',editingInterview['Результат']||'');
   el('interviewEditModal').classList.add('open');
 }
@@ -3193,7 +3312,7 @@ async function saveInterviewEdit(button){
   await runUiTask({button,formId:'interviewEditForm',label:'Сохранение…'},async()=>{
     const payload={
       id:editingInterview['Interview ID'],
-      answers:[...document.querySelectorAll('.edit-answer')].map(x=>({question:x.dataset.question,answer:x.value})),
+      answers:collectAnswers('.edit-answer'),
       result:value('editInterviewResult')
     };
     const res=await rpc('updateInterview',payload);

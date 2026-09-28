@@ -855,8 +855,8 @@ function questionBlock(question){
     '<div class="answer-editor">'+
       '<div class="answer-chips">'+(item.answers||[]).map(answerChip).join('')+'</div>'+
       '<div class="answer-add">'+
-        '<input class="answer-add-input" placeholder="Вероятный ответ — Enter, чтобы добавить" onkeydown="if(event.key===\'Enter\'){event.preventDefault();addAnswerChip(this)}">'+
-        '<button class="icon-btn icon-btn-sm" type="button" data-tip="Добавить вероятный ответ" aria-label="Добавить вероятный ответ" onclick="addAnswerChip(this.previousElementSibling)">'+icon('plus','icon-sm')+'</button>'+
+        '<input class="answer-add-input" placeholder="Предпочтительный ответ — Enter, чтобы добавить" onkeydown="if(event.key===\'Enter\'){event.preventDefault();addAnswerChip(this)}">'+
+        '<button class="icon-btn icon-btn-sm" type="button" data-tip="Добавить предпочтительный ответ" aria-label="Добавить предпочтительный ответ" onclick="addAnswerChip(this.previousElementSibling)">'+icon('plus','icon-sm')+'</button>'+
       '</div>'+
     '</div>'+
   '</div>';
