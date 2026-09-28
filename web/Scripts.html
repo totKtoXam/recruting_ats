@@ -94,7 +94,7 @@ function option(v,label,selected){return '<option value="'+escapeHtml(v)+'"'+(se
 async function rpc(name,args){
   let response;
   try{
-    response=await fetch('/api/rpc/'+encodeURIComponent(name),{
+    response=await fetch((window.__BASE_PATH__||'')+'/api/rpc/'+encodeURIComponent(name),{
       method:'POST',
       credentials:'same-origin',
       headers:{'Content-Type':'application/json'},
@@ -104,7 +104,11 @@ async function rpc(name,args){
     throw new Error('Нет соединения с сервером.');
   }
   if(response.status===401){
-    location.href='/auth/login?next='+encodeURIComponent(location.pathname+location.search+location.hash);
+    const base=window.__BASE_PATH__||'';
+    let path=location.pathname;
+    if(base&&path.startsWith(base))path=path.slice(base.length);
+    if(!path.startsWith('/'))path='/'+path;
+    location.href=base+'/auth/login?next='+encodeURIComponent(path+location.search+location.hash);
     throw new Error('Сессия истекла. Выполните вход повторно.');
   }
   const data=await response.json().catch(()=>null);

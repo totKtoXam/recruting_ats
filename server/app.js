@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import connectPgSimple from 'connect-pg-simple';
 import express from 'express';
 import session from 'express-session';
-import { config } from './config.js';
+import { config, withBase } from './config.js';
 import { pool } from './db/pool.js';
 import { toPublicError } from './lib/errors.js';
 import { rpcHandlers } from './rpc.js';
@@ -36,7 +36,8 @@ function renderIndex(query) {
 
   return template
     .replace('<?= initialRoute ?>', escapeJsString(initialRoute))
-    .replace('<?= initialDraftToken ?>', escapeJsString(initialDraftToken));
+    .replace('<?= initialDraftToken ?>', escapeJsString(initialDraftToken))
+    .replaceAll('<?= basePath ?>', config.basePath);
 }
 
 export function createApp() {
@@ -57,9 +58,12 @@ export function createApp() {
     next();
   });
 
-  app.use(legalRouter());
+  // Все маршруты приложения живут под BASE_PATH (пусто — в корне домена).
+  const router = express.Router();
 
-  app.get('/healthz', async (_req, res) => {
+  router.use(legalRouter());
+
+  router.get('/healthz', async (_req, res) => {
     try {
       await pool.query('SELECT 1');
       res.json({ ok: true });
@@ -69,17 +73,18 @@ export function createApp() {
   });
 
   // Intake API авторизуется ключом и не использует cookie-сессию.
-  app.use('/intake', intakeRouter());
+  router.use('/intake', intakeRouter());
 
-  app.use(
+  router.use(
     session({
-      name: 'ats.sid',
+      name: config.sessionCookieName,
       store: new PgStore({ pool, tableName: 'session', createTableIfMissing: false }),
       secret: config.sessionSecret || 'dev-only-insecure-secret',
       resave: false,
       saveUninitialized: false,
       rolling: true,
       cookie: {
+        path: config.basePath || '/',
         httpOnly: true,
         sameSite: 'lax',
         secure: config.env === 'production',
@@ -88,11 +93,11 @@ export function createApp() {
     })
   );
 
-  app.use(loadUser);
-  app.use(authRouter());
-  app.use(filesRouter());
+  router.use(loadUser);
+  router.use(authRouter());
+  router.use(filesRouter());
 
-  app.post(
+  router.post(
     '/api/rpc/:name',
     requireUserApi,
     express.json({ limit: '20mb' }),
@@ -127,12 +132,12 @@ export function createApp() {
     }
   );
 
-  app.get('/', requireUserPage, (req, res) => {
+  router.get('/', requireUserPage, (req, res) => {
     res.set('Cache-Control', 'no-store');
     res.type('html').send(renderIndex(req.query));
   });
 
-  app.use((error, req, res, _next) => {
+  router.use((error, req, res, _next) => {
     // Ошибки express.json: невалидный JSON и превышение лимита тела запроса.
     const bodyErrors = {
       'entity.parse.failed': [400, 'Body должен быть корректным JSON.'],
@@ -154,6 +159,13 @@ export function createApp() {
 
     res.status(status).type('text').send(message);
   });
+
+  app.use(config.basePath || '/', router);
+
+  // Корень домена ведёт в приложение, если оно смонтировано под BASE_PATH.
+  if (config.basePath) {
+    app.get('/', (_req, res) => res.redirect(withBase('/')));
+  }
 
   return app;
 }
