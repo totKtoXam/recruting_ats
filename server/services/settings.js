@@ -239,7 +239,7 @@ export function getIntegrationSettings(_input, actor) {
     info: {
       authMode: config.auth.mode,
       redirectUri: googleRedirectUri(),
-      javascriptOrigin: config.publicUrl,
+      javascriptOrigin: new URL(config.publicUrl).origin,
       adminEmails: config.auth.adminEmails,
       encryptionKey: config.settingsEncryptionKey ? 'SETTINGS_ENCRYPTION_KEY' : config.sessionSecret ? 'SESSION_SECRET' : 'dev'
     }

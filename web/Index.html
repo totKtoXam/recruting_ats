@@ -43,7 +43,7 @@
         </button>
         <div id="profileMenu" class="notify-popover profile-menu" role="menu" aria-label="Профиль" hidden></div>
       </div>
-      <form id="logoutForm" method="post" action="/auth/logout" hidden></form>
+      <form id="logoutForm" method="post" action="<?= basePath ?>/auth/logout" hidden></form>
     </nav>
   </header>
 
@@ -562,6 +562,7 @@
   </div>
 
   <script>
+    window.__BASE_PATH__ = '<?= basePath ?>';
     window.__INITIAL_ROUTE__ = '<?= initialRoute ?>';
     window.__INITIAL_DRAFT_TOKEN__ = '<?= initialDraftToken ?>';
   </script>
