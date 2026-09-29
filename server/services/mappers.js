@@ -76,7 +76,7 @@ export function userDisplayName(row) {
   return composeFullName(row.last_name, row.first_name, row.middle_name) || row.full_name || row.email || '';
 }
 
-// Вопрос шаблона: { text, answers } — текст и список предпочтительных ответов.
+// Вопрос шаблона: { text, answers } — текст и список вероятных ответов.
 // Старый формат (строка) приводится к объекту.
 export function normalizeTemplateQuestions(questions) {
   return (Array.isArray(questions) ? questions : [])
@@ -95,6 +95,23 @@ export function normalizeTemplateQuestions(questions) {
     .filter(question => question.text);
 }
 
+// Теги шаблона: [{ name, color }]; цвет — ключ палитры, неизвестный заменяется серым.
+export const TEMPLATE_TAG_COLORS = Object.freeze(['blue', 'green', 'amber', 'red', 'purple', 'teal', 'pink', 'gray']);
+const MAX_TEMPLATE_TAGS = 10;
+
+export function normalizeTemplateTags(tags) {
+  const seen = new Set();
+  const result = [];
+  for (const tag of Array.isArray(tags) ? tags : []) {
+    const name = String((tag && tag.name) ?? '').trim().replace(/\s+/g, ' ').slice(0, 40);
+    if (!name || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    const color = TEMPLATE_TAG_COLORS.includes(tag.color) ? tag.color : 'gray';
+    result.push({ name, color });
+  }
+  return result.slice(0, MAX_TEMPLATE_TAGS);
+}
+
 export function toTemplate(row) {
   const questions = normalizeTemplateQuestions(row.questions);
 
@@ -104,6 +121,7 @@ export function toTemplate(row) {
     'Название': row.name,
     'Вопросы': JSON.stringify(questions),
     questions,
+    tags: normalizeTemplateTags(row.tags),
     // Сколько вакансий используют шаблон (для списка шаблонов).
     usage: row.usage === undefined ? undefined : Number(row.usage),
     // Привязка к вакансии и этапу — только когда шаблон выбран для конкретной вакансии.

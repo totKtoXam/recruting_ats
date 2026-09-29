@@ -27,6 +27,7 @@ const DISPLAY = {
     Array.isArray(value) && value.length
       ? truncate(value.map(link => (link.name || link.title ? `${link.name || link.title} (${link.url})` : link.url)).join('; '))
       : EMPTY,
+  tags: value => (Array.isArray(value) && value.length ? value.map(tag => tag.name).join(', ') : EMPTY),
   questions: value => {
     const items = Array.isArray(value) ? value : [];
     if (!items.length) return EMPTY;
@@ -107,6 +108,7 @@ export const AUDIT_ENTITIES = {
     touch: true,
     fields: [
       f('name', 'Название'),
+      f('tags', 'Теги', 'tags'),
       f('questions', 'Вопросы', 'questions')
     ]
   },

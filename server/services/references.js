@@ -2,7 +2,7 @@ import { APP_CONFIG } from '../config.js';
 import { db, transaction } from '../db/pool.js';
 import { fail } from '../lib/errors.js';
 import { clean, optionalUuid, toBoolean, validateHttpUrl } from '../lib/validation.js';
-import { normalizeTemplateQuestions, toSource, toTemplate, toVacancy } from './mappers.js';
+import { normalizeTemplateQuestions, normalizeTemplateTags, TEMPLATE_TAG_COLORS, toSource, toTemplate, toVacancy } from './mappers.js';
 import { getResponsibles } from './users.js';
 import { recordChanges, recordEvent } from './audit.js';
 
@@ -259,6 +259,7 @@ export async function saveInterviewTemplate(input = {}, actor) {
   const id = optionalUuid(input.id, 'Шаблон не найден.');
   const name = clean(input.name);
   const questions = normalizeTemplateQuestions(input.questions);
+  const tags = normalizeTemplateTags(input.tags);
 
   if (!name) {
     fail('Название шаблона обязательно.');
@@ -268,7 +269,7 @@ export async function saveInterviewTemplate(input = {}, actor) {
     fail('Добавьте хотя бы один вопрос.');
   }
 
-  const params = [name, JSON.stringify(questions)];
+  const params = [name, JSON.stringify(questions), JSON.stringify(tags)];
 
   const saved = await transaction(async tx => {
     const before = id ? await tx.one('SELECT * FROM interview_templates WHERE id = $1 FOR UPDATE', [id]) : null;
@@ -279,12 +280,12 @@ export async function saveInterviewTemplate(input = {}, actor) {
 
     const row = before
       ? await tx.one(
-          `UPDATE interview_templates SET name = $2, questions = $3, updated_at = now()
+          `UPDATE interview_templates SET name = $2, questions = $3, tags = $4, updated_at = now()
            WHERE id = $1 RETURNING *`,
           [id, ...params]
         )
       : await tx.one(
-          `INSERT INTO interview_templates (name, questions) VALUES ($1, $2) RETURNING *`,
+          `INSERT INTO interview_templates (name, questions, tags) VALUES ($1, $2, $3) RETURNING *`,
           params
         );
 
@@ -302,12 +303,12 @@ export async function saveInterviewTemplate(input = {}, actor) {
   return { ok: true, template: toTemplate(row) };
 }
 
-// Привязки шаблонов вакансии: [{ stage, templateId, required }].
+// Этапы вакансии: [{ stage, templateId, required }] — на этапе не больше одного шаблона.
+// Необязательный шаблон при переходе можно пропустить.
 function normalizeTemplateBindings(bindings) {
-  if (!Array.isArray(bindings)) fail('Некорректный список шаблонов вакансии.');
+  if (!Array.isArray(bindings)) fail('Некорректный список этапов вакансии.');
 
   const seen = new Set();
-  const requiredStages = new Set();
 
   return bindings.map(item => {
     const stage = clean(item && item.stage);
@@ -322,17 +323,10 @@ function normalizeTemplateBindings(bindings) {
       fail('Выберите шаблон для каждого этапа.');
     }
 
-    if (seen.has(`${stage}|${templateId}`)) {
-      fail(`Шаблон уже привязан к этапу «${stage}».`);
+    if (seen.has(stage)) {
+      fail(`На этапе «${stage}» может быть только один шаблон.`);
     }
-    seen.add(`${stage}|${templateId}`);
-
-    if (required) {
-      if (requiredStages.has(stage)) {
-        fail(`На этапе «${stage}» может быть только один обязательный шаблон.`);
-      }
-      requiredStages.add(stage);
-    }
+    seen.add(stage);
 
     return { stage, templateId, required };
   });
@@ -385,7 +379,7 @@ async function replaceVacancyTemplates(tx, vacancyId, bindings, actor) {
   if (oldDisplay !== newDisplay) {
     await recordEvent(tx, {
       entityType: 'vacancy', entityId: vacancyId, action: 'update', field: 'templates',
-      fieldLabel: 'Шаблоны интервью', oldDisplay: oldDisplay || '—', newDisplay: newDisplay || '—', actor
+      fieldLabel: 'Этапы', oldDisplay: oldDisplay || '—', newDisplay: newDisplay || '—', actor
     });
   }
 }
@@ -420,6 +414,7 @@ export async function getReferenceData() {
     responsibles,
     interviewTemplates,
     templates,
+    templateTagColors: TEMPLATE_TAG_COLORS,
     dictionaries,
     transitions: APP_CONFIG.TRANSITIONS,
     pipelineStatuses: APP_CONFIG.PIPELINE_STATUSES,

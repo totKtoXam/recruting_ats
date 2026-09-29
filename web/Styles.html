@@ -1287,7 +1287,6 @@ input[type=radio]:focus-visible{outline:2px solid var(--primary-ring);outline-of
   background:var(--surface-2)
 }
 
-#templateModal .panel{width:min(720px,100%)}
 #rejectionModal .panel{width:min(560px,100%)}
 #restoreModal .panel{width:min(480px,100%)}
 
@@ -2871,15 +2870,81 @@ th.sortable:focus-visible{outline:2px solid var(--primary-ring);outline-offset:-
 .settings-tabs .tab{text-decoration:none}
 .sidebar-link-top{margin-top:10px}
 
-/* Шаблоны вопросов вакансии: строка «этап → шаблон». */
-.binding-list{display:flex;flex-direction:column;gap:8px}
-.binding-row{display:grid;grid-template-columns:minmax(120px,170px) minmax(0,1fr) auto auto;gap:8px;align-items:center}
-.binding-row select{min-width:0;width:100%}
-.binding-required{white-space:nowrap;font-size:13px}
-@media (max-width:640px){
-  .binding-row{grid-template-columns:minmax(0,1fr) auto}
-  .binding-row .binding-stage,.binding-row .binding-template{grid-column:1/-1}
+/* Этапы вакансии: строка на каждый этап воронки — шаблон вопросов и его обязательность. */
+.stage-list{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.stage-row{
+  display:grid;grid-template-columns:150px minmax(0,1fr) auto;gap:10px;align-items:center;
+  padding:6px 8px 6px 10px;border:1px solid var(--line-soft);border-left:3px solid var(--st,var(--line));
+  border-radius:var(--radius);background:var(--surface)
 }
+.stage-row-name{min-width:0}
+.stage-row select{min-width:0;width:100%}
+.stage-required{white-space:nowrap;font-size:13px}
+.stage-required:has(input:disabled){opacity:.5}
+@media (max-width:640px){
+  .stage-row{grid-template-columns:minmax(0,1fr) auto}
+  .stage-row select{grid-column:1/-1;grid-row:2}
+}
+
+/* Теги шаблонов вопросов: цвет — ключ палитры (data-color). */
+.tag-chip{
+  --tag:#64748b;display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 8px;border-radius:999px;
+  font-size:12px;font-weight:600;line-height:1;white-space:nowrap;color:var(--tag);
+  background:color-mix(in srgb,var(--tag) 14%,transparent);border:1px solid color-mix(in srgb,var(--tag) 35%,transparent)
+}
+.tag-chip[data-color="blue"],.tag-swatch[data-color="blue"]{--tag:#2563eb}
+.tag-chip[data-color="green"],.tag-swatch[data-color="green"]{--tag:#16a34a}
+.tag-chip[data-color="amber"],.tag-swatch[data-color="amber"]{--tag:#d97706}
+.tag-chip[data-color="red"],.tag-swatch[data-color="red"]{--tag:#dc2626}
+.tag-chip[data-color="purple"],.tag-swatch[data-color="purple"]{--tag:#9333ea}
+.tag-chip[data-color="teal"],.tag-swatch[data-color="teal"]{--tag:#0d9488}
+.tag-chip[data-color="pink"],.tag-swatch[data-color="pink"]{--tag:#db2777}
+.tag-chip[data-color="gray"],.tag-swatch[data-color="gray"]{--tag:#64748b}
+:root[data-theme="dark"] :is(.tag-chip,.tag-swatch)[data-color="blue"]{--tag:#60a5fa}
+:root[data-theme="dark"] :is(.tag-chip,.tag-swatch)[data-color="green"]{--tag:#4ade80}
+:root[data-theme="dark"] :is(.tag-chip,.tag-swatch)[data-color="amber"]{--tag:#fbbf24}
+:root[data-theme="dark"] :is(.tag-chip,.tag-swatch)[data-color="red"]{--tag:#f87171}
+:root[data-theme="dark"] :is(.tag-chip,.tag-swatch)[data-color="purple"]{--tag:#c084fc}
+:root[data-theme="dark"] :is(.tag-chip,.tag-swatch)[data-color="teal"]{--tag:#2dd4bf}
+:root[data-theme="dark"] :is(.tag-chip,.tag-swatch)[data-color="pink"]{--tag:#f472b6}
+:root[data-theme="dark"] :is(.tag-chip,.tag-swatch)[data-color="gray"]{--tag:#94a3b8}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]) :is(.tag-chip,.tag-swatch)[data-color="blue"]{--tag:#60a5fa}
+  :root:not([data-theme="light"]) :is(.tag-chip,.tag-swatch)[data-color="green"]{--tag:#4ade80}
+  :root:not([data-theme="light"]) :is(.tag-chip,.tag-swatch)[data-color="amber"]{--tag:#fbbf24}
+  :root:not([data-theme="light"]) :is(.tag-chip,.tag-swatch)[data-color="red"]{--tag:#f87171}
+  :root:not([data-theme="light"]) :is(.tag-chip,.tag-swatch)[data-color="purple"]{--tag:#c084fc}
+  :root:not([data-theme="light"]) :is(.tag-chip,.tag-swatch)[data-color="teal"]{--tag:#2dd4bf}
+  :root:not([data-theme="light"]) :is(.tag-chip,.tag-swatch)[data-color="pink"]{--tag:#f472b6}
+  :root:not([data-theme="light"]) :is(.tag-chip,.tag-swatch)[data-color="gray"]{--tag:#94a3b8}
+}
+.tag-list{display:inline-flex;flex-wrap:wrap;gap:4px;vertical-align:middle}
+.tag-editor{display:flex;flex-direction:column;gap:8px}
+.tag-chip-edit{height:26px;padding:0 4px 0 4px;gap:2px}
+.tag-chip-edit>span{padding:0 2px}
+.tag-remove{
+  display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;padding:0;border:0;border-radius:50%;
+  background:transparent;color:inherit;cursor:pointer;opacity:.7
+}
+.tag-remove:hover{opacity:1;background:color-mix(in srgb,var(--tag) 20%,transparent)}
+.tag-remove .icon{width:12px;height:12px}
+.tag-color-picker{position:relative;display:inline-flex}
+.tag-color-picker>summary{
+  list-style:none;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;cursor:pointer
+}
+.tag-color-picker>summary::-webkit-details-marker{display:none}
+.tag-color-picker>summary:hover,.tag-color-picker[open]>summary{background:color-mix(in srgb,var(--tag) 20%,transparent)}
+.tag-color-picker>summary:focus-visible,.tag-remove:focus-visible,.tag-swatch:focus-visible{outline:none;box-shadow:0 0 0 2px var(--primary-ring)}
+.tag-dot{width:10px;height:10px;border-radius:50%;background:var(--tag)}
+.tag-color-popover{
+  position:absolute;left:0;top:calc(100% + 6px);z-index:20;display:grid;grid-template-columns:repeat(4,22px);gap:6px;padding:8px;
+  border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);box-shadow:var(--shadow-2,0 6px 20px rgba(0,0,0,.18))
+}
+.tag-swatch{width:22px;height:22px;padding:0;border-radius:50%;border:2px solid transparent;background:var(--tag);cursor:pointer}
+.tag-swatch[aria-pressed="true"]{border-color:var(--surface);box-shadow:0 0 0 2px var(--tag)}
+.tag-add{display:flex;gap:6px;align-items:center;max-width:360px}
+.tag-add input{flex:1 1 auto;min-width:0}
+
 /* Статус вакансии — сегменты в шапке панели. */
 .vacancy-status-switch{flex:0 0 auto}
 .vacancy-status-switch .segmented-option[data-state]>span{padding:0 10px 0 8px}

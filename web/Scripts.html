@@ -335,7 +335,7 @@ async function afterHistoryRevert(type,id){
   if(type==='template'){
     await refreshReferences();
     await Promise.all([loadServerTable('templates'),loadServerTable('vacancies')]);
-    if(el('templateModal').classList.contains('open')&&String(value('templateId'))===String(id))openTemplateModal(id);
+    if(Drawer.isOpen('templateDrawer')&&String(value('templateId'))===String(id))await reopenTemplate(id);
   }
 }
 
@@ -743,6 +743,7 @@ function applyBootstrapData(data){
     currentUser:data.currentUser||null,
     interviewTemplates:data.interviewTemplates||[],
     templates:data.templates||[],
+    templateTagColors:data.templateTagColors||[],
     dictionaries:data.dictionaries||{},
     transitions:data.transitions||{},
     pipelineStatuses:data.pipelineStatuses||[],
@@ -1106,6 +1107,7 @@ async function refreshReferences(){
   state.responsibles=data.responsibles||[];
   state.interviewTemplates=data.interviewTemplates||[];
   state.templates=data.templates||[];
+  state.templateTagColors=data.templateTagColors||[];
   state.dictionaries=data.dictionaries||{};
   state.transitions=data.transitions||{};
   state.pipelineStatuses=data.pipelineStatuses||[];
@@ -1345,6 +1347,8 @@ function allowedTransitionsFor(candidate){
 }
 function activeVacancies(){return state.vacancies.filter(v=>v['Статус']==='Открыта')}
 function responsiblesFor(stage){return state.responsibles.filter(r=>(r.stages||[]).includes(stage))}
+// Новую карточку по умолчанию ведёт её автор (если он может быть рекрутером).
+function isCurrentUser(id){return !!(state.currentUser&&String(state.currentUser['User ID'])===String(id))}
 function recruiters(){return state.responsibles.filter(r=>(state.pipelineStatuses||[]).every(stage=>(r.stages||[]).includes(stage)))}
 function candidateAssignedResponsible(candidate,stage){
   if(!candidate)return null;
@@ -2275,7 +2279,7 @@ function openCandidate(candidate){
   el('candidateSource').innerHTML=option('','Не указан')+state.sources.map(s=>option(s['Source ID'],sourceOptionLabel(s),candidate&&s['Source ID']===candidate['Source ID'])).join('');
   if(candidate&&candidate['Source ID'])ensureCurrentOption(el('candidateSource'),candidate['Source ID'],candidate['Источник']);
 
-  el('candidateRecruiter').innerHTML=option('','Выберите рекрутера')+recruiters().map(r=>option(r['Responsible ID'],fullNameOf(r),candidate&&r['Responsible ID']===candidate['Responsible ID'])).join('');
+  el('candidateRecruiter').innerHTML=option('','Выберите рекрутера')+recruiters().map(r=>option(r['Responsible ID'],fullNameOf(r),candidate?r['Responsible ID']===candidate['Responsible ID']:isCurrentUser(r['Responsible ID']))).join('');
   if(candidate&&candidate['Responsible ID'])ensureCurrentOption(el('candidateRecruiter'),candidate['Responsible ID'],candidate['Ответственный']);
 
   el('candidateHrResponsible').innerHTML=option('','Выберите HR')+responsiblesFor('HR screening').map(r=>option(r['Responsible ID'],fullNameOf(r),candidate&&r['Responsible ID']===candidate['HR Responsible ID'])).join('');
@@ -2941,7 +2945,7 @@ function startTransition(id,toStatus){
     t['Этап']===toStatus
   );
 
-  const requiredTemplate=templates.find(t=>t.required)||null;
+  const template=templates[0]||null;
   const nextResponsible=candidateAssignedResponsible(candidate,toStatus);
 
   if(!nextResponsible){
@@ -2953,22 +2957,11 @@ function startTransition(id,toStatus){
     candidate,
     fromStatus:candidate['Статус'],
     toStatus,
-    templates,
-    requiredTemplate,
+    template,
     nextResponsible
   };
 
   el('transitionTitle').innerHTML=statusChip(candidate['Статус'],true)+' <span class="transition-arrow">'+icon('arrow-right','icon-sm')+'</span> '+statusChip(toStatus,true);
-
-  const templateSelect=el('transitionTemplate');
-  templateSelect.disabled=!!requiredTemplate;
-  templateSelect.innerHTML=requiredTemplate
-    ? option(
-        requiredTemplate['Template ID'],
-        'Обязательный · №'+(requiredTemplate['№']||'—')+' · '+requiredTemplate['Название'],
-        true
-      )
-    : option('','Без шаблона')+templates.map((t,i)=>option(t['Template ID'],'№'+(t['№']||'—')+' · '+t['Название'],i===0)).join('');
 
   el('transitionResponsibleDisplay').value=fullNameOf(nextResponsible);
   setRich('transitionComment','');
@@ -3110,34 +3103,38 @@ function applyTransitionResponse(candidateId,response,openCard){
 
 function closeTransition(){
   el('transitionModal').classList.remove('open');
-  el('transitionTemplate').disabled=false;
   pendingTransition=null;
 }
-function selectedTransitionTemplate(){const id=value('transitionTemplate');return pendingTransition?(pendingTransition.templates||[]).find(t=>t['Template ID']===id):null}
+// На этапе вакансии не больше одного шаблона; без шаблона вопросы не запрашиваются.
+function selectedTransitionTemplate(){return pendingTransition?pendingTransition.template:null}
 
 function renderTransitionQuestions(){
   const template=selectedTransitionTemplate();
   const questions=template?(template.questions||[]):[];
+  const root=el('transitionQuestions');
+  root.hidden=!questions.length;
 
-  el('transitionQuestions').innerHTML=questions.length
-    ?'<label>'+(template&&template.required?'Вопросы и ответы *':'Вопросы и ответы')+'</label>'+questions.map((q,index)=>{
-      const text=typeof q==='string'?q:q.text;
-      const answers=typeof q==='string'?[]:(q.answers||[]);
-      return answerQuestionHtml(index,text,{textareaClass:'transition-answer',answers});
-    }).join('')
-    :'<div class="empty-state compact">Для этого этапа шаблон вопросов не выбран.</div>';
-  mountAnswerEditors(el('transitionQuestions'));
+  root.innerHTML=questions.length
+    ?'<label>Вопросы · '+escapeHtml(template['Название'])+(template.required?' *':'')+'</label>'+
+      (template.required?'':'<small class="field-hint">Шаблон необязательный — вопросы можно пропустить.</small>')+
+      questions.map((q,index)=>{
+        const text=typeof q==='string'?q:q.text;
+        const answers=typeof q==='string'?[]:(q.answers||[]);
+        return answerQuestionHtml(index,text,{textareaClass:'transition-answer',answers});
+      }).join('')
+    :'';
+  mountAnswerEditors(root);
 }
 
-// Вопрос с полем ответа: предпочтительные ответы подставляются чипами, «Пропустить» помечает,
+// Вопрос с полем ответа: вероятные ответы подставляются чипами, «Пропустить» помечает,
 // что вопрос не задавался — ответ не требуется даже в обязательном шаблоне.
 function answerQuestionHtml(index,text,{textareaClass,answers=[],placeholder='Ответ кандидата'}={}){
   return '<div class="qa interview-question"><div class="question-number">'+(index+1)+'</div><div class="interview-question-body">'+
     '<div class="question-head"><strong>'+escapeHtml(text)+'</strong>'+
       '<button type="button" class="skip-answer" data-tip="Вопрос не задавался — ответ не нужен" aria-pressed="false" onclick="toggleSkipAnswer(this)">Пропустить</button></div>'+
     (answers.length
-      ? '<div class="answer-suggestions"><span class="answer-suggestions-label">Предпочтительные:</span>'+answers.map(answer=>
-          '<button type="button" class="suggestion-chip" data-tip="Подставить предпочтительный ответ" onclick="applySuggestedAnswer(this)" data-answer="'+escapeHtml(answer)+'">'+escapeHtml(answer)+'</button>'
+      ? '<div class="answer-suggestions"><span class="answer-suggestions-label">Вероятные ответы:</span>'+answers.map(answer=>
+          '<button type="button" class="suggestion-chip" data-tip="Подставить вероятный ответ" onclick="applySuggestedAnswer(this)" data-answer="'+escapeHtml(answer)+'">'+escapeHtml(answer)+'</button>'
         ).join('')+'</div>'
       : '')+
     '<div class="answer-editor-host"><textarea class="'+textareaClass+'" data-rich data-question="'+escapeHtml(text)+'" placeholder="'+escapeHtml(placeholder)+'"></textarea></div>'+
@@ -3211,35 +3208,30 @@ async function submitTransition(button){
     const answers=collectAnswers('.transition-answer');
 
     const result=richText(value('transitionResult'))?value('transitionResult'):'';
-    const selectedTemplate=selectedTransitionTemplate();
+    const template=selectedTransitionTemplate();
 
     if(!result){
       UiKit.showFieldErrors([{field:'transitionResult',message:'Опишите итог этапа.'}]);
       return;
     }
 
-    if(pendingTransition.requiredTemplate){
-      if(
-        !selectedTemplate||
-        String(selectedTemplate['Template ID'])!==
-          String(pendingTransition.requiredTemplate['Template ID'])
-      ){
-        showToast('Для перехода необходимо заполнить обязательный шаблон.','error');
-        return;
-      }
-
+    if(template&&template.required){
       const missingAnswers=[...document.querySelectorAll('.transition-answer')]
         .filter(node=>node.dataset.skipped!=='1'&&!richText(node.value.trim()))
         .map(node=>({field:node,message:'Ответ обязателен для этого шаблона.'}));
       if(!UiKit.showFieldErrors(missingAnswers))return;
     }
 
+    // Необязательный шаблон без единого ответа считается пропущенным.
+    const answered=answers.some(item=>richText(item.answer));
+    const useTemplate=!!template&&(template.required||answered);
+
     const payload={
       candidateId:pendingTransition.candidate.ID,
       toStatus:pendingTransition.toStatus,
       interview:{
-        templateId:value('transitionTemplate'),
-        answers,
+        templateId:useTemplate?template['Template ID']:'',
+        answers:useTemplate?answers:[],
         comment:value('transitionComment'),
         result
       }
@@ -3397,8 +3389,9 @@ async function interviewLifecycle(id,action,button){
 function editInterview(id){
   editingInterview=currentInterviews.find(i=>i['Interview ID']===id);
   if(!editingInterview)return;
-  // Предпочтительные ответы — из шаблона, по которому заполнялся результат.
-  const template=state.interviewTemplates.find(item=>item['Template ID']===editingInterview['Template ID']);
+  // Вероятные ответы — из шаблона, по которому заполнялся результат.
+  const template=(state.templates||[]).find(item=>item['Template ID']===editingInterview['Template ID'])||
+    state.interviewTemplates.find(item=>item['Template ID']===editingInterview['Template ID']);
   const suggestions=question=>{
     const item=template?(template.questions||[]).find(q=>(typeof q==='string'?q:q.text)===question):null;
     return item&&typeof item!=='string'?(item.answers||[]):[];

@@ -300,7 +300,7 @@ const ENTITY_AFTER={
   vacancy:async id=>{await refreshReferences();await loadServerTable('vacancies');if(String(value('vacancyId'))===String(id))await reopenVacancy(id)},
   source:async id=>{await refreshReferences();await loadServerTable('sources');if(String(value('sourceId'))===String(id))reopenSource(id)},
   user:async id=>{await refreshReferences();ensureAdminUsersLoaded(true).catch(()=>{});await loadServerTable('users');if(String(value('userId'))===String(id))reopenUser(id)},
-  template:async()=>{await refreshReferences();await Promise.all([loadServerTable('templates'),loadServerTable('vacancies')]);closeTemplateModal()}
+  template:async id=>{await refreshReferences();await Promise.all([loadServerTable('templates'),loadServerTable('vacancies')]);if(Drawer.isOpen('templateDrawer')&&String(value('templateId'))===String(id))await reopenTemplate(id)}
 };
 
 async function entityAction(type,id,action,button){
@@ -364,19 +364,6 @@ function vacancyStatusSwitch(vacancy){
     }).join('')+'</div>';
 }
 
-function vacancyStatusButtons(item,small){
-  if(item.state!=='active')return '';
-  const next=(state.vacancyStatusTransitions||{})[item['Статус']]||[];
-  // Кнопка называет действие («Приостановить»), а не целевой статус — иначе её путают с самим статусом.
-  const actions={'Открыта':['check','Открыть'],'На паузе':['clock','Приостановить'],'Закрыта':['x-circle','Закрыть']};
-  return '<span class="status-actions">'+next.map(status=>{
-    const [name,verb]=actions[status]||['arrow-right',status];
-    return '<button type="button" class="status-action" data-tip="Статус станет «'+escapeHtml(status)+'»" onclick="event.stopPropagation();setVacancyStatusUi(\''+escJs(item['Vacancy ID'])+'\',\''+escJs(status)+'\',this)">'+
-      icon(name,'icon-sm')+'<span>'+escapeHtml(verb)+'</span></button>';
-  }
-  ).join('')+'</span>';
-}
-
 const vacancyTable=createServerTable({
   id:'vacancies',
   containerId:'vacancyTable',
@@ -390,11 +377,10 @@ const vacancyTable=createServerTable({
   columns:[
     {label:'№',sort:'number',width:'64px',filter:{key:'number',type:'number'},render:item=>escapeHtml(item['№'])},
     {label:'Вакансия',sort:'name',filter:{key:'name',type:'text'},render:item=>escapeHtml(item['Вакансия'])+' '+stateBadge(item)},
-    {label:'Статус',sort:'status',width:'250px',filter:{key:'status',type:'select',options:()=>['Открыта','На паузе','Закрыта']},render:item=>
-      '<div class="chip-wrap">'+vacancyStatusChip(item['Статус'])+vacancyStatusButtons(item,true)+'</div>'},
+    {label:'Статус',sort:'status',width:'120px',filter:{key:'status',type:'select',options:()=>['Открыта','На паузе','Закрыта']},render:item=>vacancyStatusChip(item['Статус'])},
     {label:'Кандидаты',sort:'candidates',width:'90px',render:item=>escapeHtml(item.candidateCount||0)},
     {label:'Публикации',width:'150px',render:item=>vacancyLinksHtml(item.links||[])},
-    {label:'Шаблоны',sort:'templates',render:item=>templateChips(item.templates||[])},
+    {label:'Этапы с шаблонами',sort:'templates',render:item=>templateChips(item.templates||[])},
     {label:'',width:'76px',render:item=>'<div class="row-actions">'+lifecycleButtons('vacancy',item['Vacancy ID'],item.state,true)+'</div>'}
   ]
 });
@@ -417,11 +403,12 @@ const templateTable=createServerTable({
   emptyHint:'Создайте первый шаблон кнопкой «Новый шаблон».',
   defaultSort:{key:'number',dir:'desc'},
   rowId:item=>item['Template ID'],
-  isSelected:item=>el('templateModal').classList.contains('open')&&String(item['Template ID'])===String(value('templateId')),
-  onRowClick:item=>openTemplateModal(item['Template ID'],item),
+  isSelected:item=>String(item['Template ID'])===String(value('templateId')),
+  onRowClick:item=>editTemplate(item['Template ID'],item),
   columns:[
     {label:'№',sort:'number',width:'64px',filter:{key:'number',type:'number'},render:item=>escapeHtml(item['№'])},
     {label:'Шаблон',sort:'name',filter:{key:'name',type:'text'},render:item=>escapeHtml(item['Название'])+' '+stateBadge(item)},
+    {label:'Теги',filter:{key:'tag',type:'text'},render:item=>tagChipsHtml(item.tags)||'<span class="muted">—</span>'},
     {label:'Вопросы',sort:'questions',width:'90px',render:item=>escapeHtml((item.questions||[]).length)},
     {label:'Используется в вакансиях',sort:'usage',render:item=>templateUsageChips(item.vacancies||[])},
     {label:'',width:'76px',render:item=>'<div class="row-actions">'+lifecycleButtons('template',item['Template ID'],item.state,true)+'</div>'}
@@ -509,11 +496,9 @@ let adminInitialized=false;
 function initAdmin(){
   if(adminInitialized)return;
   adminInitialized=true;
-  // Модальное окно шаблона лежит в разметке админки, но должно жить в <body>,
-  // иначе оно скрыто вместе с разделом, когда открыта доска кандидатов.
-  document.body.appendChild(el('templateModal'));
   // Формы справочников — боковые панели (Drawer.html); закрытие снимает выбор строки.
   Drawer.register('vacancyDrawer',{onClose:onVacancyDrawerClose});
+  Drawer.register('templateDrawer',{onClose:onTemplateDrawerClose});
   Drawer.register('sourceDrawer',{onClose:onSourceDrawerClose});
   Drawer.register('userDrawer',{onClose:onUserDrawerClose});
   renderVacancyFormActions(null);
@@ -724,7 +709,7 @@ function resetVacancyForm(){
   setVacancyNameError('');
   renderVacancyLinks([],false);
   renderVacancyFormActions(null);
-  renderVacancyTemplateBindings([],false);
+  renderVacancyStages([],false);
   mountCommentThread('vacancy','vacancyComments','vacancy',null);
   rerenderServerTable('vacancies');
   Drawer.markClean('vacancyDrawer');
@@ -745,7 +730,7 @@ function editVacancy(id,item){
   setVacancyNameError('');
   renderVacancyLinks(vacancy.links||[],vacancy.state==='deleted');
   renderVacancyFormActions(vacancy);
-  renderVacancyTemplateBindings(vacancy.templates||[],vacancy.state==='deleted');
+  renderVacancyStages(vacancy.templates||[],vacancy.state==='deleted');
   mountCommentThread('vacancy','vacancyComments','vacancy',id);
   rerenderServerTable('vacancies');
   Drawer.markClean('vacancyDrawer');
@@ -777,7 +762,6 @@ async function saveVacancyForm(button){
   const links=collectVacancyLinks();
   if(!links)return;
   const templates=collectVacancyTemplates();
-  if(!templates)return;
 
   await runUiTask({button,formId:'vacancyForm',label:'Сохранение…'},async()=>{
     try{
@@ -822,85 +806,52 @@ async function setVacancyStatusUi(id,status,button){
 
 // ---------- Шаблоны интервью ----------
 
-// Привязки шаблонов вакансии: строка «этап → шаблон, обязательный ли». Сохраняются вместе с вакансией.
-function vacancyTemplateRow(binding={},readOnly=false){
-  const dis=readOnly?' disabled':'';
-  const templateId=binding.id||binding.templateId||'';
+// Этапы вакансии: у каждого этапа воронки можно выбрать один шаблон вопросов и отметить,
+// обязателен ли он. Необязательный шаблон при переходе можно пропустить. Сохраняется вместе с вакансией.
+function renderVacancyStages(bindings,readOnly){
+  const byStage=new Map((bindings||[]).map(binding=>[binding.stage,binding]));
   const templates=state.templates||[];
-  const known=templates.some(t=>String(t['Template ID'])===String(templateId));
-  return '<div class="binding-row">'+
-    '<select class="binding-stage" aria-label="Этап"'+dis+'>'+option('','Этап')+
-      (state.pipelineStatuses||[]).map(status=>option(status,status,status===binding.stage)).join('')+'</select>'+
-    '<select class="binding-template" aria-label="Шаблон вопросов"'+dis+'>'+option('','Выберите шаблон')+
-      templates.map(t=>option(t['Template ID'],'№'+(t['№']||'—')+' · '+t['Название']+' · '+(t.questions||[]).length+' вопр.',String(t['Template ID'])===String(templateId))).join('')+
-      (templateId&&!known?option(templateId,'№'+(binding.number||'—')+' · '+(binding.name||'Шаблон')+' (в архиве)',true):'')+
-    '</select>'+
-    '<label class="checkbox-line binding-required"><input type="checkbox" class="binding-required-input"'+(binding.required?' checked':'')+dis+'><span>Обязательный</span></label>'+
-    (readOnly?'':iconBtn('trash','Убрать шаблон','removeVacancyTemplateBinding(this)','icon-btn-sm icon-btn-danger'))+
-  '</div>';
+  el('vacancyStageList').innerHTML=(state.pipelineStatuses||[]).map(stage=>{
+    const binding=byStage.get(stage)||{};
+    const templateId=binding.id||'';
+    const known=templates.some(t=>String(t['Template ID'])===String(templateId));
+    const dis=readOnly?' disabled':'';
+    return '<div class="stage-row" data-stage="'+escapeHtml(stage)+'" style="--st:var(--status-'+statusKey(stage)+')">'+
+      '<span class="stage-row-name">'+statusChip(stage,true)+'</span>'+
+      '<select class="stage-template" aria-label="Шаблон вопросов этапа «'+escapeHtml(stage)+'»"'+dis+' onchange="onStageTemplateChange(this)">'+
+        option('','Без шаблона')+
+        templates.map(t=>option(t['Template ID'],'№'+(t['№']||'—')+' · '+t['Название']+' · '+(t.questions||[]).length+' вопр.',String(t['Template ID'])===String(templateId))).join('')+
+        (templateId&&!known?option(templateId,'№'+(binding.number||'—')+' · '+(binding.name||'Шаблон')+' (в архиве)',true):'')+
+      '</select>'+
+      '<label class="checkbox-line stage-required"><input type="checkbox" class="stage-required-input"'+(binding.required?' checked':'')+(readOnly||!templateId?' disabled':'')+'><span>Обязательный</span></label>'+
+    '</div>';
+  }).join('');
+  updateVacancyStagesCount();
 }
 
-function renderVacancyTemplateBindings(bindings,readOnly){
-  const order=state.pipelineStatuses||[];
-  el('vacancyTemplateList').innerHTML=bindings.slice()
-    .sort((a,b)=>order.indexOf(a.stage)-order.indexOf(b.stage))
-    .map(binding=>vacancyTemplateRow(binding,readOnly)).join('');
-  el('vacancyTemplateAdd').hidden=!!readOnly;
-  updateVacancyTemplatesEmpty();
+function onStageTemplateChange(select){
+  const checkbox=select.closest('.stage-row').querySelector('.stage-required-input');
+  checkbox.disabled=!select.value;
+  if(!select.value)checkbox.checked=false;
+  updateVacancyStagesCount();
 }
 
-function updateVacancyTemplatesEmpty(){
-  const count=el('vacancyTemplateList').children.length;
-  el('vacancyTemplateEmpty').hidden=count>0;
-  el('vacancyTemplateCount').textContent=count;
+function updateVacancyStagesCount(){
+  el('vacancyTemplateCount').textContent=[...document.querySelectorAll('#vacancyStageList .stage-template')].filter(select=>select.value).length;
 }
 
-function addVacancyTemplateBinding(){
-  el('vacancyTemplateList').insertAdjacentHTML('beforeend',vacancyTemplateRow());
-  updateVacancyTemplatesEmpty();
-  Drawer.markDirty('vacancyDrawer');
-  const rows=el('vacancyTemplateList').querySelectorAll('.binding-stage');
-  rows[rows.length-1].focus();
-}
-
-function removeVacancyTemplateBinding(button){
-  button.closest('.binding-row').remove();
-  Drawer.markDirty('vacancyDrawer');
-  updateVacancyTemplatesEmpty();
-}
-
-// null — есть ошибки (показаны у полей). Полностью пустые строки пропускаются.
 function collectVacancyTemplates(){
-  const errors=[];
-  const requiredStages=new Set();
-  const seen=new Set();
-  const bindings=[...document.querySelectorAll('#vacancyTemplateList .binding-row')].map(row=>{
-    const stageSelect=row.querySelector('.binding-stage');
-    const templateSelect=row.querySelector('.binding-template');
-    const stage=stageSelect.value;
-    const templateId=templateSelect.value;
-    const required=row.querySelector('.binding-required-input').checked;
-    if(!stage&&!templateId)return null;
-    if(!stage)errors.push({field:stageSelect,message:'Выберите этап.'});
-    if(!templateId)errors.push({field:templateSelect,message:'Выберите шаблон.'});
-    if(stage&&templateId){
-      const key=stage+'|'+templateId;
-      if(seen.has(key))errors.push({field:templateSelect,message:'Этот шаблон уже выбран для этапа.'});
-      seen.add(key);
-      if(required){
-        if(requiredStages.has(stage))errors.push({field:stageSelect,message:'На этапе может быть только один обязательный шаблон.'});
-        requiredStages.add(stage);
-      }
-    }
-    return {stage,templateId,required};
-  }).filter(Boolean);
-  return UiKit.showFieldErrors(errors)?bindings:null;
+  return [...document.querySelectorAll('#vacancyStageList .stage-row')].map(row=>({
+    stage:row.dataset.stage,
+    templateId:row.querySelector('.stage-template').value,
+    required:row.querySelector('.stage-required-input').checked
+  })).filter(binding=>binding.templateId);
 }
 
 function answerChip(answer){
   return '<span class="answer-chip" data-value="'+escapeHtml(answer)+'">'+
     '<span>'+escapeHtml(answer)+'</span>'+
-    '<button class="icon-btn icon-btn-sm" type="button" data-tip="Убрать ответ" aria-label="Убрать ответ" onclick="this.parentElement.remove()">'+icon('close','icon-sm')+'</button>'+
+    '<button class="icon-btn icon-btn-sm" type="button" data-tip="Убрать ответ" aria-label="Убрать ответ" onclick="this.parentElement.remove();Drawer.markDirty(\'templateDrawer\')">'+icon('close','icon-sm')+'</button>'+
   '</span>';
 }
 
@@ -910,13 +861,13 @@ function questionBlock(question){
     '<div class="question-editor-row">'+
       '<span class="question-number"></span>'+
       '<input class="template-question" placeholder="Текст вопроса" value="'+escapeHtml(item.text||'')+'">'+
-      '<button class="icon-btn icon-btn-sm icon-btn-danger" type="button" data-tip="Удалить вопрос" aria-label="Удалить вопрос" onclick="this.closest(\'.question-block\').remove();renumberTemplateQuestions()">'+icon('trash','icon-sm')+'</button>'+
+      '<button class="icon-btn icon-btn-sm icon-btn-danger" type="button" data-tip="Удалить вопрос" aria-label="Удалить вопрос" onclick="this.closest(\'.question-block\').remove();renumberTemplateQuestions();Drawer.markDirty(\'templateDrawer\')">'+icon('trash','icon-sm')+'</button>'+
     '</div>'+
     '<div class="answer-editor">'+
       '<div class="answer-chips">'+(item.answers||[]).map(answerChip).join('')+'</div>'+
       '<div class="answer-add">'+
-        '<input class="answer-add-input" placeholder="Предпочтительный ответ — Enter, чтобы добавить" onkeydown="if(event.key===\'Enter\'){event.preventDefault();addAnswerChip(this)}">'+
-        '<button class="icon-btn icon-btn-sm" type="button" data-tip="Добавить предпочтительный ответ" aria-label="Добавить предпочтительный ответ" onclick="addAnswerChip(this.previousElementSibling)">'+icon('plus','icon-sm')+'</button>'+
+        '<input class="answer-add-input" placeholder="Вероятный ответ — Enter, чтобы добавить" onkeydown="if(event.key===\'Enter\'){event.preventDefault();addAnswerChip(this)}">'+
+        '<button class="icon-btn icon-btn-sm" type="button" data-tip="Добавить вероятный ответ" aria-label="Добавить вероятный ответ" onclick="addAnswerChip(this.previousElementSibling)">'+icon('plus','icon-sm')+'</button>'+
       '</div>'+
     '</div>'+
   '</div>';
@@ -927,7 +878,7 @@ function addAnswerChip(input){
   if(!answer)return;
   const chips=input.closest('.answer-editor').querySelector('.answer-chips');
   const exists=[...chips.querySelectorAll('.answer-chip')].some(chip=>chip.dataset.value.toLowerCase()===answer.toLowerCase());
-  if(!exists)chips.insertAdjacentHTML('beforeend',answerChip(answer));
+  if(!exists){chips.insertAdjacentHTML('beforeend',answerChip(answer));Drawer.markDirty('templateDrawer')}
   input.value='';
   input.focus();
 }
@@ -957,41 +908,160 @@ function collectTemplateQuestions(){
   }).filter(question=>question.text);
 }
 
-function openTemplateModal(id,item){
-  const template=id?(item||tableItem('templates','Template ID',id)):null;
-  if(id&&!template)return;
-  if(id)clearFresh('templates',id);
+// ---------- Теги шаблона ----------
+// Тег — название и цвет из палитры. Уже использованный в других шаблонах тег подставляется со своим цветом.
+const TAG_COLOR_LABELS={blue:'Синий',green:'Зелёный',amber:'Жёлтый',red:'Красный',purple:'Фиолетовый',teal:'Бирюзовый',pink:'Розовый',gray:'Серый'};
+const MAX_TEMPLATE_TAGS=10;
+let templateTagsDraft=[];
+
+function tagColors(){return state.templateTagColors&&state.templateTagColors.length?state.templateTagColors:Object.keys(TAG_COLOR_LABELS)}
+function tagChip(tag){return '<span class="tag-chip" data-color="'+escapeHtml(tag.color||'gray')+'">'+escapeHtml(tag.name)+'</span>'}
+function tagChipsHtml(tags){return (tags||[]).length?'<span class="tag-list">'+tags.map(tagChip).join('')+'</span>':''}
+
+function knownTemplateTags(){
+  const map=new Map();
+  (state.templates||[]).forEach(t=>(t.tags||[]).forEach(tag=>{
+    const key=tag.name.toLowerCase();
+    if(!map.has(key))map.set(key,tag);
+  }));
+  return [...map.values()].sort((a,b)=>a.name.localeCompare(b.name,'ru'));
+}
+
+function renderTemplateTags(readOnly){
+  const colors=tagColors();
+  const chips=templateTagsDraft.map((tag,index)=>
+    '<span class="tag-chip tag-chip-edit" data-color="'+escapeHtml(tag.color)+'">'+
+      (readOnly?'':
+        '<details class="tag-color-picker" ontoggle="closeOtherTagPickers(this)">'+
+          '<summary data-tip="Цвет тега" aria-label="Цвет тега «'+escapeHtml(tag.name)+'»"><span class="tag-dot"></span></summary>'+
+          '<div class="tag-color-popover">'+colors.map(color=>
+            '<button type="button" class="tag-swatch" data-color="'+color+'" aria-label="'+TAG_COLOR_LABELS[color]+'" data-tip="'+TAG_COLOR_LABELS[color]+'" aria-pressed="'+(color===tag.color)+'" onclick="setTemplateTagColor('+index+',\''+color+'\')"></button>'
+          ).join('')+'</div>'+
+        '</details>')+
+      '<span>'+escapeHtml(tag.name)+'</span>'+
+      (readOnly?'':'<button type="button" class="tag-remove" data-tip="Убрать тег" aria-label="Убрать тег «'+escapeHtml(tag.name)+'»" onclick="removeTemplateTag('+index+')">'+icon('close','icon-sm')+'</button>')+
+    '</span>'
+  ).join('');
+  const suggestions=knownTemplateTags().filter(known=>!templateTagsDraft.some(tag=>tag.name.toLowerCase()===known.name.toLowerCase()));
+  el('templateTags').innerHTML=
+    (chips?'<div class="tag-list">'+chips+'</div>':(readOnly?'<span class="muted">Тегов нет</span>':''))+
+    (readOnly?'':
+      '<div class="tag-add">'+
+        '<input id="templateTagInput" list="templateTagOptions" maxlength="40" placeholder="Новый тег — Enter, чтобы добавить" aria-label="Новый тег" onkeydown="if(event.key===\'Enter\'){event.preventDefault();addTemplateTag(this.value)}">'+
+        '<datalist id="templateTagOptions">'+suggestions.map(tag=>'<option value="'+escapeHtml(tag.name)+'"></option>').join('')+'</datalist>'+
+        iconBtn('plus','Добавить тег','addTemplateTag(el(\'templateTagInput\').value)','icon-btn-sm')+
+      '</div>');
+}
+
+function closeOtherTagPickers(current){
+  if(!current.open)return;
+  document.querySelectorAll('#templateTags details[open]').forEach(node=>{if(node!==current)node.open=false});
+}
+
+// Палитра цвета закрывается кликом мимо неё и по Esc.
+document.addEventListener('click',event=>{
+  document.querySelectorAll('.tag-color-picker[open]').forEach(node=>{if(!node.contains(event.target))node.open=false});
+});
+document.addEventListener('keydown',event=>{
+  if(event.key!=='Escape')return;
+  const open=document.querySelector('.tag-color-picker[open]');
+  if(!open)return;
+  event.stopPropagation();
+  open.open=false;
+  open.querySelector('summary').focus();
+},true);
+
+function addTemplateTag(raw){
+  const name=String(raw||'').trim().replace(/\s+/g,' ').slice(0,40);
+  if(!name)return;
+  if(templateTagsDraft.some(tag=>tag.name.toLowerCase()===name.toLowerCase())){el('templateTagInput').value='';return}
+  if(templateTagsDraft.length>=MAX_TEMPLATE_TAGS){showToast('Не больше '+MAX_TEMPLATE_TAGS+' тегов.','error');return}
+  const known=knownTemplateTags().find(tag=>tag.name.toLowerCase()===name.toLowerCase());
+  const used=new Set(templateTagsDraft.map(tag=>tag.color));
+  const color=known?known.color:(tagColors().find(c=>c!=='gray'&&!used.has(c))||'gray');
+  templateTagsDraft.push({name:known?known.name:name,color});
+  Drawer.markDirty('templateDrawer');
+  renderTemplateTags(false);
+  el('templateTagInput').focus();
+}
+
+function setTemplateTagColor(index,color){
+  if(!templateTagsDraft[index])return;
+  templateTagsDraft[index].color=color;
+  Drawer.markDirty('templateDrawer');
+  renderTemplateTags(false);
+}
+
+function removeTemplateTag(index){
+  templateTagsDraft.splice(index,1);
+  Drawer.markDirty('templateDrawer');
+  renderTemplateTags(false);
+}
+
+// ---------- Форма шаблона (боковая панель) ----------
+
+function renderTemplateFormActions(template){
   const readOnly=template&&template.state==='deleted';
-
-  el('templateId').value=template?template['Template ID']:'';
-  el('templateName').value=template?template['Название']||'':'';
-  el('templateName').readOnly=!!readOnly;
-  el('templateModalTitle').textContent=template?'№'+(template['№']||'—')+' · '+template['Название']:'Новый шаблон';
-  el('templateModalUsage').innerHTML=template?
-    (template.usage?'Используется в вакансиях: '+escapeHtml(template.usage):'Пока не привязан к вакансиям')+' '+stateBadge(template):
-    'К вакансии шаблон привязывается в её карточке — на нужном этапе.';
-
   formActions('templateFormActions',[
     template?historyButton('template',template['Template ID'],template['Название']):'',
     template?lifecycleButtons('template',template['Template ID'],template.state):'',
-    readOnly?'':textBtn('save','Сохранить','saveTemplateForm(this)'),
-    '<span class="toolbar-divider" aria-hidden="true"></span>',
-    '<button type="button" class="icon-btn" data-modal-close data-tip="Закрыть (Esc)" aria-label="Закрыть" onclick="closeTemplateModal()">'+icon('close')+'</button>'
+    readOnly?'':textBtn('save','Сохранить','saveTemplateForm(this)')
   ]);
+}
+
+function onTemplateDrawerClose(){
+  el('templateId').value='';
+  templateTagsDraft=[];
+  rerenderServerTable('templates');
+}
+
+function fillTemplateForm(template){
+  const readOnly=!!(template&&template.state==='deleted');
+  Drawer.open('templateDrawer');
+  el('templateId').value=template?template['Template ID']:'';
+  el('templateName').value=template?template['Название']||'':'';
+  el('templateName').readOnly=readOnly;
+  el('templateFormTitle').textContent=template?'№'+(template['№']||'—')+' · '+template['Название']:'Новый шаблон';
+  el('templateLifecycleNote').innerHTML=template?lifecycleNote(template):'';
+  el('templateUsage').innerHTML=template
+    ? templateUsageChips(template.vacancies||[])
+    : '<span class="muted">Шаблон выбирают в карточке вакансии — в разделе «Этапы».</span>';
+  renderTemplateFormActions(template);
+
+  templateTagsDraft=((template&&template.tags)||[]).map(tag=>({...tag}));
+  renderTemplateTags(readOnly);
 
   el('templateQuestionsList').innerHTML='';
   const questions=template?template.questions||[]:[];
   if(questions.length)questions.forEach(question=>addTemplateQuestion(question));
   else addTemplateQuestion({text:'',answers:[]});
+  el('templateQuestionAdd').hidden=readOnly;
 
-  el('templateModal').classList.add('open');
   rerenderServerTable('templates');
-  el('templateName').focus();
+  Drawer.markClean('templateDrawer');
+  if(!template)el('templateName').focus();
 }
 
-function closeTemplateModal(){
-  el('templateModal').classList.remove('open');
-  rerenderServerTable('templates');
+function resetTemplateForm(){fillTemplateForm(null)}
+
+function editTemplate(id,item){
+  const template=item||tableItem('templates','Template ID',id);
+  if(!template)return;
+  clearFresh('templates',id);
+  fillTemplateForm(template);
+}
+
+async function reopenTemplate(id){
+  const item=await findInTable('templates','Template ID',id);
+  if(item)fillTemplateForm(item);
+  else{Drawer.markClean('templateDrawer');Drawer.close('templateDrawer')}
+}
+
+function collectTemplateTags(){
+  // Невнесённый тег из поля ввода тоже сохраняется.
+  const pending=el('templateTagInput')?el('templateTagInput').value.trim():'';
+  if(pending)addTemplateTag(pending);
+  return templateTagsDraft.map(tag=>({name:tag.name,color:tag.color}));
 }
 
 async function saveTemplateForm(button){
@@ -1000,15 +1070,24 @@ async function saveTemplateForm(button){
 
   if(!UiKit.showFieldErrors(name?[]:[{field:'templateName',message:'Укажите название шаблона.'}]))return;
   if(!questions.length){showToast('Добавьте хотя бы один вопрос.','error');return}
+  const tags=collectTemplateTags();
 
   await runUiTask({button,formId:'templateForm',label:'Сохранение…'},async()=>{
-    const created=!value('templateId');
-    const {template}=await rpc('saveInterviewTemplate',{id:value('templateId'),name,questions});
-    if(created&&template)markFresh('templates',template);
+    const id=value('templateId');
+    const {template}=await rpc('saveInterviewTemplate',{id,name,questions,tags});
     await refreshReferences();
-    closeTemplateModal();
+    if(!id){
+      // Новая запись: панель закрывается, строка — сверху таблицы с подсветкой.
+      markFresh('templates',template);
+      Drawer.markClean('templateDrawer');
+      Drawer.close('templateDrawer');
+      await Promise.all([loadServerTable('templates'),loadServerTable('vacancies')]);
+      showToast('Шаблон «'+template['Название']+'» создан. Выберите его на нужном этапе в карточке вакансии.');
+      return;
+    }
     // Вакансии показывают названия своих шаблонов, поэтому перечитываем и их.
     await Promise.all([loadServerTable('templates'),loadServerTable('vacancies')]);
+    fillTemplateForm(tableItem('templates','Template ID',id)||template);
     showToast('Шаблон вопросов сохранён.');
   }).catch(()=>{});
 }

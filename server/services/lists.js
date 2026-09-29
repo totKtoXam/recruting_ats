@@ -184,7 +184,8 @@ const TEMPLATES = {
   alias: 't',
   filters: {
     number: { type: 'number', sql: 't.number' },
-    name: { type: 'text', sql: 't.name' }
+    name: { type: 'text', sql: 't.name' },
+    tag: { type: 'text', sql: `(SELECT coalesce(string_agg(e->>'name', ' '), '') FROM jsonb_array_elements(t.tags) e)` }
   },
   sorts: {
     number: 't.number',

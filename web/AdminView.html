@@ -65,13 +65,10 @@
 
         <section class="drawer-section">
           <div class="drawer-section-head">
-            <h4>Шаблоны вопросов <span id="vacancyTemplateCount" class="counter-badge">0</span></h4>
-            <div class="header-actions">
-              <button id="vacancyTemplateAdd" type="button" class="button button-secondary button-small" onclick="addVacancyTemplateBinding()"><svg class="icon"><use href="#i-plus"/></svg><span>Шаблон</span></button>
-            </div>
+            <h4>Этапы <span id="vacancyTemplateCount" class="counter-badge" data-tip="Этапов с шаблоном вопросов">0</span></h4>
           </div>
-          <div id="vacancyTemplateList" class="binding-list"></div>
-          <div id="vacancyTemplateEmpty" class="empty-state compact">Выберите шаблон для этапа — его вопросы зададут при переводе кандидата на этот этап. Сами шаблоны ведутся в разделе «Шаблоны вопросов».</div>
+          <small class="field-hint">Вопросы шаблона задают при переводе кандидата на этап. Необязательный шаблон можно пропустить, этап без шаблона — без вопросов.</small>
+          <div id="vacancyStageList" class="stage-list"></div>
         </section>
 
         <!-- Заголовок «Комментарии» рисует сама лента (Comments.html). -->
@@ -91,11 +88,58 @@
         <h3>Шаблоны вопросов</h3>
         <div class="header-actions">
           <div class="segmented state-switch" data-table="templates"></div>
-          <button type="button" class="button button-primary" onclick="openTemplateModal()"><svg class="icon"><use href="#i-plus"/></svg><span class="btn-label">Новый шаблон</span></button>
+          <button type="button" class="button button-primary" onclick="resetTemplateForm()"><svg class="icon"><use href="#i-plus"/></svg><span class="btn-label">Новый шаблон</span></button>
         </div>
       </div>
       <div id="templateTable"></div>
     </div>
+  </div>
+
+  <!-- Боковая панель (Drawer); переносится в <body> при инициализации. -->
+  <div id="templateDrawer" class="drawer drawer-lg" aria-hidden="true">
+    <aside id="templateForm" class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="templateFormTitle" tabindex="-1">
+      <header class="drawer-header">
+        <div class="drawer-title">
+          <div class="eyebrow">Шаблон вопросов</div>
+          <h3 id="templateFormTitle">Новый шаблон</h3>
+        </div>
+        <div class="header-actions" id="templateFormActions"></div>
+        <span class="toolbar-divider" aria-hidden="true"></span>
+        <button type="button" class="icon-btn" data-drawer-close data-tip="Закрыть (Esc)" aria-label="Закрыть"><svg class="icon"><use href="#i-close"/></svg></button>
+      </header>
+
+      <div class="drawer-body">
+        <section class="drawer-section">
+          <input id="templateId" type="hidden">
+          <div id="templateLifecycleNote"></div>
+
+          <div class="field">
+            <label for="templateName">Название *</label>
+            <input id="templateName" placeholder="Например, Проф. интервью .NET">
+          </div>
+
+          <div class="field">
+            <label for="templateTagInput">Теги</label>
+            <div id="templateTags" class="tag-editor"></div>
+          </div>
+
+          <div class="field">
+            <label>Используется в вакансиях</label>
+            <div id="templateUsage"></div>
+          </div>
+        </section>
+
+        <section class="drawer-section">
+          <div class="drawer-section-head">
+            <h4>Вопросы *</h4>
+            <div class="header-actions">
+              <button id="templateQuestionAdd" class="button button-secondary button-small" type="button" onclick="addTemplateQuestion()"><svg class="icon"><use href="#i-plus"/></svg><span>Вопрос</span></button>
+            </div>
+          </div>
+          <div id="templateQuestionsList" class="question-list"></div>
+        </section>
+      </div>
+    </aside>
   </div>
 </section>
 
@@ -235,34 +279,3 @@
 <section id="admin-integrations" class="admin-page-section">
   <div id="integrationsRoot"><div class="empty-state compact">Загрузка…</div></div>
 </section>
-
-<!-- Переносится в <body> при инициализации: внутри скрытого раздела модальное окно не отобразится. -->
-<div id="templateModal" class="modal modal-top">
-  <div class="panel">
-    <div class="panel-header">
-      <div>
-        <div class="eyebrow">Шаблон интервью</div>
-        <h2 id="templateModalTitle">Новый шаблон</h2>
-        <div id="templateModalUsage" class="muted"></div>
-      </div>
-      <div class="header-actions" id="templateFormActions"></div>
-    </div>
-
-    <section id="templateForm" class="form-card form-card-flat">
-      <input id="templateId" type="hidden">
-
-      <div class="field">
-        <label for="templateName">Название шаблона *</label>
-        <input id="templateName" placeholder="Например, Проф. интервью .NET">
-      </div>
-
-      <div class="field">
-        <div class="field-header">
-          <label>Вопросы *</label>
-          <button class="button button-ghost button-small" type="button" onclick="addTemplateQuestion()"><svg class="icon icon-sm"><use href="#i-plus"/></svg><span>Добавить вопрос</span></button>
-        </div>
-        <div id="templateQuestionsList" class="question-list"></div>
-      </div>
-    </section>
-  </div>
-</div>

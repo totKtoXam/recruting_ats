@@ -429,16 +429,11 @@
       <section id="transitionForm" class="form-card form-card-flat">
         <div class="form-grid one">
           <div class="field">
-            <label>Шаблон вопросов</label>
-            <select id="transitionTemplate" onchange="renderTransitionQuestions()"></select>
-          </div>
-
-          <div class="field">
             <label>Ответственный за этап</label>
             <input id="transitionResponsibleDisplay" readonly>
           </div>
 
-          <div id="transitionQuestions" class="field full"></div>
+          <div id="transitionQuestions" class="field full" hidden></div>
 
           <div class="field full">
             <label>Комментарий</label>
