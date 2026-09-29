@@ -14,6 +14,8 @@ import { filesRouter } from './routes/files.js';
 import { escapeJsString } from './routes/html.js';
 import { intakeRouter } from './routes/intake.js';
 import { legalRouter } from './routes/legal.js';
+import { mcpRouter } from './routes/mcp.js';
+import { oauthRouter, wellKnownHandler } from './routes/oauth.js';
 
 const WEB_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'web');
 
@@ -76,6 +78,10 @@ export function createApp() {
   // Intake API авторизуется ключом и не использует cookie-сессию.
   router.use('/intake', intakeRouter());
 
+  // MCP-сервер для Claude и других AI-клиентов: OAuth Bearer-токен, без cookie-сессии.
+  router.use(wellKnownHandler);
+  router.use(mcpRouter());
+
   router.use(
     session({
       name: config.sessionCookieName,
@@ -96,6 +102,7 @@ export function createApp() {
 
   router.use(loadUser);
   router.use(authRouter());
+  router.use(oauthRouter());
   router.use(filesRouter());
 
   router.get('/api/events', requireUserApi, handleEvents);
@@ -156,12 +163,25 @@ export function createApp() {
       return res.status(status).json({ ok: false, error: message });
     }
 
+    if (req.path.startsWith('/mcp')) {
+      return res.status(status).json({ jsonrpc: '2.0', id: null, error: { code: status === 400 ? -32700 : -32603, message } });
+    }
+
+    if (req.path.startsWith('/oauth/')) {
+      return res.status(status).json({ error: status === 500 ? 'server_error' : 'invalid_request', error_description: message });
+    }
+
     if (req.path.startsWith('/api/')) {
       return res.status(status).json({ error: { message } });
     }
 
     res.status(status).type('text').send(message);
   });
+
+  // Метаданные OAuth клиенты ищут и в корне домена (/.well-known/...<BASE_PATH>).
+  if (config.basePath) {
+    app.use(wellKnownHandler);
+  }
 
   app.use(config.basePath || '/', router);
 

@@ -9,6 +9,7 @@ import * as interviews from './services/interviews.js';
 import * as lifecycle from './services/lifecycle.js';
 import * as lists from './services/lists.js';
 import * as notifications from './services/notifications.js';
+import * as oauth from './services/oauth.js';
 import * as references from './services/references.js';
 import * as resumeParse from './services/resume-parse.js';
 import * as settings from './services/settings.js';
@@ -111,6 +112,9 @@ export const rpcHandlers = {
   setNotificationPreferences: (input, { user }) => notifications.setNotificationPreferences(input, user),
   getCandidateWatch: (id, { user }) => notifications.getCandidateWatch(id, user),
   setCandidateWatch: (input, { user }) => notifications.setCandidateWatch(input, user),
+  // Подключённые MCP-клиенты (Claude и др.): список и отключение в профиле.
+  listMcpConnections: (input, { user }) => oauth.listConnections(input, user),
+  revokeMcpConnection: (id, { user }) => oauth.revokeConnection(id, user),
   createTelegramLink: (input, { user }) => telegram.createTelegramLink(input, user),
   unlinkTelegram: (input, { user }) => telegram.unlinkTelegram(input, user),
 

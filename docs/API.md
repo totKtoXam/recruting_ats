@@ -3,9 +3,10 @@
 В документе описаны:
 
 1. **Resume Intake API** (`/intake`) — внешний API для AI-интеграций: справочники и создание предзаполненных черновиков кандидатов.
-2. **Внутренний RPC** (`/api/rpc/:name`) — эндпоинт, через который работает фронтенд ATS.
+2. **MCP-сервер** (`/mcp`) — подключение Claude и других AI-ассистентов от имени пользователя (OAuth 2.1).
+3. **Внутренний RPC** (`/api/rpc/:name`) — эндпоинт, через который работает фронтенд ATS.
 
-Оба API обслуживаются тем же сервером, что и основное приложение. Отдельный deployment больше не нужен.
+Все API обслуживаются тем же сервером, что и основное приложение. Отдельный deployment больше не нужен.
 
 ## Resume Intake API
 
@@ -223,6 +224,59 @@ curl -s -X POST "$ATS_URL/intake?api=candidate-draft" \
 - `skills/recruiting-ats-resume/openapi.yaml` — описание API (операции `getReferences` и `createCandidateDraft`).
 
 В `openapi.yaml` замени `servers[0].url` на `PUBLIC_URL` своей установки. API key подключается как query-параметр `api_key`.
+
+## MCP-сервер для Claude
+
+`{PUBLIC_URL}/mcp` — сервер [Model Context Protocol](https://modelcontextprotocol.io) (транспорт Streamable HTTP, JSON-ответы, без сессий). Через него Claude (Claude Code, Claude Desktop и другие MCP-клиенты) работает с ATS **от имени пользователя**: с его правами, а все изменения пишутся в журнал под его именем.
+
+### Подключение и авторизация (OAuth 2.1)
+
+Клиенту достаточно адреса `{PUBLIC_URL}/mcp` — остальное он находит сам:
+
+1. `POST /mcp` без токена → `401` с `WWW-Authenticate: Bearer resource_metadata="{PUBLIC_URL}/.well-known/oauth-protected-resource"`.
+2. Метаданные ресурса (RFC 9728) и сервера авторизации (RFC 8414). Отдаются и под `BASE_PATH` (`{PUBLIC_URL}/.well-known/oauth-authorization-server`, `…/openid-configuration`), и в корне домена (`/.well-known/oauth-authorization-server{BASE_PATH}`, `/.well-known/openid-configuration{BASE_PATH}`) — если reverse proxy не пропускает корневой `/.well-known/`, клиенты находят вариант под `BASE_PATH`.
+3. Клиент регистрируется сам: `POST /oauth/register` (RFC 7591; только публичные клиенты, `redirect_uris` — `https://…` или `http://localhost|127.0.0.1|[::1]`).
+4. `GET /oauth/authorize` (PKCE S256 обязателен) → вход в ATS через Google, если сессии нет → страница согласия «Разрешить / Отмена» → редирект с `code`.
+5. `POST /oauth/token`: `authorization_code` (код одноразовый, 10 минут) и `refresh_token` (ротация: старый refresh-токен перестаёт действовать). Access-токен живёт 1 час, refresh — 90 дней. `POST /oauth/revoke` — отзыв (RFC 7009).
+
+В БД хранятся только SHA-256 токенов и кодов (миграция `012_oauth_mcp.sql`: `oauth_clients`, `oauth_codes`, `oauth_grants`). Если пользователю закрыли доступ в ATS, его токены перестают работать сразу. Свои подключения пользователь видит и отключает в «Профиль → Claude и AI-ассистенты» (RPC `listMcpConnections`, `revokeMcpConnection`).
+
+### Инструменты
+
+Реестр — `server/mcp/tools.js`. Инструменты вызывают те же сервисы и RPC-методы, что и интерфейс, поэтому права, проверки и журнал общие. У инструментов чтения — `readOnlyHint: true`; инструменты записи в описании требуют показать пользователю превью и получить подтверждение (то же правило — в `instructions` ответа `initialize`).
+
+| Группа | Инструменты |
+|---|---|
+| Чтение | `get_references`, `search_candidates`, `get_candidate`, `get_resume_text`, `find_similar_candidates`, `parse_resume`, `get_interview_context`, `list_comments`, `get_history`, `get_dashboard`, `list_records`, `get_notifications`, `create_upload_link` |
+| Кандидаты | `create_candidate_draft`, `save_candidate` (создание; изменение — только переданные поля), `transition_candidate`, `update_interview`, `set_record_state`, `set_candidate_watch`, `mark_notifications_read` |
+| Комментарии и журнал | `add_comment`, `edit_comment`, `delete_comment`, `toggle_reaction`, `revert_change` |
+| Справочники | `save_vacancy`, `set_vacancy_status`, `save_source`, `save_interview_template` |
+| Пользователи (админ) | `save_user`, `set_user_access` |
+
+Ошибки бизнес-правил возвращаются результатом инструмента с `isError: true` и текстом, как в интерфейсе. Относительные ссылки ATS (`/files/…`, `/candidates/…`) в ответах превращаются в абсолютные.
+
+### Загрузка резюме
+
+Чтобы не передавать файл base64 через контекст модели, `create_upload_link` выдаёт одноразовую ссылку (30 минут, хранится в памяти процесса):
+
+```bash
+curl -sS -X POST --data-binary @cv.pdf -H "Content-Type: application/octet-stream" \
+  "$PUBLIC_URL/mcp/uploads/<uploadId>?name=cv.pdf"
+```
+
+Затем `uploadId` передаётся в `parse_resume`, `create_candidate_draft` (`resumeUploadId`) или `save_candidate` (`resumeUploadId`). Без shell можно передать файл в `file` / `resumeFile` как `{ name, mimeType, base64 }`.
+
+### Плагин Claude Code
+
+`plugins/recruiting-ats` — плагин с MCP-сервером, скиллом `recruiting-ats` (правила, превью форм перед записью, сценарии) и командами (`/recruiting-ats:candidate`, `:resume`, `:move`, `:reject`, `:comment`, `:pipeline`, `:today`, `:report`, `:form-mode`). Маркетплейс — `.claude-plugin/marketplace.json` в корне репозитория. Адрес сервера по умолчанию — `https://portal.devexpert.kz/hr-ats/mcp`, другой задаётся переменной окружения `ATS_MCP_URL` до запуска Claude Code.
+
+```text
+/plugin marketplace add totKtoXam/recruting_ats
+/plugin install recruiting-ats@recruiting-ats
+/mcp   → recruiting-ats → Authenticate
+```
+
+Без плагина сервер подключается напрямую: `claude mcp add --transport http recruiting-ats https://portal.devexpert.kz/hr-ats/mcp`. В claude.ai / Claude Desktop — «Настройки → Коннекторы → Добавить свой коннектор» с тем же адресом; для этого сервер должен быть доступен из интернета по HTTPS.
 
 ## Внутренний RPC
 

@@ -33,6 +33,7 @@
 - История результатов интервью доступна для просмотра и редактирования; у каждого результата своя лента комментариев.
 - Архивирование сохраняет текущий статус кандидата и проставляет `archived_at`; кандидата можно вернуть из архива.
 - Resume Intake API для AI-интеграций: создание предзаполненных черновиков кандидатов (см. [`docs/API.md`](docs/API.md)).
+- MCP-сервер и плагин Claude Code: Claude работает с ATS от имени пользователя — вход кнопкой «Connect» (OAuth через вход в ATS), превью и подтверждение перед каждым изменением (см. [MCP-сервер и плагин Claude](#mcp-сервер-и-плагин-claude)).
 - Автоматические миграции схемы БД при старте.
 - CI в GitHub Actions: тесты, проверка миграций на чистом PostgreSQL, сборка Docker-образа.
 
@@ -527,7 +528,8 @@ npm run migrate
 
 - установи `TRUST_PROXY=true` — Express будет доверять `X-Forwarded-Proto` от первого прокси; без этого secure cookie не выставится и вход будет «зацикливаться»;
 - прокси должен передавать заголовки `Host` и `X-Forwarded-Proto`;
-- лимит тела запроса на прокси — не меньше 20 МБ (резюме передаются в base64 внутри JSON).
+- лимит тела запроса на прокси — не меньше 20 МБ (резюме передаются в base64 внутри JSON);
+- для MCP-клиентов прокси должен пропускать `{BASE_PATH}/mcp`, `{BASE_PATH}/oauth/*` и `{BASE_PATH}/.well-known/*` (при приложении под `BASE_PATH` проксировать корневой `/.well-known/` не обязательно).
 
 Пример для nginx:
 
@@ -656,6 +658,20 @@ npm run cleanup-drafts
 - Документация: [`docs/API.md`](docs/API.md)
 - Skill: `skills/recruiting-ats-resume/SKILL.md`
 - OpenAPI: `skills/recruiting-ats-resume/openapi.yaml` (замени `servers.url` на свой `PUBLIC_URL`)
+
+## MCP-сервер и плагин Claude
+
+`{PUBLIC_URL}/mcp` — MCP-сервер, через который Claude (Claude Code, Claude Desktop) ищет кандидатов, читает резюме, заводит черновики, переводит по этапам, комментирует и строит отчёты — от имени пользователя и с его правами. Подключение — кнопкой «Connect» / «Authenticate» в клиенте: открывается вход в ATS и страница «Разрешить доступ» (OAuth 2.1 + PKCE, без ключей в конфиге). Подключения видны и отключаются в «Профиль → Claude и AI-ассистенты».
+
+Плагин Claude Code — `plugins/recruiting-ats` (MCP-сервер, скилл с правилами превью и подтверждения, команды `/recruiting-ats:*`):
+
+```text
+/plugin marketplace add totKtoXam/recruting_ats
+/plugin install recruiting-ats@recruiting-ats
+/mcp   → recruiting-ats → Authenticate
+```
+
+Адрес по умолчанию — `https://portal.devexpert.kz/hr-ats/mcp`; другой — переменная окружения `ATS_MCP_URL`. Протокол, инструменты и загрузка резюме описаны в [`docs/API.md`](docs/API.md#mcp-сервер-для-claude).
 
 ## Структура проекта
 

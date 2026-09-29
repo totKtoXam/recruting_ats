@@ -42,7 +42,15 @@ img.avatar-lg{border-radius:50%;object-fit:cover}
 .profile-page{display:flex;flex-direction:column;gap:16px;padding:16px var(--page-pad) var(--page-pad);max-width:1280px}
 .profile-page .admin-list-card{border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface);box-shadow:var(--shadow);overflow:hidden}
 .profile-page .admin-list-card>.section-title-row{position:static;margin:0;padding:12px 16px;min-height:52px}
-#profileAccount,#profileTheme,#notifyChannels{padding:16px}
+#profileAccount,#profileTheme,#profileMcp,#notifyChannels{padding:16px}
+.profile-wide{grid-column:1/-1}
+.mcp-url-row{display:flex;gap:8px;align-items:center;margin:10px 0 14px}
+.mcp-url-row code{flex:1;min-width:0;padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface-3);font-size:13px;overflow-wrap:anywhere}
+.mcp-connections{display:flex;flex-direction:column;border:1px solid var(--line-soft);border-radius:var(--radius)}
+.mcp-connection{display:flex;gap:12px;align-items:center;padding:10px 12px}
+.mcp-connection+.mcp-connection{border-top:1px solid var(--line-soft)}
+.mcp-connection>div{flex:1;min-width:0}
+.mcp-connection-name{font-weight:600}
 #notifyTabLog{min-height:360px}
 .profile-tabs{align-self:flex-start}
 .profile-tabs .icon{vertical-align:-2px;margin-right:4px}
@@ -187,10 +195,71 @@ function renderProfileTheme(){
   ).join('')+'</div>';
 }
 
+// ---------- Подключения MCP (Claude и другие AI-ассистенты) ----------
+// Клиент подключается кнопкой «Connect»/«Authenticate»: вход в ATS -> согласие -> OAuth-токен.
+
+const mcpServerUrl=()=>location.origin+(window.__BASE_PATH__||'')+'/mcp';
+let mcpLoading=false;
+
+async function loadMcpConnections(){
+  const box=el('profileMcp');
+  if(!box||mcpLoading)return;
+  mcpLoading=true;
+  if(!box.innerHTML)box.innerHTML='<div class="skeleton" style="height:96px"></div>';
+  try{
+    const {connections}=await rpc('listMcpConnections');
+    renderMcpConnections(connections);
+  }catch(error){
+    box.innerHTML='<div class="empty-state compact">'+escapeHtml(error.message)+'</div>';
+  }finally{
+    mcpLoading=false;
+  }
+}
+
+function renderMcpConnections(connections){
+  const list=connections.length
+    ?'<div class="mcp-connections">'+connections.map(item=>
+      '<div class="mcp-connection">'+icon('link')+
+        '<div><div class="mcp-connection-name">'+escapeHtml(item.clientName)+'</div>'+
+        '<div class="muted">Подключено '+escapeHtml(fmtDate(item.createdAt))+
+          (item.lastUsedAt?' · последнее использование '+escapeHtml(fmtDate(item.lastUsedAt)):'')+'</div></div>'+
+        '<button type="button" class="text-btn" onclick="revokeMcpConnection(\''+escapeHtml(item.id)+'\')">Отключить</button>'+
+      '</div>').join('')+'</div>'
+    :'<div class="empty-state compact">Нет подключённых приложений.</div>';
+
+  el('profileMcp').innerHTML=
+    '<div class="muted">Claude (Claude Code, Claude Desktop) работает с ATS от вашего имени через MCP-сервер. Добавьте адрес в клиент и нажмите «Connect» / «Authenticate» — откроется вход в ATS и запрос доступа.</div>'+
+    '<div class="mcp-url-row"><code>'+escapeHtml(mcpServerUrl())+'</code>'+
+      '<button type="button" class="text-btn" onclick="copyMcpUrl()">'+icon('copy','icon-sm')+' Копировать</button></div>'+
+    list;
+}
+
+async function copyMcpUrl(){
+  try{
+    await writeClipboardText(mcpServerUrl());
+    showToast('Адрес MCP-сервера скопирован.');
+  }catch{
+    showToast('Не удалось скопировать адрес.','error');
+  }
+}
+
+async function revokeMcpConnection(id){
+  const ok=await showConfirm('Приложение потеряет доступ к ATS. Чтобы вернуть доступ, подключите его заново.','Отключить приложение?',{confirmLabel:'Отключить'});
+  if(!ok)return;
+  try{
+    await rpc('revokeMcpConnection',id);
+    showToast('Приложение отключено.');
+    loadMcpConnections();
+  }catch(error){
+    showToast(error.message,'error');
+  }
+}
+
 // Тема не зависит от загрузки профиля; карточка аккаунта дорисуется, когда придёт пользователь
 // (renderCurrentUser вызывает renderProfileMain повторно).
 function renderProfileMain(){
   renderProfileTheme();
+  loadMcpConnections();
   const user=state.currentUser;
   if(!user){el('profileAccount').innerHTML='<div class="skeleton" style="height:120px"></div>';return}
   const facts=[

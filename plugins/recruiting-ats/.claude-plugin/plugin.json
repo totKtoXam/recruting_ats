@@ -1,0 +1,11 @@
+{
+  "name": "recruiting-ats",
+  "version": "1.0.0",
+  "description": "Работа с Recruiting ATS из Claude: поиск и карточки кандидатов, разбор резюме и черновики, перевод по этапам с ответами на вопросы, отказы, комментарии, вакансии, шаблоны и дашборд. Подключается к MCP-серверу ATS через OAuth (вход через Google).",
+  "author": {
+    "name": "DevExpert"
+  },
+  "homepage": "https://github.com/totKtoXam/recruting_ats",
+  "repository": "https://github.com/totKtoXam/recruting_ats",
+  "keywords": ["ats", "recruiting", "hr", "mcp"]
+}
