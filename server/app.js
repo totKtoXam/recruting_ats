@@ -8,6 +8,7 @@ import { config, withBase } from './config.js';
 import { pool } from './db/pool.js';
 import { toPublicError } from './lib/errors.js';
 import { rpcHandlers } from './rpc.js';
+import { handleEvents } from './services/realtime.js';
 import { authRouter, loadUser, requireUserApi, requireUserPage } from './routes/auth.js';
 import { filesRouter } from './routes/files.js';
 import { escapeJsString } from './routes/html.js';
@@ -96,6 +97,8 @@ export function createApp() {
   router.use(loadUser);
   router.use(authRouter());
   router.use(filesRouter());
+
+  router.get('/api/events', requireUserApi, handleEvents);
 
   router.post(
     '/api/rpc/:name',

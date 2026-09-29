@@ -87,7 +87,7 @@ async function loadServerTable(id){
 
 // Только что созданные записи: закреплены сверху первой страницы и подсвечены,
 // пока их не откроют (или до перезагрузки страницы).
-const freshRecords={vacancies:new Map(),sources:new Map(),users:new Map(),templates:new Set()};
+const freshRecords={vacancies:new Map(),sources:new Map(),users:new Map(),templates:new Map()};
 
 function markFresh(tableId,item){
   const table=serverTables[tableId];
@@ -300,7 +300,7 @@ const ENTITY_AFTER={
   vacancy:async id=>{await refreshReferences();await loadServerTable('vacancies');if(String(value('vacancyId'))===String(id))await reopenVacancy(id)},
   source:async id=>{await refreshReferences();await loadServerTable('sources');if(String(value('sourceId'))===String(id))reopenSource(id)},
   user:async id=>{await refreshReferences();ensureAdminUsersLoaded(true).catch(()=>{});await loadServerTable('users');if(String(value('userId'))===String(id))reopenUser(id)},
-  template:async()=>{await refreshReferences();await loadVacancyTemplates();await loadServerTable('vacancies');closeTemplateModal()}
+  template:async()=>{await refreshReferences();await Promise.all([loadServerTable('templates'),loadServerTable('vacancies')]);closeTemplateModal()}
 };
 
 async function entityAction(type,id,action,button){
@@ -344,6 +344,26 @@ function formActions(containerId,buttons){
 
 // ---------- Таблицы ----------
 
+// Статус вакансии в шапке панели: сегменты «Открыта / На паузе / Закрыта», текущий выбран.
+// Недоступные переходы (см. vacancyStatusTransitions) и любые переходы для архивной вакансии отключены.
+const VACANCY_STATUS_SEGMENTS=[['Открыта','active'],['На паузе','archived'],['Закрыта','deleted']];
+const VACANCY_STATUS_ICONS={'Открыта':'check','На паузе':'clock','Закрыта':'x-circle'};
+
+function vacancyStatusSwitch(vacancy){
+  if(!vacancy)return '';
+  const allowed=(state.vacancyStatusTransitions||{})[vacancy['Статус']]||[];
+  const editable=vacancy.state==='active';
+  const id=escJs(vacancy['Vacancy ID']);
+  return '<div class="segmented vacancy-status-switch" role="radiogroup" aria-label="Статус вакансии" data-drawer-ignore>'+
+    VACANCY_STATUS_SEGMENTS.map(([status,tone])=>{
+      const current=status===vacancy['Статус'];
+      const disabled=!current&&!(editable&&allowed.includes(status));
+      return '<label class="segmented-option" data-state="'+tone+'"'+(disabled?' data-tip="Переход недоступен"':'')+'>'+
+        '<input type="radio" name="vacancyStatus" value="'+escapeHtml(status)+'"'+(current?' checked':'')+(disabled?' disabled':'')+
+        ' onchange="setVacancyStatusUi(\''+id+'\',\''+escJs(status)+'\')"><span>'+icon(VACANCY_STATUS_ICONS[status],'icon-sm')+escapeHtml(status)+'</span></label>';
+    }).join('')+'</div>';
+}
+
 function vacancyStatusButtons(item,small){
   if(item.state!=='active')return '';
   const next=(state.vacancyStatusTransitions||{})[item['Статус']]||[];
@@ -376,6 +396,35 @@ const vacancyTable=createServerTable({
     {label:'Публикации',width:'150px',render:item=>vacancyLinksHtml(item.links||[])},
     {label:'Шаблоны',sort:'templates',render:item=>templateChips(item.templates||[])},
     {label:'',width:'76px',render:item=>'<div class="row-actions">'+lifecycleButtons('vacancy',item['Vacancy ID'],item.state,true)+'</div>'}
+  ]
+});
+
+function templateUsageChips(usages){
+  if(!usages.length)return '<span class="muted">Не используется</span>';
+  return '<div class="chip-wrap">'+
+    usages.slice(0,3).map(u=>
+      '<span class="mini-chip status-'+statusKey(u.stage)+'">№'+escapeHtml(u.number)+' '+escapeHtml(u.name)+' · '+escapeHtml(u.stage)+(u.required?' *':'')+'</span>'
+    ).join('')+
+    (usages.length>3?'<span class="more-chip">+'+(usages.length-3)+'</span>':'')+
+  '</div>';
+}
+
+const templateTable=createServerTable({
+  id:'templates',
+  containerId:'templateTable',
+  rpcName:'listTemplates',
+  emptyText:'Шаблонов пока нет',
+  emptyHint:'Создайте первый шаблон кнопкой «Новый шаблон».',
+  defaultSort:{key:'number',dir:'desc'},
+  rowId:item=>item['Template ID'],
+  isSelected:item=>el('templateModal').classList.contains('open')&&String(item['Template ID'])===String(value('templateId')),
+  onRowClick:item=>openTemplateModal(item['Template ID'],item),
+  columns:[
+    {label:'№',sort:'number',width:'64px',filter:{key:'number',type:'number'},render:item=>escapeHtml(item['№'])},
+    {label:'Шаблон',sort:'name',filter:{key:'name',type:'text'},render:item=>escapeHtml(item['Название'])+' '+stateBadge(item)},
+    {label:'Вопросы',sort:'questions',width:'90px',render:item=>escapeHtml((item.questions||[]).length)},
+    {label:'Используется в вакансиях',sort:'usage',render:item=>templateUsageChips(item.vacancies||[])},
+    {label:'',width:'76px',render:item=>'<div class="row-actions">'+lifecycleButtons('template',item['Template ID'],item.state,true)+'</div>'}
   ]
 });
 
@@ -437,7 +486,7 @@ const userTable=createServerTable({
   ]
 });
 
-const ADMIN_TABLES=['vacancies','sources'];
+const ADMIN_TABLES=['vacancies','templates','sources'];
 
 function visibleAdminTables(){
   return isAdminUser()?[...ADMIN_TABLES,'users']:ADMIN_TABLES;
@@ -480,7 +529,7 @@ function renderAdminAll(){
   initAdmin();
 
   if(!state.loaded.references){
-    ['vacancyTable','sourceTable','userTable'].forEach(id=>{
+    ['vacancyTable','templateTable','sourceTable','userTable'].forEach(id=>{
       if(el(id))el(id).innerHTML='<div class="empty-state compact">Данные загружаются в фоне…</div>';
     });
     return;
@@ -488,7 +537,6 @@ function renderAdminAll(){
 
   renderStateSwitches();
   renderUserStageOptions();
-  renderTemplateStageOptions();
   renderSourceFormIcon();
 
   // Таблицы загружаются при первом открытии админ-панели.
@@ -649,6 +697,8 @@ function collectVacancyLinks(){
 function renderVacancyFormActions(vacancy){
   const readOnly=vacancy&&vacancy.state==='deleted';
   formActions('vacancyFormActions',[
+    vacancyStatusSwitch(vacancy),
+    vacancy?'<span class="toolbar-divider" aria-hidden="true"></span>':'',
     vacancy?historyButton('vacancy',vacancy['Vacancy ID'],'№'+(vacancy['№']||'—')+' · '+vacancy['Вакансия']):'',
     vacancy?lifecycleButtons('vacancy',vacancy['Vacancy ID'],vacancy.state):'',
     readOnly?'':textBtn('save','Сохранить','saveVacancyForm(this)')
@@ -657,18 +707,10 @@ function renderVacancyFormActions(vacancy){
 
 function onVacancyDrawerClose(){
   currentVacancy=null;
-  vacancyTemplatesCache=[];
   el('vacancyId').value='';
   setVacancyNameError('');
   mountCommentThread('vacancy','vacancyComments','vacancy',null);
   rerenderServerTable('vacancies');
-}
-
-function renderVacancyStatus(vacancy){
-  el('vacancyStatusField').hidden=!vacancy;
-  if(!vacancy)return;
-  el('vacancyStatusChip').innerHTML=vacancyStatusChip(vacancy['Статус']);
-  el('vacancyStatusActions').innerHTML=vacancyStatusButtons(vacancy);
 }
 
 function resetVacancyForm(){
@@ -682,10 +724,9 @@ function resetVacancyForm(){
   setVacancyNameError('');
   renderVacancyLinks([],false);
   renderVacancyFormActions(null);
-  renderVacancyStatus(null);
+  renderVacancyTemplateBindings([],false);
   mountCommentThread('vacancy','vacancyComments','vacancy',null);
   rerenderServerTable('vacancies');
-  loadVacancyTemplates();
   Drawer.markClean('vacancyDrawer');
   el('vacancyName').focus();
 }
@@ -704,10 +745,9 @@ function editVacancy(id,item){
   setVacancyNameError('');
   renderVacancyLinks(vacancy.links||[],vacancy.state==='deleted');
   renderVacancyFormActions(vacancy);
-  renderVacancyStatus(vacancy);
+  renderVacancyTemplateBindings(vacancy.templates||[],vacancy.state==='deleted');
   mountCommentThread('vacancy','vacancyComments','vacancy',id);
   rerenderServerTable('vacancies');
-  loadVacancyTemplates();
   Drawer.markClean('vacancyDrawer');
 }
 
@@ -736,10 +776,12 @@ async function saveVacancyForm(button){
 
   const links=collectVacancyLinks();
   if(!links)return;
+  const templates=collectVacancyTemplates();
+  if(!templates)return;
 
   await runUiTask({button,formId:'vacancyForm',label:'Сохранение…'},async()=>{
     try{
-      const {vacancy}=await rpc('saveVacancy',{id,name,links});
+      const {vacancy}=await rpc('saveVacancy',{id,name,links,templates});
       upsertById(state.vacancies,'Vacancy ID',vacancy);
       populateGlobalFilters();
       if(!id){
@@ -748,7 +790,7 @@ async function saveVacancyForm(button){
         Drawer.markClean('vacancyDrawer');
         Drawer.close('vacancyDrawer');
         await loadServerTable('vacancies');
-        showToast('Вакансия «'+vacancy['Вакансия']+'» создана. Откройте её, чтобы добавить шаблоны интервью.');
+        showToast('Вакансия «'+vacancy['Вакансия']+'» создана.');
         return;
       }
       await loadServerTable('vacancies');
@@ -767,74 +809,92 @@ async function setVacancyStatusUi(id,status,button){
     upsertById(state.vacancies,'Vacancy ID',vacancy);
     populateGlobalFilters();
     await loadServerTable('vacancies');
-    if(String(value('vacancyId'))===String(id))editVacancy(id,tableItem('vacancies','Vacancy ID',id)||vacancy);
+    // Форма остаётся как есть (несохранённые правки не теряются): обновляется только шапка со статусом.
+    if(String(value('vacancyId'))===String(id)){
+      currentVacancy={...(currentVacancy||{}),...(tableItem('vacancies','Vacancy ID',id)||vacancy)};
+      renderVacancyFormActions(currentVacancy);
+    }
     showToast('Статус вакансии: «'+status+'».');
-  }).catch(()=>{});
+  }).catch(()=>{
+    if(currentVacancy&&String(value('vacancyId'))===String(id))renderVacancyFormActions(currentVacancy);
+  });
 }
 
 // ---------- Шаблоны интервью ----------
 
-let vacancyTemplatesCache=[];
-
-function renderTemplateStageOptions(selected){
-  if(!el('templateStage'))return;
-  const current=selected!==undefined?selected:value('templateStage');
-  el('templateStage').innerHTML=option('','Выберите этап')+
-    (state.pipelineStatuses||[]).map(status=>option(status,status,status===current)).join('');
+// Привязки шаблонов вакансии: строка «этап → шаблон, обязательный ли». Сохраняются вместе с вакансией.
+function vacancyTemplateRow(binding={},readOnly=false){
+  const dis=readOnly?' disabled':'';
+  const templateId=binding.id||binding.templateId||'';
+  const templates=state.templates||[];
+  const known=templates.some(t=>String(t['Template ID'])===String(templateId));
+  return '<div class="binding-row">'+
+    '<select class="binding-stage" aria-label="Этап"'+dis+'>'+option('','Этап')+
+      (state.pipelineStatuses||[]).map(status=>option(status,status,status===binding.stage)).join('')+'</select>'+
+    '<select class="binding-template" aria-label="Шаблон вопросов"'+dis+'>'+option('','Выберите шаблон')+
+      templates.map(t=>option(t['Template ID'],'№'+(t['№']||'—')+' · '+t['Название']+' · '+(t.questions||[]).length+' вопр.',String(t['Template ID'])===String(templateId))).join('')+
+      (templateId&&!known?option(templateId,'№'+(binding.number||'—')+' · '+(binding.name||'Шаблон')+' (в архиве)',true):'')+
+    '</select>'+
+    '<label class="checkbox-line binding-required"><input type="checkbox" class="binding-required-input"'+(binding.required?' checked':'')+dis+'><span>Обязательный</span></label>'+
+    (readOnly?'':iconBtn('trash','Убрать шаблон','removeVacancyTemplateBinding(this)','icon-btn-sm icon-btn-danger'))+
+  '</div>';
 }
 
-async function loadVacancyTemplates(){
-  const vacancyId=value('vacancyId');
-  vacancyTemplatesCache=[];
-  if(vacancyId){
-    vacancyTemplatesCache=await rpc('listVacancyTemplates',vacancyId).catch(error=>{showToast(error.message,'error');return []});
-    if(String(value('vacancyId'))!==String(vacancyId))return;
-  }
-  renderVacancyTemplatesForSelected();
-}
-
-function renderVacancyTemplatesForSelected(){
-  const vacancyId=value('vacancyId');
-  const list=el('vacancyTemplateList');
-  const empty=el('vacancyTemplateEmpty');
-  const vacancyActive=currentVacancy&&currentVacancy.state==='active';
-
-  el('templateAddButton').disabled=!vacancyId||!vacancyActive;
-
-  if(!vacancyId){
-    empty.hidden=false;
-    empty.textContent='Сначала сохраните вакансию — после этого можно добавить шаблоны.';
-    list.innerHTML='';
-    el('vacancyTemplateCount').textContent='0';
-    return;
-  }
-
+function renderVacancyTemplateBindings(bindings,readOnly){
   const order=state.pipelineStatuses||[];
-  const showAll=el('templateShowAll').checked;
-  const templates=vacancyTemplatesCache
-    .filter(t=>showAll||t.state==='active')
-    .sort((a,b)=>order.indexOf(a['Этап'])-order.indexOf(b['Этап'])||(a['№']||0)-(b['№']||0));
+  el('vacancyTemplateList').innerHTML=bindings.slice()
+    .sort((a,b)=>order.indexOf(a.stage)-order.indexOf(b.stage))
+    .map(binding=>vacancyTemplateRow(binding,readOnly)).join('');
+  el('vacancyTemplateAdd').hidden=!!readOnly;
+  updateVacancyTemplatesEmpty();
+}
 
-  el('vacancyTemplateCount').textContent=vacancyTemplatesCache.filter(t=>t.state==='active').length;
-  empty.hidden=templates.length>0;
-  empty.textContent=showAll?'Шаблонов нет.':'Активных шаблонов нет.';
+function updateVacancyTemplatesEmpty(){
+  const count=el('vacancyTemplateList').children.length;
+  el('vacancyTemplateEmpty').hidden=count>0;
+  el('vacancyTemplateCount').textContent=count;
+}
 
-  const selected=el('templateModal').classList.contains('open')?value('templateId'):'';
+function addVacancyTemplateBinding(){
+  el('vacancyTemplateList').insertAdjacentHTML('beforeend',vacancyTemplateRow());
+  updateVacancyTemplatesEmpty();
+  Drawer.markDirty('vacancyDrawer');
+  const rows=el('vacancyTemplateList').querySelectorAll('.binding-stage');
+  rows[rows.length-1].focus();
+}
 
-  list.innerHTML=templates.map(t=>
-    '<div class="template-row'+(String(selected)===String(t['Template ID'])?' selected-template':'')+(freshRecords.templates.has(String(t['Template ID']))?' row-fresh':'')+'" tabindex="0" onkeydown="if(event.key===\'Enter\'&&event.target===this)this.click()" onclick="openTemplateModal(\''+escJs(t['Template ID'])+'\')">'+
-      '<div class="template-row-main">'+
-        '<strong>'+(freshRecords.templates.has(String(t['Template ID']))?'<span class="fresh-badge">Новый</span>':'')+'№'+escapeHtml(t['№']||'—')+' · '+escapeHtml(t['Название'])+'</strong>'+
-        '<div class="chip-wrap">'+
-          statusChip(t['Этап'],true)+
-          (t.required?'<span class="mini-chip">Обязательный</span>':'')+
-          '<span class="muted">'+(t.questions||[]).length+' вопр.</span>'+
-          stateBadge(t)+
-        '</div>'+
-      '</div>'+
-      '<div class="row-actions">'+lifecycleButtons('template',t['Template ID'],t.state,true)+'</div>'+
-    '</div>'
-  ).join('');
+function removeVacancyTemplateBinding(button){
+  button.closest('.binding-row').remove();
+  Drawer.markDirty('vacancyDrawer');
+  updateVacancyTemplatesEmpty();
+}
+
+// null — есть ошибки (показаны у полей). Полностью пустые строки пропускаются.
+function collectVacancyTemplates(){
+  const errors=[];
+  const requiredStages=new Set();
+  const seen=new Set();
+  const bindings=[...document.querySelectorAll('#vacancyTemplateList .binding-row')].map(row=>{
+    const stageSelect=row.querySelector('.binding-stage');
+    const templateSelect=row.querySelector('.binding-template');
+    const stage=stageSelect.value;
+    const templateId=templateSelect.value;
+    const required=row.querySelector('.binding-required-input').checked;
+    if(!stage&&!templateId)return null;
+    if(!stage)errors.push({field:stageSelect,message:'Выберите этап.'});
+    if(!templateId)errors.push({field:templateSelect,message:'Выберите шаблон.'});
+    if(stage&&templateId){
+      const key=stage+'|'+templateId;
+      if(seen.has(key))errors.push({field:templateSelect,message:'Этот шаблон уже выбран для этапа.'});
+      seen.add(key);
+      if(required){
+        if(requiredStages.has(stage))errors.push({field:stageSelect,message:'На этапе может быть только один обязательный шаблон.'});
+        requiredStages.add(stage);
+      }
+    }
+    return {stage,templateId,required};
+  }).filter(Boolean);
+  return UiKit.showFieldErrors(errors)?bindings:null;
 }
 
 function answerChip(answer){
@@ -897,20 +957,19 @@ function collectTemplateQuestions(){
   }).filter(question=>question.text);
 }
 
-function openTemplateModal(id){
-  const vacancyId=value('vacancyId');
-  if(!vacancyId)return;
-  if(id&&freshRecords.templates.delete(String(id)))renderVacancyTemplatesForSelected();
-
-  const template=id?vacancyTemplatesCache.find(x=>String(x['Template ID'])===String(id)):null;
+function openTemplateModal(id,item){
+  const template=id?(item||tableItem('templates','Template ID',id)):null;
+  if(id&&!template)return;
+  if(id)clearFresh('templates',id);
   const readOnly=template&&template.state==='deleted';
 
   el('templateId').value=template?template['Template ID']:'';
   el('templateName').value=template?template['Название']||'':'';
-  el('templateRequired').checked=!!(template&&template.required);
-  renderTemplateStageOptions(template?template['Этап']:'');
+  el('templateName').readOnly=!!readOnly;
   el('templateModalTitle').textContent=template?'№'+(template['№']||'—')+' · '+template['Название']:'Новый шаблон';
-  el('templateModalVacancy').innerHTML=(currentVacancy?'Вакансия: '+escapeHtml(currentVacancy['Вакансия']):'')+(template?' '+stateBadge(template):'');
+  el('templateModalUsage').innerHTML=template?
+    (template.usage?'Используется в вакансиях: '+escapeHtml(template.usage):'Пока не привязан к вакансиям')+' '+stateBadge(template):
+    'К вакансии шаблон привязывается в её карточке — на нужном этапе.';
 
   formActions('templateFormActions',[
     template?historyButton('template',template['Template ID'],template['Название']):'',
@@ -926,39 +985,31 @@ function openTemplateModal(id){
   else addTemplateQuestion({text:'',answers:[]});
 
   el('templateModal').classList.add('open');
-  renderVacancyTemplatesForSelected();
+  rerenderServerTable('templates');
   el('templateName').focus();
 }
 
 function closeTemplateModal(){
   el('templateModal').classList.remove('open');
-  renderVacancyTemplatesForSelected();
+  rerenderServerTable('templates');
 }
 
 async function saveTemplateForm(button){
-  const vacancyId=value('vacancyId');
   const name=value('templateName').trim();
-  const stage=value('templateStage');
-  const required=el('templateRequired').checked;
   const questions=collectTemplateQuestions();
 
-  if(!vacancyId){showToast('Сначала сохраните вакансию.','error');return}
-  const templateErrors=[
-    [!name,'templateName','Укажите название шаблона.'],
-    [!stage,'templateStage','Выберите этап.']
-  ].filter(([bad])=>bad).map(([,field,message])=>({field,message}));
-  if(!UiKit.showFieldErrors(templateErrors))return;
+  if(!UiKit.showFieldErrors(name?[]:[{field:'templateName',message:'Укажите название шаблона.'}]))return;
   if(!questions.length){showToast('Добавьте хотя бы один вопрос.','error');return}
 
   await runUiTask({button,formId:'templateForm',label:'Сохранение…'},async()=>{
     const created=!value('templateId');
-    const {template}=await rpc('saveInterviewTemplate',{id:value('templateId'),name,vacancyId,stage,required,questions});
-    if(created&&template)freshRecords.templates.add(String(template['Template ID']));
+    const {template}=await rpc('saveInterviewTemplate',{id:value('templateId'),name,questions});
+    if(created&&template)markFresh('templates',template);
     await refreshReferences();
     closeTemplateModal();
-    await loadVacancyTemplates();
-    await loadServerTable('vacancies');
-    showToast('Шаблон интервью сохранён.');
+    // Вакансии показывают названия своих шаблонов, поэтому перечитываем и их.
+    await Promise.all([loadServerTable('templates'),loadServerTable('vacancies')]);
+    showToast('Шаблон вопросов сохранён.');
   }).catch(()=>{});
 }
 

@@ -2823,7 +2823,8 @@ th.sortable:focus-visible{outline:2px solid var(--primary-ring);outline-offset:-
 .candidate-card.card-fresh{box-shadow:0 0 0 2px var(--primary-ring),var(--shadow);animation:freshPulse 1.6s var(--ease-out) 2}
 .data-table tbody tr.row-fresh,.template-row.row-fresh{background:var(--primary-tint-2);box-shadow:inset 3px 0 0 var(--primary)}
 @keyframes freshPulse{50%{box-shadow:0 0 0 5px var(--primary-tint-2),var(--shadow)}}
-@media(prefers-reduced-motion:reduce){.candidate-card.card-fresh{animation:none}}
+.candidate-card.card-updated{box-shadow:0 0 0 2px var(--primary-ring),var(--shadow);animation:freshPulse 1.2s var(--ease-out) 2}
+@media(prefers-reduced-motion:reduce){.candidate-card.card-fresh,.candidate-card.card-updated{animation:none}}
 
 /* Source icon picker. */
 .icon-picker{display:grid;grid-template-columns:repeat(auto-fill,minmax(44px,1fr));gap:6px;margin-top:4px}
@@ -2869,5 +2870,19 @@ th.sortable:focus-visible{outline:2px solid var(--primary-ring);outline-offset:-
 .settings-tabs{flex:0 0 auto}
 .settings-tabs .tab{text-decoration:none}
 .sidebar-link-top{margin-top:10px}
+
+/* Шаблоны вопросов вакансии: строка «этап → шаблон». */
+.binding-list{display:flex;flex-direction:column;gap:8px}
+.binding-row{display:grid;grid-template-columns:minmax(120px,170px) minmax(0,1fr) auto auto;gap:8px;align-items:center}
+.binding-row select{min-width:0;width:100%}
+.binding-required{white-space:nowrap;font-size:13px}
+@media (max-width:640px){
+  .binding-row{grid-template-columns:minmax(0,1fr) auto}
+  .binding-row .binding-stage,.binding-row .binding-template{grid-column:1/-1}
+}
+/* Статус вакансии — сегменты в шапке панели. */
+.vacancy-status-switch{flex:0 0 auto}
+.vacancy-status-switch .segmented-option[data-state]>span{padding:0 10px 0 8px}
+.vacancy-status-switch .segmented-option:has(input:disabled:not(:checked)){cursor:not-allowed}
 
 </style>

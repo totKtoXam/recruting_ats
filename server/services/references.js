@@ -7,9 +7,11 @@ import { getResponsibles } from './users.js';
 import { recordChanges, recordEvent } from './audit.js';
 
 const TEMPLATE_SELECT = `
-  SELECT t.*, v.name AS vacancy_name
+  SELECT t.*,
+         (SELECT count(*)::int FROM vacancy_templates vt
+          JOIN vacancies v ON v.id = vt.vacancy_id
+          WHERE vt.template_id = t.id AND v.deleted_at IS NULL) AS usage
   FROM interview_templates t
-  JOIN vacancies v ON v.id = t.vacancy_id
 `;
 
 // Записи, доступные для выбора в формах: не в архиве и не в корзине.
@@ -53,6 +55,7 @@ export async function saveVacancy(input = {}, actor) {
   const name = clean(input.name);
   const id = optionalUuid(input.id, 'Вакансия не найдена.');
   const links = input.links === undefined ? undefined : normalizeVacancyLinks(input.links);
+  const bindings = input.templates === undefined ? undefined : normalizeTemplateBindings(input.templates);
 
   if (!name) {
     fail('Название вакансии обязательно.');
@@ -90,6 +93,10 @@ export async function saveVacancy(input = {}, actor) {
       await recordChanges(tx, 'vacancy', before, row, actor);
     } else {
       await recordEvent(tx, { entityType: 'vacancy', entityId: row.id, action: 'create', newDisplay: row.name, actor });
+    }
+
+    if (bindings) {
+      await replaceVacancyTemplates(tx, row.id, bindings, actor);
     }
 
     return { ok: true, vacancy: toVacancy(row) };
@@ -211,28 +218,38 @@ export async function getSourceIcon(id) {
 }
 
 // ---------- Шаблоны интервью ----------
+// Шаблон — набор вопросов сам по себе. К вакансии он привязывается по этапам (vacancy_templates):
+// «на этапе X вакансии Y используется шаблон Z, обязательный или нет».
 
-export async function getInterviewTemplates(executor = db) {
+// Активные шаблоны — для выпадающего списка в вакансии.
+export async function getActiveTemplates(executor = db) {
   const rows = await executor.many(
     TEMPLATE_SELECT + ' WHERE t.archived_at IS NULL AND t.deleted_at IS NULL ORDER BY t.number'
   );
   return rows.map(toTemplate);
 }
 
-// Все шаблоны вакансии, включая архивные и удалённые (для админки).
-export async function listVacancyTemplates(vacancyId) {
-  const id = optionalUuid(vacancyId, 'Вакансия не найдена.');
-  if (!id) return [];
-
-  const rows = await db.many(TEMPLATE_SELECT + ' WHERE t.vacancy_id = $1 ORDER BY t.number', [id]);
+// Привязки «вакансия + этап + шаблон» (по одной записи на привязку) — доска подбирает по ним вопросы перехода.
+export async function getInterviewTemplates(executor = db) {
+  const rows = await executor.many(
+    `SELECT t.*, vt.vacancy_id, vt.stage, vt.required
+     FROM vacancy_templates vt
+     JOIN interview_templates t ON t.id = vt.template_id
+     JOIN vacancies v ON v.id = vt.vacancy_id AND v.deleted_at IS NULL
+     WHERE t.archived_at IS NULL AND t.deleted_at IS NULL
+     ORDER BY t.number`
+  );
   return rows.map(toTemplate);
 }
 
+// Шаблоны вакансии на этапе: привязка (этап, обязательность) подмешана в шаблон.
 export async function getTemplatesFor(vacancyId, stage, executor = db) {
   const rows = await executor.many(
-    TEMPLATE_SELECT +
-      ` WHERE t.archived_at IS NULL AND t.deleted_at IS NULL
-          AND t.vacancy_id = $1 AND t.stage = $2 ORDER BY t.number`,
+    `SELECT t.*, vt.stage, vt.required
+     FROM vacancy_templates vt
+     JOIN interview_templates t ON t.id = vt.template_id
+     WHERE vt.vacancy_id = $1 AND vt.stage = $2 AND t.archived_at IS NULL AND t.deleted_at IS NULL
+     ORDER BY t.number`,
     [vacancyId, stage]
   );
   return rows.map(toTemplate);
@@ -241,34 +258,17 @@ export async function getTemplatesFor(vacancyId, stage, executor = db) {
 export async function saveInterviewTemplate(input = {}, actor) {
   const id = optionalUuid(input.id, 'Шаблон не найден.');
   const name = clean(input.name);
-  const vacancyId = optionalUuid(input.vacancyId, 'Вакансия не найдена.');
-  const stage = clean(input.stage);
-  const required = toBoolean(input.required);
   const questions = normalizeTemplateQuestions(input.questions);
 
   if (!name) {
     fail('Название шаблона обязательно.');
   }
 
-  if (!vacancyId) {
-    fail('Вакансия обязательна.');
-  }
-
-  if (!APP_CONFIG.PIPELINE_STATUSES.includes(stage)) {
-    fail('Выберите корректный этап.');
-  }
-
   if (!questions.length) {
     fail('Добавьте хотя бы один вопрос.');
   }
 
-  const vacancy = await db.one(`SELECT id FROM vacancies WHERE id = $1 AND deleted_at IS NULL`, [vacancyId]);
-
-  if (!vacancy) {
-    fail('Вакансия не найдена.');
-  }
-
-  const params = [name, vacancyId, stage, required, JSON.stringify(questions)];
+  const params = [name, JSON.stringify(questions)];
 
   const saved = await transaction(async tx => {
     const before = id ? await tx.one('SELECT * FROM interview_templates WHERE id = $1 FOR UPDATE', [id]) : null;
@@ -279,14 +279,12 @@ export async function saveInterviewTemplate(input = {}, actor) {
 
     const row = before
       ? await tx.one(
-          `UPDATE interview_templates
-           SET name = $2, vacancy_id = $3, stage = $4, required = $5, questions = $6, updated_at = now()
+          `UPDATE interview_templates SET name = $2, questions = $3, updated_at = now()
            WHERE id = $1 RETURNING *`,
           [id, ...params]
         )
       : await tx.one(
-          `INSERT INTO interview_templates (name, vacancy_id, stage, required, questions)
-           VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+          `INSERT INTO interview_templates (name, questions) VALUES ($1, $2) RETURNING *`,
           params
         );
 
@@ -304,6 +302,94 @@ export async function saveInterviewTemplate(input = {}, actor) {
   return { ok: true, template: toTemplate(row) };
 }
 
+// Привязки шаблонов вакансии: [{ stage, templateId, required }].
+function normalizeTemplateBindings(bindings) {
+  if (!Array.isArray(bindings)) fail('Некорректный список шаблонов вакансии.');
+
+  const seen = new Set();
+  const requiredStages = new Set();
+
+  return bindings.map(item => {
+    const stage = clean(item && item.stage);
+    const templateId = optionalUuid(item && item.templateId, 'Шаблон не найден.');
+    const required = toBoolean(item && item.required);
+
+    if (!APP_CONFIG.PIPELINE_STATUSES.includes(stage)) {
+      fail('Выберите этап для каждого шаблона.');
+    }
+
+    if (!templateId) {
+      fail('Выберите шаблон для каждого этапа.');
+    }
+
+    if (seen.has(`${stage}|${templateId}`)) {
+      fail(`Шаблон уже привязан к этапу «${stage}».`);
+    }
+    seen.add(`${stage}|${templateId}`);
+
+    if (required) {
+      if (requiredStages.has(stage)) {
+        fail(`На этапе «${stage}» может быть только один обязательный шаблон.`);
+      }
+      requiredStages.add(stage);
+    }
+
+    return { stage, templateId, required };
+  });
+}
+
+// Заменяет привязки шаблонов вакансии; пишет в журнал вакансии, если они изменились.
+async function replaceVacancyTemplates(tx, vacancyId, bindings, actor) {
+  const describe = rows =>
+    rows.length
+      ? rows.map(row => `${row.stage}: ${row.name}${row.required ? ' (обязательный)' : ''}`).join('; ')
+      : '';
+  const load = () =>
+    tx.many(
+      `SELECT vt.stage, vt.template_id, vt.required, t.name
+       FROM vacancy_templates vt JOIN interview_templates t ON t.id = vt.template_id
+       WHERE vt.vacancy_id = $1
+       ORDER BY array_position($2::text[], vt.stage), t.number`,
+      [vacancyId, APP_CONFIG.PIPELINE_STATUSES]
+    );
+
+  const existing = await load();
+  const existingKeys = new Set(existing.map(row => `${row.stage}|${row.template_id}`));
+
+  // Уже привязанный архивный шаблон остаётся; новые привязки — только к активным шаблонам.
+  for (const binding of bindings) {
+    if (existingKeys.has(`${binding.stage}|${binding.templateId}`)) continue;
+
+    const template = await tx.one(
+      'SELECT archived_at, deleted_at FROM interview_templates WHERE id = $1',
+      [binding.templateId]
+    );
+
+    if (!template || template.deleted_at || template.archived_at) {
+      fail('Шаблон не найден или в архиве — выберите другой.');
+    }
+  }
+
+  await tx.query('DELETE FROM vacancy_templates WHERE vacancy_id = $1', [vacancyId]);
+
+  for (const binding of bindings) {
+    await tx.query(
+      `INSERT INTO vacancy_templates (vacancy_id, stage, template_id, required) VALUES ($1, $2, $3, $4)`,
+      [vacancyId, binding.stage, binding.templateId, binding.required]
+    );
+  }
+
+  const oldDisplay = describe(existing);
+  const newDisplay = describe(await load());
+
+  if (oldDisplay !== newDisplay) {
+    await recordEvent(tx, {
+      entityType: 'vacancy', entityId: vacancyId, action: 'update', field: 'templates',
+      fieldLabel: 'Шаблоны интервью', oldDisplay: oldDisplay || '—', newDisplay: newDisplay || '—', actor
+    });
+  }
+}
+
 // ---------- Справочники ----------
 
 export async function getDictionaries() {
@@ -318,12 +404,13 @@ export async function getDictionaries() {
 }
 
 export async function getReferenceData() {
-  const [vacancies, sources, responsibles, interviewTemplates, dictionaries] =
+  const [vacancies, sources, responsibles, interviewTemplates, templates, dictionaries] =
     await Promise.all([
       getVacancies(),
       getSources(),
       getResponsibles(),
       getInterviewTemplates(),
+      getActiveTemplates(),
       getDictionaries()
     ]);
 
@@ -332,6 +419,7 @@ export async function getReferenceData() {
     sources,
     responsibles,
     interviewTemplates,
+    templates,
     dictionaries,
     transitions: APP_CONFIG.TRANSITIONS,
     pipelineStatuses: APP_CONFIG.PIPELINE_STATUSES,

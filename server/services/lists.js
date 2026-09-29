@@ -5,7 +5,7 @@
 import { APP_CONFIG } from '../config.js';
 import { db } from '../db/pool.js';
 import { clean } from '../lib/validation.js';
-import { toPublicUser, toSource, toVacancy } from './mappers.js';
+import { toPublicUser, toSource, toTemplate, toVacancy } from './mappers.js';
 import { NOTIFICATION_LOG } from './notifications.js';
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -135,13 +135,17 @@ async function queryList(definition, input = {}, user = null) {
   };
 }
 
+const STAGES_SQL = APP_CONFIG.PIPELINE_STATUSES.map(stage => `'${stage.replaceAll("'", "''")}'`).join(', ');
+
 const VACANCIES = {
   select: `v.*,
     (SELECT coalesce(jsonb_agg(jsonb_build_object(
-        'id', t.id, 'number', t.number, 'name', t.name, 'stage', t.stage, 'required', t.required
-      ) ORDER BY t.number), '[]'::jsonb)
-     FROM interview_templates t
-     WHERE t.vacancy_id = v.id AND t.archived_at IS NULL AND t.deleted_at IS NULL) AS templates,
+        'id', t.id, 'number', t.number, 'name', t.name, 'stage', vt.stage, 'required', vt.required,
+        'archived', t.archived_at IS NOT NULL
+      ) ORDER BY array_position(ARRAY[${STAGES_SQL}]::text[], vt.stage), t.number), '[]'::jsonb)
+     FROM vacancy_templates vt
+     JOIN interview_templates t ON t.id = vt.template_id
+     WHERE vt.vacancy_id = v.id AND t.deleted_at IS NULL) AS templates,
     (SELECT count(*)::int FROM candidates c WHERE c.vacancy_id = v.id AND c.deleted_at IS NULL) AS candidate_count`,
   from: 'vacancies v',
   alias: 'v',
@@ -155,7 +159,8 @@ const VACANCIES = {
     name: 'lower(v.name)',
     status: `array_position(ARRAY['Открыта', 'На паузе', 'Закрыта'], v.status)`,
     templates:
-      '(SELECT count(*) FROM interview_templates t WHERE t.vacancy_id = v.id AND t.archived_at IS NULL AND t.deleted_at IS NULL)',
+      `(SELECT count(*) FROM vacancy_templates vt JOIN interview_templates t ON t.id = vt.template_id
+        WHERE vt.vacancy_id = v.id AND t.archived_at IS NULL AND t.deleted_at IS NULL)`,
     candidates: '(SELECT count(*) FROM candidates c WHERE c.vacancy_id = v.id AND c.deleted_at IS NULL)',
     createdAt: 'v.created_at',
     updatedAt: 'v.updated_at',
@@ -164,6 +169,36 @@ const VACANCIES = {
   defaultSort: { key: 'number', dir: 'DESC' },
   tieBreaker: 'v.id',
   map: row => ({ ...toVacancy(row), templates: row.templates || [], candidateCount: row.candidate_count })
+};
+
+const TEMPLATES = {
+  select: `t.*,
+    jsonb_array_length(t.questions) AS question_count,
+    (SELECT count(*)::int FROM vacancy_templates vt JOIN vacancies v ON v.id = vt.vacancy_id
+     WHERE vt.template_id = t.id AND v.deleted_at IS NULL) AS usage,
+    (SELECT coalesce(jsonb_agg(jsonb_build_object('id', v.id, 'number', v.number, 'name', v.name, 'stage', vt.stage, 'required', vt.required)
+        ORDER BY v.number, array_position(ARRAY[${STAGES_SQL}]::text[], vt.stage)), '[]'::jsonb)
+     FROM vacancy_templates vt JOIN vacancies v ON v.id = vt.vacancy_id
+     WHERE vt.template_id = t.id AND v.deleted_at IS NULL) AS vacancies`,
+  from: 'interview_templates t',
+  alias: 't',
+  filters: {
+    number: { type: 'number', sql: 't.number' },
+    name: { type: 'text', sql: 't.name' }
+  },
+  sorts: {
+    number: 't.number',
+    name: 'lower(t.name)',
+    questions: 'jsonb_array_length(t.questions)',
+    usage: `(SELECT count(*) FROM vacancy_templates vt JOIN vacancies v ON v.id = vt.vacancy_id
+             WHERE vt.template_id = t.id AND v.deleted_at IS NULL)`,
+    createdAt: 't.created_at',
+    updatedAt: 't.updated_at',
+    deletedAt: 't.deleted_at'
+  },
+  defaultSort: { key: 'number', dir: 'DESC' },
+  tieBreaker: 't.id',
+  map: row => ({ ...toTemplate(row), vacancies: row.vacancies || [] })
 };
 
 const SOURCES = {
@@ -229,6 +264,7 @@ const USERS = {
 
 export const listVacancies = (input, user) => queryList(VACANCIES, input, user);
 export const listUsers = (input, user) => queryList(USERS, input, user);
+export const listTemplates = (input, user) => queryList(TEMPLATES, input, user);
 export const listSources = (input, user) => queryList(SOURCES, input, user);
 
 // Журнал уведомлений: только свои.

@@ -340,15 +340,21 @@ async function main() {
     for (const row of data.templates) {
       const vacancyId = ids.vacancies.get(row['Vacancy ID']);
       if (!vacancyId) continue;
+      const templateId = ids.templates.take(row['Template ID']);
       await tx.query(
-        `INSERT INTO interview_templates (id, number, name, vacancy_id, stage, required, questions,
+        `INSERT INTO interview_templates (id, number, name, questions,
                                           created_at, updated_at, archived_at, deleted_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, now()), COALESCE($9, now()), $10, $10)`,
+         VALUES ($1, $2, $3, $4, COALESCE($5, now()), COALESCE($6, now()), $7, $7)`,
         [
-          ids.templates.take(row['Template ID']), templateNumber(row), str(row['Название']), vacancyId,
-          stage(row['Этап']), bool(row['Обязательный']), JSON.stringify(normalizeTemplateQuestions(json(row['Вопросы'], []))),
+          templateId, templateNumber(row), str(row['Название']),
+          JSON.stringify(normalizeTemplateQuestions(json(row['Вопросы'], []))),
           date(row['Дата создания']), date(row['Дата изменения']), deletedAt(row)
         ]
+      );
+      // Привязка шаблона к вакансии и этапу (в таблице «Шаблоны интервью» они были в самой строке).
+      await tx.query(
+        `INSERT INTO vacancy_templates (vacancy_id, stage, template_id, required) VALUES ($1, $2, $3, $4)`,
+        [vacancyId, stage(row['Этап']), templateId, bool(row['Обязательный']) && !deletedAt(row)]
       );
     }
 

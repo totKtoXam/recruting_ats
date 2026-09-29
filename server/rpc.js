@@ -123,6 +123,7 @@ export const rpcHandlers = {
   // Серверные таблицы: фильтры, сортировка и пагинация в БД.
   listVacancies: (input, { user }) => lists.listVacancies(input, user),
   listSources: (input, { user }) => lists.listSources(input, user),
+  listTemplates: (input, { user }) => lists.listTemplates(input, user),
   listUsers: adminOnly((input, { user }) => lists.listUsers(input, user)),
 
   // Журнал изменений любой записи и откат значения поля.
@@ -141,7 +142,6 @@ export const rpcHandlers = {
 
   saveVacancy: (input, { user }) => references.saveVacancy(input, user),
   setVacancyStatus: (input, { user }) => references.setVacancyStatus(input, user),
-  listVacancyTemplates: vacancyId => references.listVacancyTemplates(vacancyId),
   saveSource: (input, { user }) => references.saveSource(input, user),
   saveInterviewTemplate: (input, { user }) => references.saveInterviewTemplate(input, user)
 };

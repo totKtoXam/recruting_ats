@@ -4,6 +4,7 @@ import { migrate } from './db/migrate.js';
 import { pool } from './db/pool.js';
 import { verifyDriveAccess } from './lib/drive.js';
 import { startDeliveryWorker, stopDeliveryWorker } from './services/notification-delivery.js';
+import { startRealtime, stopRealtime } from './services/realtime.js';
 import { startTelegramBot, stopTelegramBot } from './services/telegram.js';
 import { assertAuthConfigured, loadSettings } from './services/settings.js';
 
@@ -22,6 +23,7 @@ async function main() {
   const bot = await startTelegramBot();
   if (bot) console.log(`Telegram: бот @${bot} подключён`);
   startDeliveryWorker();
+  startRealtime();
 
   const onListening = () => {
     console.log(`Recruiting ATS listening on ${config.publicUrl} (${config.host || '*'}:${config.port}, auth: ${config.auth.mode})`);
@@ -33,6 +35,7 @@ async function main() {
   const shutdown = () => {
     stopTelegramBot();
     stopDeliveryWorker();
+    stopRealtime();
     server.close(() => pool.end().then(() => process.exit(0)));
     setTimeout(() => process.exit(1), 10_000).unref();
   };

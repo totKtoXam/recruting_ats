@@ -102,13 +102,14 @@ export function toTemplate(row) {
     'Template ID': row.id,
     '№': row.number,
     'Название': row.name,
-    'Vacancy ID': row.vacancy_id,
-    'Вакансия': row.vacancy_name || '',
-    'Этап': row.stage,
-    'Обязательный': row.required,
     'Вопросы': JSON.stringify(questions),
-    required: row.required,
     questions,
+    // Сколько вакансий используют шаблон (для списка шаблонов).
+    usage: row.usage === undefined ? undefined : Number(row.usage),
+    // Привязка к вакансии и этапу — только когда шаблон выбран для конкретной вакансии.
+    ...(row.stage === undefined
+      ? {}
+      : { 'Vacancy ID': row.vacancy_id, 'Этап': row.stage, 'Обязательный': row.required, required: row.required }),
     ...softDeleteFields(row)
   };
 }

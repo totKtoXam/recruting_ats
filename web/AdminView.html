@@ -1,7 +1,7 @@
 <div class="page-header">
   <div>
     <h2 id="adminPageTitle">Вакансии</h2>
-    <p id="adminPageDescription" class="page-description">Вакансии и шаблоны интервью по этапам.</p>
+    <p id="adminPageDescription" class="page-description">Вакансии, публикации и шаблоны вопросов по этапам.</p>
   </div>
 
   <div class="page-actions">
@@ -50,14 +50,6 @@
             <input id="vacancyName" placeholder="Например, Middle .NET Developer" oninput="this.classList.remove('input-error')">
             <small id="vacancyNameError" class="field-error" hidden></small>
           </div>
-
-          <div class="field" id="vacancyStatusField" hidden>
-            <label>Статус</label>
-            <div class="status-row">
-              <span id="vacancyStatusChip"></span>
-              <span id="vacancyStatusActions" class="status-actions"></span>
-            </div>
-          </div>
         </section>
 
         <section class="drawer-section">
@@ -71,19 +63,15 @@
           <div id="vacancyLinksEmpty" class="empty-state compact">Добавьте ссылки на вакансию на hh, в Telegram-канале, LinkedIn — площадка определится автоматически.</div>
         </section>
 
-        <section class="drawer-section" data-drawer-ignore>
+        <section class="drawer-section">
           <div class="drawer-section-head">
-            <h4>Шаблоны интервью <span id="vacancyTemplateCount" class="counter-badge">0</span></h4>
+            <h4>Шаблоны вопросов <span id="vacancyTemplateCount" class="counter-badge">0</span></h4>
             <div class="header-actions">
-              <label class="checkbox-line">
-                <input id="templateShowAll" type="checkbox" onchange="loadVacancyTemplates()">
-                <span>Показать архивные</span>
-              </label>
-              <button id="templateAddButton" type="button" class="button button-secondary button-small" onclick="openTemplateModal()" disabled><svg class="icon"><use href="#i-plus"/></svg><span>Шаблон</span></button>
+              <button id="vacancyTemplateAdd" type="button" class="button button-secondary button-small" onclick="addVacancyTemplateBinding()"><svg class="icon"><use href="#i-plus"/></svg><span>Шаблон</span></button>
             </div>
           </div>
-          <div id="vacancyTemplateEmpty" class="empty-state compact">Сначала сохраните вакансию — после этого можно добавить шаблоны.</div>
-          <div id="vacancyTemplateList" class="template-list"></div>
+          <div id="vacancyTemplateList" class="binding-list"></div>
+          <div id="vacancyTemplateEmpty" class="empty-state compact">Выберите шаблон для этапа — его вопросы зададут при переводе кандидата на этот этап. Сами шаблоны ведутся в разделе «Шаблоны вопросов».</div>
         </section>
 
         <!-- Заголовок «Комментарии» рисует сама лента (Comments.html). -->
@@ -92,6 +80,22 @@
         </section>
       </div>
     </aside>
+  </div>
+</section>
+
+<!-- ===================== Шаблоны вопросов ===================== -->
+<section id="admin-templates" class="admin-page-section">
+  <div class="directory-layout directory-single">
+    <div class="admin-list-card directory-table-card">
+      <div class="section-title-row table-toolbar">
+        <h3>Шаблоны вопросов</h3>
+        <div class="header-actions">
+          <div class="segmented state-switch" data-table="templates"></div>
+          <button type="button" class="button button-primary" onclick="openTemplateModal()"><svg class="icon"><use href="#i-plus"/></svg><span class="btn-label">Новый шаблон</span></button>
+        </div>
+      </div>
+      <div id="templateTable"></div>
+    </div>
   </div>
 </section>
 
@@ -239,7 +243,7 @@
       <div>
         <div class="eyebrow">Шаблон интервью</div>
         <h2 id="templateModalTitle">Новый шаблон</h2>
-        <div id="templateModalVacancy" class="muted"></div>
+        <div id="templateModalUsage" class="muted"></div>
       </div>
       <div class="header-actions" id="templateFormActions"></div>
     </div>
@@ -247,23 +251,10 @@
     <section id="templateForm" class="form-card form-card-flat">
       <input id="templateId" type="hidden">
 
-      <div class="form-grid">
-        <div class="field">
-          <label for="templateName">Название шаблона *</label>
-          <input id="templateName" placeholder="Например, Проф. интервью .NET">
-        </div>
-
-        <div class="field">
-          <label for="templateStage">Этап *</label>
-          <select id="templateStage"></select>
-          <small class="field-hint">Вопросы задаются при переводе кандидата на этот этап.</small>
-        </div>
+      <div class="field">
+        <label for="templateName">Название шаблона *</label>
+        <input id="templateName" placeholder="Например, Проф. интервью .NET">
       </div>
-
-      <label class="checkbox-line">
-        <input id="templateRequired" type="checkbox">
-        <span>Обязательный при переходе на этот этап</span>
-      </label>
 
       <div class="field">
         <div class="field-header">

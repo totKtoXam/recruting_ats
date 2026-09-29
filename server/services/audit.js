@@ -107,8 +107,6 @@ export const AUDIT_ENTITIES = {
     touch: true,
     fields: [
       f('name', 'Название'),
-      f('stage', 'Этап'),
-      f('required', 'Обязательный', 'bool'),
       f('questions', 'Вопросы', 'questions')
     ]
   },

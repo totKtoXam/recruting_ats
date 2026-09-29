@@ -8,6 +8,7 @@ let state={
   users:[],
   currentUser:null,
   interviewTemplates:[],
+  templates:[],
   dictionaries:{},
   transitions:{},
   pipelineStatuses:[],
@@ -333,7 +334,7 @@ async function afterHistoryRevert(type,id){
   }
   if(type==='template'){
     await refreshReferences();
-    await loadVacancyTemplates();
+    await Promise.all([loadServerTable('templates'),loadServerTable('vacancies')]);
     if(el('templateModal').classList.contains('open')&&String(value('templateId'))===String(id))openTemplateModal(id);
   }
 }
@@ -520,7 +521,8 @@ function applySidebarState(collapsed){
 // #/candidates, #/candidate/<id> — доска; остальные пункты меню — разделы админки.
 
 const ADMIN_ROUTES={
-  'vacancies':{section:'vacancies',title:'Вакансии',description:'Вакансии и шаблоны интервью по этапам.'},
+  'vacancies':{section:'vacancies',title:'Вакансии',description:'Вакансии, публикации и шаблоны вопросов по этапам.'},
+  'templates':{section:'templates',title:'Шаблоны вопросов',description:'Наборы вопросов для интервью. К вакансии шаблон привязывается на нужном этапе.'},
   // «Настройки» — одна страница с вкладками; у каждой вкладки свой адрес (tab — ключ вкладки).
   'settings/sources':{section:'sources',tab:'sources',title:'Настройки',description:'Источники вакансий: откуда приходят кандидаты.'},
   'settings/users':{section:'users',tab:'users',title:'Настройки',description:'Войти может любой Google Account, работать в ATS — только тот, кому открыт доступ.',adminOnly:true},
@@ -740,6 +742,7 @@ function applyBootstrapData(data){
     responsibles:data.responsibles||[],
     currentUser:data.currentUser||null,
     interviewTemplates:data.interviewTemplates||[],
+    templates:data.templates||[],
     dictionaries:data.dictionaries||{},
     transitions:data.transitions||{},
     pipelineStatuses:data.pipelineStatuses||[],
@@ -769,6 +772,7 @@ function applyBootstrapData(data){
   if(typeof setNotifyUnread==='function')setNotifyUnread(data.notificationsUnread||0);
   maybeOpenCandidateFromRoute();
   maybeLoadInitialDraft();
+  startRealtime();
 
   if(getRoute().page==='admin'){
     ensureAdminUsersLoaded().catch(()=>{});
@@ -1101,6 +1105,7 @@ async function refreshReferences(){
   state.sources=data.sources||[];
   state.responsibles=data.responsibles||[];
   state.interviewTemplates=data.interviewTemplates||[];
+  state.templates=data.templates||[];
   state.dictionaries=data.dictionaries||{};
   state.transitions=data.transitions||{};
   state.pipelineStatuses=data.pipelineStatuses||[];
@@ -1127,6 +1132,109 @@ async function refreshCandidates(){
   render();
 }
 
+
+// ---------- Realtime: доска обновляется, когда карточки меняют другие пользователи ----------
+// Сервер шлёт по SSE только id изменённого кандидата; карточку перечитываем сами.
+// События копятся 300 мс, а пока карточку тащат мышью — ждут, чтобы не сорвать перетаскивание.
+const realtime={source:null,ids:new Set(),timer:null,resync:false,flash:new Set()};
+
+function startRealtime(){
+  if(realtime.source||typeof EventSource==='undefined')return;
+  const source=new EventSource((window.__BASE_PATH__||'')+'/api/events');
+  realtime.source=source;
+  let opened=false;
+  source.onopen=()=>{
+    // Повторное подключение после обрыва: за это время события могли потеряться.
+    if(opened)queueRealtimeResync();
+    opened=true;
+  };
+  source.addEventListener('candidate',event=>{
+    try{
+      const {id}=JSON.parse(event.data);
+      if(id){realtime.ids.add(String(id));scheduleRealtimeFlush();}
+    }catch(error){}
+  });
+  source.addEventListener('resync',()=>{if(opened)queueRealtimeResync()});
+}
+
+function queueRealtimeResync(){
+  realtime.resync=true;
+  scheduleRealtimeFlush();
+}
+
+function scheduleRealtimeFlush(){
+  clearTimeout(realtime.timer);
+  realtime.timer=setTimeout(flushRealtime,300);
+}
+
+function candidateMembership(id){
+  if(state.candidates.some(c=>String(c.ID)===id))return 'active';
+  if(state.archivedCandidates.some(c=>String(c.ID)===id))return 'archived';
+  if((state.deletedCandidates||[]).some(c=>String(c.ID)===id))return 'deleted';
+  return '';
+}
+
+function recomputeCandidateStats(before,after){
+  const stats=state.stats=state.stats||{};
+  const byStatus={};
+  state.candidates.forEach(c=>{const status=c['Статус']||'Без статуса';byStatus[status]=(byStatus[status]||0)+1;});
+  stats.total=state.candidates.length;
+  stats.byStatus=byStatus;
+  if(before!==after){
+    if(before==='archived')stats.archived=Math.max(0,(stats.archived||0)-1);
+    if(after==='archived')stats.archived=(stats.archived||0)+1;
+    if(before==='deleted')stats.deleted=Math.max(0,(stats.deleted||0)-1);
+    if(after==='deleted')stats.deleted=(stats.deleted||0)+1;
+  }
+}
+
+async function flushRealtime(){
+  if(document.querySelector('.candidate-card.dragging')){scheduleRealtimeFlush();return}
+  if(!state.loaded.candidates)return;
+  const ids=[...realtime.ids];
+  realtime.ids.clear();
+  const resync=realtime.resync;
+  realtime.resync=false;
+  try{
+    if(resync){
+      await refreshCandidates();
+      if(state.loaded.archivedCandidates)await ensureArchivedCandidatesLoaded(true);
+      if(state.loaded.deletedCandidates&&isAdminUser())await ensureDeletedCandidatesLoaded(true);
+      render();
+      return;
+    }
+    let needsFullRefresh=false;
+    const changed=[];
+    for(const id of ids){
+      const before=candidateMembership(id);
+      const local=candidateById(id);
+      // Пока карточка сохраняется этим же пользователем, её состояние ведёт оптимистичный код.
+      if(local&&local._sync==='pending')continue;
+      let details=null;
+      try{details=await rpc('getCandidateDetails',id)}catch(error){details=null}
+      const after=details?(details.state||'active'):'';
+      for(const list of [state.candidates,state.archivedCandidates,state.deletedCandidates||[]]){
+        const index=list.findIndex(c=>String(c.ID)===id);
+        if(index>=0)list.splice(index,1);
+      }
+      if(details){
+        const target=after==='deleted'?state.deletedCandidates:after==='archived'?state.archivedCandidates:state.candidates;
+        // Не загруженный список корзины не трогаем: он подтянется при открытии.
+        if(target)target.unshift({...details,_detailsLoaded:true});
+        if(after==='active')changed.push(id);
+      }
+      if(!before&&after&&after!=='active')needsFullRefresh=true;
+      recomputeCandidateStats(before,after);
+    }
+    if(needsFullRefresh)await refreshCandidates();
+    changed.forEach(id=>realtime.flash.add(id));
+    state.candidates.sort((a,b)=>(a['№']||0)-(b['№']||0));
+    render();
+    setTimeout(()=>{changed.forEach(id=>realtime.flash.delete(id));},3000);
+  }catch(error){
+    console.warn('Realtime: не удалось обновить доску',error);
+  }
+}
 
 async function refreshArchivedCandidates(){
   return ensureArchivedCandidatesLoaded(true);
@@ -1619,6 +1727,7 @@ function renderCard(c){
     statusKey(c['Статус'])+' '+
     (pending?'candidate-pending':'')+
     (fresh?' card-fresh':'')+
+    (realtime.flash.has(String(c.ID))?' card-updated':'')+
     '" draggable="'+
     (c.state==='active'&&!c.archived&&!pending)+
     '" data-id="'+
