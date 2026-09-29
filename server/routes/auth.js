@@ -44,6 +44,7 @@ function loginPage({ error = '', next = '/' } = {}) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>Вход · Recruiting ATS</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 72 72'%3E%3Cdefs%3E%3ClinearGradient id='atsLogoG' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%2310b981'/%3E%3Cstop offset='1' stop-color='%23047857'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='72' height='72' rx='20' fill='url(%23atsLogoG)'/%3E%3Ccircle cx='31' cy='31' r='14' fill='none' stroke='%23fff' stroke-width='5'/%3E%3Cpath d='M41.5 41.5L55 55' stroke='%23fff' stroke-width='6' stroke-linecap='round'/%3E%3Ccircle cx='31' cy='27' r='4' fill='%23fff'/%3E%3Cpath d='M23 38c1-5 5-6 8-6s7 1 8 6z' fill='%23fff'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
@@ -72,6 +73,7 @@ function loginPage({ error = '', next = '/' } = {}) {
   .card{width:min(380px,100%);padding:32px 28px 28px;border:1px solid var(--line);border-radius:12px;background:var(--surface);box-shadow:var(--shadow)}
   .brand{display:flex;align-items:center;gap:12px;margin-bottom:20px}
   .brand-mark{width:40px;height:40px;flex:0 0 40px;display:grid;place-items:center;border-radius:10px;background:#4f46e5;color:#fff;font-weight:800;font-size:18px}
+  svg.brand-mark{background:none;border-radius:0}
   h1{margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em;line-height:1.25}
   .lead{margin:2px 0 0;color:var(--muted);font-size:14px}
   .button{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:44px;padding:10px 16px;
@@ -98,7 +100,7 @@ function loginPage({ error = '', next = '/' } = {}) {
 </style></head>
 <body><main class="card">
   <div class="brand">
-    <div class="brand-mark" aria-hidden="true">R</div>
+    <svg class="brand-mark" viewBox="0 0 72 72" aria-hidden="true"><defs><linearGradient id="atsLogoG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#10b981"/><stop offset="1" stop-color="#047857"/></linearGradient></defs><rect width="72" height="72" rx="20" fill="url(#atsLogoG)"/><circle cx="31" cy="31" r="14" fill="none" stroke="#fff" stroke-width="5"/><path d="M41.5 41.5L55 55" stroke="#fff" stroke-width="6" stroke-linecap="round"/><circle cx="31" cy="27" r="4" fill="#fff"/><path d="M23 38c1-5 5-6 8-6s7 1 8 6z" fill="#fff"/></svg>
     <div>
       <h1>Recruiting ATS</h1>
       <p class="lead">Кандидаты и процесс найма</p>
