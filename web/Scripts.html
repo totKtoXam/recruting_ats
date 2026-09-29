@@ -1940,9 +1940,9 @@ function updateFoldToggle(){
 }
 function dragStart(e){e.dataTransfer.setData('text/plain',e.currentTarget.dataset.id);e.currentTarget.classList.add('dragging')}
 function dragEnd(e){e.currentTarget.classList.remove('dragging');document.querySelectorAll('.column').forEach(x=>x.classList.remove('drag-over'))}
-function dragOver(e){e.preventDefault();e.currentTarget.classList.add('drag-over')}
+function dragOver(e){if(draggingFiles(e))return;e.preventDefault();e.currentTarget.classList.add('drag-over')}
 function dragLeave(e){e.currentTarget.classList.remove('drag-over')}
-function dropCandidate(e){e.preventDefault();e.currentTarget.classList.remove('drag-over');startTransition(e.dataTransfer.getData('text/plain'),e.currentTarget.dataset.status)}
+function dropCandidate(e){if(draggingFiles(e))return;e.preventDefault();e.currentTarget.classList.remove('drag-over');startTransition(e.dataTransfer.getData('text/plain'),e.currentTarget.dataset.status)}
 
 function maskKzPhone(input){
   let digits=input.value.replace(/\D/g,'');

@@ -27,6 +27,12 @@
 }
 
 .file-drop.is-dragover{border-color:var(--primary);border-style:solid;background:var(--primary-tint-2);color:var(--primary)}
+.board.is-file-dragover{outline:2px dashed var(--primary);outline-offset:-2px;background:var(--primary-tint);border-radius:var(--radius);position:relative}
+.board.is-file-dragover::after{
+  content:attr(data-drop-text);position:sticky;left:0;bottom:16px;display:block;width:max-content;margin:0 auto;
+  padding:8px 14px;border-radius:var(--radius);background:var(--primary);color:var(--surface);font-weight:600;pointer-events:none
+}
+.board.is-file-dragover *{pointer-events:none}
 .candidate-panel{position:relative}
 .resume-drop-overlay{
   position:absolute;inset:0;z-index:30;padding:16px;pointer-events:none;
@@ -244,6 +250,43 @@ document.addEventListener('dragover',event=>{
 document.addEventListener('drop',event=>{
   if(el('candidateModal')?.classList.contains('open')&&!event.defaultPrevented)event.preventDefault();
 });
+
+// Резюме можно бросить прямо на канбан-доску: откроется форма нового кандидата с автозаполнением.
+const boardDrop={depth:0};
+function resetBoardDrop(){boardDrop.depth=0;el('board')?.classList.remove('is-file-dragover');}
+function bindBoardDrop(){
+  const board=el('board');
+  if(!board)return;
+  const blocked=()=>el('candidateModal')?.classList.contains('open');
+  board.addEventListener('dragenter',event=>{
+    if(!draggingFiles(event)||blocked())return;
+    event.preventDefault();
+    boardDrop.depth++;
+    board.dataset.dropText='Отпустите резюме — создадим кандидата';
+    board.classList.add('is-file-dragover');
+  });
+  board.addEventListener('dragover',event=>{
+    if(!draggingFiles(event)||blocked())return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect='copy';
+  });
+  board.addEventListener('dragleave',event=>{
+    if(!draggingFiles(event)||!boardDrop.depth)return;
+    if(--boardDrop.depth<=0)resetBoardDrop();
+  });
+  board.addEventListener('drop',event=>{
+    if(!draggingFiles(event))return;
+    event.preventDefault();
+    resetBoardDrop();
+    if(blocked())return;
+    const file=event.dataTransfer.files[0];
+    if(!file)return;
+    openCandidate();
+    if(!value('candidateId')&&el('candidateModal').classList.contains('open'))acceptDroppedResume(file);
+  });
+  document.addEventListener('dragend',resetBoardDrop);
+}
+document.addEventListener('DOMContentLoaded',bindBoardDrop);
 
 function fileToUpload(file){
   return new Promise((resolve,reject)=>{
