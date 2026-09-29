@@ -60,3 +60,16 @@ test('MCP notifications get no response, unknown methods and tools return errors
   assert.equal(list.result.tools.length, mcpTools.length);
   assert.equal(list.result.tools[0].handler, undefined);
 });
+
+test('openid-configuration carries the fields OpenID discovery requires', async () => {
+  const { openIdConfiguration } = await import('../server/routes/oauth.js');
+  const metadata = openIdConfiguration();
+
+  for (const key of ['issuer', 'authorization_endpoint', 'token_endpoint', 'registration_endpoint', 'jwks_uri']) {
+    assert.equal(typeof metadata[key], 'string', key);
+  }
+  for (const key of ['response_types_supported', 'subject_types_supported', 'id_token_signing_alg_values_supported', 'code_challenge_methods_supported']) {
+    assert.ok(Array.isArray(metadata[key]) && metadata[key].length, key);
+  }
+  assert.ok(metadata.code_challenge_methods_supported.includes('S256'));
+});

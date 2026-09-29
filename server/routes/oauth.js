@@ -41,6 +41,19 @@ function authorizationServerMetadata() {
   };
 }
 
+// Тот же документ по адресу OpenID Discovery. За reverse proxy под BASE_PATH клиенту часто
+// доступен только {PUBLIC_URL}/.well-known/openid-configuration, а MCP SDK проверяет его
+// по схеме OpenID Provider — там обязательны jwks_uri, subject_types_supported и
+// id_token_signing_alg_values_supported. ID-токены ATS не выдаёт, набор ключей пуст.
+export function openIdConfiguration() {
+  return {
+    ...authorizationServerMetadata(),
+    jwks_uri: `${config.publicUrl}/oauth/jwks`,
+    subject_types_supported: ['public'],
+    id_token_signing_alg_values_supported: ['RS256']
+  };
+}
+
 function protectedResourceMetadata() {
   return {
     resource: mcpResourceUrl(),
@@ -76,8 +89,12 @@ export function wellKnownHandler(req, res, next) {
     return allowAnyOrigin(req, res, () => res.json(protectedResourceMetadata()));
   }
 
-  if (path.startsWith('/.well-known/oauth-authorization-server') || path.startsWith('/.well-known/openid-configuration')) {
+  if (path.startsWith('/.well-known/oauth-authorization-server')) {
     return allowAnyOrigin(req, res, () => res.json(authorizationServerMetadata()));
+  }
+
+  if (path.startsWith('/.well-known/openid-configuration')) {
+    return allowAnyOrigin(req, res, () => res.json(openIdConfiguration()));
   }
 
   next();
@@ -167,6 +184,8 @@ export function oauthRouter() {
   });
 
   router.options(['/oauth/register', '/oauth/token', '/oauth/revoke'], allowAnyOrigin);
+
+  router.get('/oauth/jwks', allowAnyOrigin, (_req, res) => res.json({ keys: [] }));
 
   router.get('/oauth/authorize', requireUserPage, async (req, res) => {
     try {
