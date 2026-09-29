@@ -529,7 +529,15 @@ npm run migrate
 - установи `TRUST_PROXY=true` — Express будет доверять `X-Forwarded-Proto` от первого прокси; без этого secure cookie не выставится и вход будет «зацикливаться»;
 - прокси должен передавать заголовки `Host` и `X-Forwarded-Proto`;
 - лимит тела запроса на прокси — не меньше 20 МБ (резюме передаются в base64 внутри JSON);
-- для MCP-клиентов прокси должен пропускать `{BASE_PATH}/mcp`, `{BASE_PATH}/oauth/*` и `{BASE_PATH}/.well-known/*` (при приложении под `BASE_PATH` проксировать корневой `/.well-known/` не обязательно).
+- для MCP-клиентов прокси должен пропускать `{BASE_PATH}/mcp`, `{BASE_PATH}/oauth/*` и `{BASE_PATH}/.well-known/*` и, если приложение открыто под `BASE_PATH`, три корневых адреса метаданных OAuth — Claude Code ищет их в корне домена (иначе вход обрывается на регистрации клиента с 404):
+
+```nginx
+location = /.well-known/oauth-protected-resource/hr-ats/mcp  { proxy_pass http://127.0.0.1:3040; proxy_set_header Host $host; proxy_set_header X-Forwarded-Proto https; }
+location = /.well-known/oauth-authorization-server/hr-ats    { proxy_pass http://127.0.0.1:3040; proxy_set_header Host $host; proxy_set_header X-Forwarded-Proto https; }
+location = /.well-known/openid-configuration/hr-ats          { proxy_pass http://127.0.0.1:3040; proxy_set_header Host $host; proxy_set_header X-Forwarded-Proto https; }
+```
+
+  (`/hr-ats` — ваш `BASE_PATH`).
 
 Пример для nginx:
 
