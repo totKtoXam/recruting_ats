@@ -4,10 +4,16 @@
 import { APP_CONFIG, config } from '../config.js';
 import admin from './rpc/admin.js';
 import candidates from './rpc/candidates.js';
+import developer from './rpc/developer.js';
 import notifications from './rpc/notifications.js';
 import workflow from './rpc/workflow.js';
 
-export const rpcDocs = { ...candidates, ...workflow, ...notifications, ...admin };
+export const rpcDocs = { ...candidates, ...workflow, ...notifications, ...admin, ...developer };
+
+// Методы чтения; остальные изменяют данные (x-ats-writes) — на production Swagger UI спрашивает подтверждение.
+export const isReadOnlyRpc = name => /^(get|list|find|parse)[A-Z]/.test(name);
+
+const WRITE_WARNING = '**Изменяет данные** от вашего имени — запрос из «Try it out» выполняется по-настоящему и пишется в журнал.';
 
 const RPC_TAGS = [
   ['Старт и справочники', 'Загрузка приложения: текущий пользователь, справочники, доска кандидатов.'],
@@ -23,7 +29,8 @@ const RPC_TAGS = [
   ['Источники', 'Источники кандидатов.'],
   ['Шаблоны интервью', 'Шаблоны вопросов для этапов.'],
   ['Пользователи', 'Пользователи ATS и доступ (администратор).'],
-  ['Интеграции (админ)', 'Вход через Google, SMTP, Telegram — настройки администратора.']
+  ['Интеграции (админ)', 'Вход через Google, SMTP, Telegram — настройки администратора.'],
+  ['Для разработчиков', 'Версия сборки, ссылки на API и исходный код, подключение Claude, состояние интеграций.']
 ];
 
 const OTHER_TAGS = [
@@ -94,11 +101,15 @@ function rpcOperation(name, doc) {
     requestSchema.required = ['args'];
   }
 
+  const writes = !isReadOnlyRpc(name);
   const operation = {
     tags: [doc.tag],
     operationId: name,
     summary: doc.summary,
-    description: doc.description,
+    description: writes ? `${WRITE_WARNING}
+
+${doc.description}` : doc.description,
+    'x-ats-writes': writes,
     security: SESSION,
     requestBody: {
       required: true,
@@ -370,6 +381,7 @@ function staticPaths() {
       post: {
         tags: ['Intake API'],
         operationId: 'intakeCreateCandidateDraft',
+        'x-ats-writes': true,
         summary: 'Создать черновик кандидата (candidate-draft)',
         description:
           'Возвращает ссылку на форму нового кандидата с подставленными данными. Кандидат создаётся только после «Сохранить» в форме. Черновик живёт 7 дней. Тело до 15 МБ, разбирается как JSON при любом Content-Type.',
@@ -410,6 +422,7 @@ function staticPaths() {
       post: {
         tags: ['MCP'],
         operationId: 'mcpJsonRpc',
+        'x-ats-writes': true,
         summary: 'JSON-RPC 2.0: initialize, tools/list, tools/call…',
         description:
           'Одно сообщение или массив (batch). Уведомления (без `id`) → `202`. Инструменты выполняются от имени владельца токена; ошибки бизнес-правил возвращаются как результат с `isError: true`. Список инструментов — `tools/list`.',

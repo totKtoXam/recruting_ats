@@ -582,6 +582,7 @@ function applyRoute(){
     if(typeof showAdminSection==='function')showAdminSection(route.path);
     if(typeof renderAdminAll==='function')renderAdminAll();
     if(route.section==='integrations'&&typeof showIntegrations==='function')showIntegrations(ADMIN_ROUTES[route.path].group);
+    if(route.section==='developers'&&typeof showDevelopers==='function')showDevelopers();
     if(state.loaded.references){
       ensureAdminUsersLoaded().catch(()=>{});
     }
@@ -773,6 +774,11 @@ function preloadAllData(){
 
 
 async function ensureAdminUsersLoaded(force=false){
+  // getAdminUserData отдаёт email и роли всех пользователей — только администраторам.
+  if(!isAdminUser()){
+    return [];
+  }
+
   if(
     state.loaded.users &&
     !force

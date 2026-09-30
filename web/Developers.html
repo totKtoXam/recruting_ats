@@ -1,0 +1,126 @@
+<style>
+/* ---------- Настройки → Для разработчиков ----------
+   Ссылки (Swagger, репозиторий, docs/API.md), версия сборки, подключение Claude и Intake API,
+   состояние интеграций (только администраторам). Данные — RPC getDeveloperInfo. */
+#admin-developers.active{overflow-y:auto}
+.developers{display:flex;flex-direction:column;gap:24px;max-width:880px}
+.dev-links{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(360px,100%),1fr));gap:12px}
+.dev-link{display:flex;align-items:flex-start;gap:12px;padding:16px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);color:var(--text);text-decoration:none;transition:border-color var(--dur-fast),background-color var(--dur-fast)}
+.dev-link:hover{border-color:var(--primary);background:var(--surface-hover)}
+.dev-link:focus-visible{outline:none;box-shadow:var(--focus-ring);border-color:var(--primary)}
+.dev-link-icon{flex:0 0 36px;width:36px;height:36px;display:grid;place-items:center;border-radius:var(--radius);background:var(--primary-soft);color:var(--primary)}
+.dev-link-body{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1 1 auto}
+.dev-link-body strong{font-size:14px;font-weight:600}
+.dev-link-body span{font-size:13px;line-height:1.5;color:var(--text-2)}
+.dev-link-external{flex:0 0 auto;margin-top:2px;color:var(--muted)}
+.dev-section{display:flex;flex-direction:column;gap:10px}
+.dev-section-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.dev-section h3{margin:0;font-size:15px;font-weight:600}
+.dev-section>p{margin:0;font-size:13px;color:var(--text-2)}
+.dev-facts{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:6px 16px;margin:0;padding:14px 16px;border:1px solid var(--line-soft);border-radius:var(--radius);background:var(--surface-2);font-size:14px}
+.dev-facts dt{color:var(--muted)}
+.dev-facts dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.dev-facts a{color:var(--primary)}
+.dev-copy{display:flex;flex-direction:column;gap:8px;padding:14px 16px;border:1px solid var(--line-soft);border-radius:var(--radius);background:var(--surface-2)}
+.dev-status{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);overflow:hidden}
+.dev-status-row{display:grid;grid-template-columns:140px minmax(0,1fr) auto;align-items:center;gap:12px;padding:10px 16px;border-top:1px solid var(--line-soft);font-size:14px}
+.dev-status-row:first-child{border-top:0}
+.dev-status-row span:nth-child(2){color:var(--text-2);overflow-wrap:anywhere}
+.dev-state{padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.dev-state-ok{background:var(--success-tint);color:var(--success)}
+.dev-state-off{background:var(--surface-3);color:var(--muted)}
+.dev-state-warn{background:var(--warning-tint);color:var(--warning)}
+.dev-state-error{background:var(--danger-tint);color:var(--danger)}
+@media (max-width:600px){
+  .dev-facts{grid-template-columns:1fr;gap:2px}
+  .dev-facts dd{margin-bottom:8px}
+  .dev-status-row{grid-template-columns:minmax(0,1fr) auto}
+  .dev-status-row span:nth-child(2){grid-column:1/-1;grid-row:2}
+}
+@media (prefers-reduced-motion:reduce){.dev-link{transition:none}}
+</style>
+
+<script>
+const developers={data:null,loading:false};
+const DEV_STATE_LABELS={ok:'работает',off:'не настроено',warn:'внимание',error:'ошибка'};
+
+async function showDevelopers(force=false){
+  if(developers.data&&!force){renderDevelopers();return}
+  if(developers.loading)return;
+  developers.loading=true;
+  if(!developers.data)el('developersRoot').innerHTML='<div class="empty-state compact">Загрузка…</div>';
+  try{
+    developers.data=await rpc('getDeveloperInfo');
+    renderDevelopers();
+  }catch(error){
+    el('developersRoot').innerHTML='<div class="empty-state compact">'+escapeHtml(error.message||String(error))+'</div>';
+  }finally{
+    developers.loading=false;
+  }
+}
+
+function devLinkCard(href,iconName,title,text,download){
+  const external=/^https?:/.test(href);
+  return '<a class="dev-link" href="'+escapeHtml(href)+'"'+(external||!download?' target="_blank" rel="noopener"':'')+(download?' download="'+escapeHtml(download)+'"':'')+'>'+
+    '<span class="dev-link-icon">'+icon(iconName)+'</span>'+
+    '<span class="dev-link-body"><strong>'+escapeHtml(title)+'</strong><span>'+escapeHtml(text)+'</span></span>'+
+    icon(download?'download':'external','icon-sm dev-link-external')+'</a>';
+}
+
+function devCopyField(label,text){
+  return '<div class="copy-field"><span>'+escapeHtml(label)+'</span><code>'+escapeHtml(text)+'</code>'+
+    '<button type="button" class="icon-btn icon-btn-sm" data-tip="Скопировать" aria-label="Скопировать: '+escapeHtml(label)+'" onclick="copyIntegrationText(\''+escapeHtml(escJs(text))+'\')">'+icon('copy','icon-sm')+'</button></div>';
+}
+
+function renderDevelopers(){
+  const d=developers.data;
+  const v=d.version;
+  const links=d.links;
+  const commit=v.commit
+    ?(v.commitUrl?'<a href="'+escapeHtml(v.commitUrl)+'" target="_blank" rel="noopener"><code>'+escapeHtml(v.commitShort)+'</code></a>':'<code>'+escapeHtml(v.commitShort)+'</code>')+
+      (v.commitSubject?' · '+escapeHtml(v.commitSubject):'')
+    :'<span class="muted">неизвестен — задайте BUILD_COMMIT</span>';
+
+  const cards=[
+    devLinkCard(links.swagger,'code','API · Swagger','Документация всего HTTP API: RPC-методы, Intake API, MCP и OAuth. «Try it out» выполняет запросы от вашего имени.'),
+    devLinkCard(links.openApi,'file','openapi.json','Спецификация OpenAPI 3.1 — для Postman, Insomnia или генератора клиента.','recruiting-ats-openapi.json'),
+    links.repository?devLinkCard(links.repository,'github','Репозиторий на GitHub','Исходный код, README с установкой и деплоем.'):'',
+    links.apiGuide?devLinkCard(links.apiGuide,'template','Руководство по API','docs/API.md: Intake API, MCP, OAuth, личные токены, RPC.'):''
+  ].join('');
+
+  const version='<section class="dev-section"><h3>Версия</h3><dl class="dev-facts">'+
+    '<dt>Коммит</dt><dd>'+commit+'</dd>'+
+    (v.commitDate?'<dt>Дата коммита</dt><dd>'+escapeHtml(v.commitDate)+'</dd>':'')+
+    '<dt>Запущен</dt><dd>'+escapeHtml(v.startedAt)+'</dd>'+
+    '<dt>Окружение</dt><dd>'+escapeHtml(v.env)+' · Node.js '+escapeHtml(v.node)+'</dd>'+
+  '</dl></section>';
+
+  const mcp='<section class="dev-section"><h3>Подключение Claude (MCP)</h3>'+
+    '<p>Claude Code, Claude Desktop и claude.ai работают с ATS от вашего имени. Если вход через OAuth не проходит, '+
+      '<a href="#/profile">выпустите личный токен в профиле</a> и подключите с заголовком X-ATS-Token.</p>'+
+    '<div class="dev-copy">'+
+      devCopyField('Адрес',d.mcp.url)+
+      devCopyField('Claude Code',d.mcp.addCommand)+
+      devCopyField('С токеном',d.mcp.addCommandWithToken)+
+    '</div></section>';
+
+  const intake='<section class="dev-section"><h3>Intake API</h3>'+
+    '<p>Черновики кандидатов из внешних AI-интеграций. Ключ — переменная ATS_API_KEY на сервере; '+
+      (d.intake.configured?'сейчас <strong>задан</strong>.':'сейчас <strong>не задан</strong>, API отвечает 503.')+'</p>'+
+    '<div class="dev-copy">'+devCopyField('Адрес',d.intake.url)+'</div></section>';
+
+  const status=d.status?'<section class="dev-section">'+
+    '<div class="dev-section-head"><h3>Состояние интеграций</h3>'+
+      '<button type="button" class="button button-secondary" onclick="recheckDevelopers(this)">'+icon('refresh','icon-sm')+'<span>Проверить снова</span></button></div>'+
+    '<div class="dev-status">'+d.status.map(item=>
+      '<div class="dev-status-row"><strong>'+escapeHtml(item.label)+'</strong><span>'+escapeHtml(item.detail)+'</span>'+
+        '<span class="dev-state dev-state-'+escapeHtml(item.state)+'">'+escapeHtml(DEV_STATE_LABELS[item.state]||item.state)+'</span></div>'
+    ).join('')+'</div></section>':'';
+
+  el('developersRoot').innerHTML='<div class="developers"><div class="dev-links">'+cards+'</div>'+version+status+mcp+intake+'</div>';
+}
+
+async function recheckDevelopers(button){
+  await runUiTask({button,pageId:'viewAdmin',label:'Проверка…'},()=>showDevelopers(true)).catch(()=>{});
+}
+</script>

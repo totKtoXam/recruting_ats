@@ -4,6 +4,7 @@ import * as candidates from './services/candidates.js';
 import * as audit from './services/audit.js';
 import * as comments from './services/comments.js';
 import * as dashboard from './services/dashboard.js';
+import * as developer from './services/developer.js';
 import * as drafts from './services/drafts.js';
 import * as interviews from './services/interviews.js';
 import * as lifecycle from './services/lifecycle.js';
@@ -16,6 +17,7 @@ import * as settings from './services/settings.js';
 import * as similar from './services/similar.js';
 import * as telegram from './services/telegram.js';
 import * as users from './services/users.js';
+import { fail } from './lib/errors.js';
 
 async function getCandidateData() {
   const [active, archivedCount, deletedCount] = await Promise.all([
@@ -65,7 +67,8 @@ export const rpcHandlers = {
   getDeletedCandidateData: async () => ({
     deletedCandidates: await candidates.getDeletedCandidateSummaries()
   }),
-  getAdminUserData: async () => ({ users: await users.getUsers() }),
+  // Полный список пользователей с email и ролями — только администраторам.
+  getAdminUserData: adminOnly(async () => ({ users: await users.getUsers() })),
   // Главная «Мой день»: очередь «на моём этапе», зависшие, вакансии по этапам, последние события.
   getHomeData: (input, { user }) => dashboard.getHomeData(input, user),
   // «Аналитика»: показатели за период, конверсия, источники, причины отказа, нагрузка.
@@ -122,6 +125,8 @@ export const rpcHandlers = {
   revokeMcpConnection: (id, { user }) => oauth.revokeConnection(id, user),
   createMcpToken: (input, { user }) => oauth.createPersonalToken(input, user),
   revokeMcpToken: (id, { user }) => oauth.revokePersonalToken(id, user),
+  // «Настройки → Для разработчиков»: версия, ссылки, MCP, Intake; состояние интеграций — администраторам.
+  getDeveloperInfo: (input, { user }) => developer.getDeveloperInfo(input, user),
   createTelegramLink: (input, { user }) => telegram.createTelegramLink(input, user),
   unlinkTelegram: (input, { user }) => telegram.unlinkTelegram(input, user),
 
@@ -156,3 +161,15 @@ export const rpcHandlers = {
   saveSource: (input, { user }) => references.saveSource(input, user),
   saveInterviewTemplate: (input, { user }) => references.saveInterviewTemplate(input, user)
 };
+
+// Вызов метода по имени (POST /api/rpc/:name). "args": null означает «аргумент не передан»:
+// обработчики со значением по умолчанию (input = {}) иначе падают на null с ошибкой 500.
+export function callRpc(name, args, context) {
+  const handler = Object.hasOwn(rpcHandlers, name) ? rpcHandlers[name] : null;
+
+  if (!handler) {
+    fail('Неизвестный метод.', 404);
+  }
+
+  return handler(args === null ? undefined : args, context);
+}

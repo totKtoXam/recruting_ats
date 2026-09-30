@@ -37,3 +37,6 @@ Thumbs.db
 desktop.ini
 *.log
 logs/
+
+# Выгрузка спецификации (npm run openapi:export)
+/openapi.json

@@ -7,7 +7,7 @@ import session from 'express-session';
 import { config, withBase } from './config.js';
 import { pool } from './db/pool.js';
 import { toPublicError } from './lib/errors.js';
-import { rpcHandlers } from './rpc.js';
+import { callRpc, rpcHandlers } from './rpc.js';
 import { handleEvents } from './services/realtime.js';
 import { authRouter, loadUser, requireUserApi, requireUserPage } from './routes/auth.js';
 import { docsRouter } from './routes/docs.js';
@@ -115,11 +115,7 @@ export function createApp() {
     requireUserApi,
     express.json({ limit: '20mb' }),
     async (req, res) => {
-      const handler = Object.hasOwn(rpcHandlers, req.params.name)
-        ? rpcHandlers[req.params.name]
-        : null;
-
-      if (!handler) {
+      if (!Object.hasOwn(rpcHandlers, req.params.name)) {
         return res.status(404).json({ error: { message: 'Неизвестный метод.' } });
       }
 
@@ -129,7 +125,7 @@ export function createApp() {
       }
 
       try {
-        const result = await handler(req.body ? req.body.args : undefined, { user: req.user });
+        const result = await callRpc(req.params.name, req.body ? req.body.args : undefined, { user: req.user });
         res.json({ result: result === undefined ? null : result });
       } catch (error) {
         const publicError = toPublicError(error);

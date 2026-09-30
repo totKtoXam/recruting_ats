@@ -36,6 +36,9 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Lint OpenAPI spec
+        run: npm run openapi:lint
+
   migrations:
     name: Database migrations
     runs-on: ubuntu-latest
@@ -76,6 +79,10 @@ jobs:
 
       - name: Re-apply migrations (idempotency)
         run: node server/db/migrate.js
+
+      # Пустые и неверные аргументы во всех RPC-методах — без ошибок 500. Пишет в БД, поэтому только здесь.
+      - name: RPC arguments check
+        run: node scripts/check-rpc-args.js --allow-writes
 
   docker:
     name: Docker build

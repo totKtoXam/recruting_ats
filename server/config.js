@@ -125,6 +125,13 @@ export const config = Object.freeze({
 
   intakeApiKey: env('ATS_API_KEY'),
 
+  // «Настройки → Для разработчиков»: ссылка на исходный код и коммит сборки.
+  // Коммит берётся из git при старте; в Docker-образе без .git задайте BUILD_COMMIT.
+  repositoryUrl: env('REPOSITORY_URL', 'https://github.com/totKtoXam/recruting_ats').replace(/\/$/, ''),
+  buildCommit: env('BUILD_COMMIT'),
+  // Swagger UI (/api/docs) спрашивает подтверждение перед методами, которые меняют данные.
+  swaggerConfirmWrites: env('SWAGGER_CONFIRM_WRITES', env('NODE_ENV') === 'production' ? 'true' : 'false') === 'true',
+
   // Email-уведомления через SMTP. Без SMTP_HOST канал «Эл. почта» считается не настроенным.
   smtp: Object.freeze({
     host: env('SMTP_HOST'),

@@ -34,7 +34,8 @@
 - Архивирование сохраняет текущий статус кандидата и проставляет `archived_at`; кандидата можно вернуть из архива.
 - Resume Intake API для AI-интеграций: создание предзаполненных черновиков кандидатов (см. [`docs/API.md`](docs/API.md)).
 - MCP-сервер и плагин Claude Code: Claude работает с ATS от имени пользователя — вход кнопкой «Connect» (OAuth через вход в ATS), превью и подтверждение перед каждым изменением (см. [MCP-сервер и плагин Claude](#mcp-сервер-и-плагин-claude)).
-- Swagger UI всего API: `/api/docs`, ссылка — в «Настройки → Для разработчиков» вместе с репозиторием (только после входа; спецификация OpenAPI 3.1 — `/api/openapi.json`, см. [`docs/API.md`](docs/API.md#swagger-ui)).
+- Swagger UI всего API: `/api/docs` (только после входа; методы записи на production — с подтверждением; спецификация OpenAPI 3.1 — `/api/openapi.json`, см. [`docs/API.md`](docs/API.md#swagger-ui)).
+- «Настройки → Для разработчиков»: ссылки на Swagger и репозиторий, версия сборки (коммит), подключение Claude и Intake API, администраторам — состояние интеграций (PostgreSQL, Google Drive, Telegram, SMTP).
 - Автоматические миграции схемы БД при старте.
 - CI в GitHub Actions: тесты, проверка миграций на чистом PostgreSQL, сборка Docker-образа.
 
@@ -701,7 +702,7 @@ server/
                       text-distance.js (расстояние Дамерау — Левенштейна)
   routes/
     auth.js           вход через Google / dev, выход, проверка сессии
-    docs.js           Swagger UI (/api/docs) и /api/openapi.json
+    docs.js           Swagger UI (/api/docs), /api/openapi.json, подтверждение методов записи
     files.js          /files/:id и /candidates/:id/files
     intake.js         Resume Intake API (/intake)
     html.js           экранирование HTML/JS
@@ -721,10 +722,13 @@ web/
   Scripts.html        фронтенд, вызывает POST /api/rpc/:name
   AdminView.html      разделы «Вакансии», «Источники вакансий», «Пользователи»
   AdminScripts.html
+  Developers.html     «Настройки → Для разработчиков» (RPC getDeveloperInfo)
   ResumeAutofill.html автозаполнение карточки кандидата из резюме (кнопка, drag & drop, панель результата)
 scripts/
   import-from-xlsx.js перенос данных из Google Sheets
   cleanup-drafts.js   очистка черновиков
+  export-openapi.js   выгрузка спецификации OpenAPI (npm run openapi:export / openapi:lint)
+  check-rpc-args.js   CI: все RPC-методы на пустых и неверных аргументах без ошибок 500
   drive-auth.js       получение refresh token для Google Drive (npm run drive:auth)
   deploy-cloud-run.sh деплой в Google Cloud Run
 skills/

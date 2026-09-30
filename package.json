@@ -14,6 +14,9 @@
     "cleanup-drafts": "node --env-file-if-exists=.env scripts/cleanup-drafts.js",
     "import:sheets": "node --env-file-if-exists=.env scripts/import-from-xlsx.js",
     "test": "node --test test/*.test.js",
+    "openapi:export": "node scripts/export-openapi.js openapi.json",
+    "openapi:lint": "node scripts/export-openapi.js openapi.json && npx --yes @redocly/cli@2.57.0 lint openapi.json",
+    "check:rpc-args": "node scripts/check-rpc-args.js",
     "drive:auth": "node --env-file-if-exists=.env scripts/drive-auth.js",
     "settings:reset": "node --env-file-if-exists=.env scripts/reset-settings.js"
   },

@@ -1,6 +1,9 @@
 FROM node:22-alpine
 
 ENV NODE_ENV=production
+# В образе нет .git: коммит для «Настройки → Для разработчиков» — docker build --build-arg BUILD_COMMIT=$(git rev-parse HEAD) .
+ARG BUILD_COMMIT=
+ENV BUILD_COMMIT=$BUILD_COMMIT
 ENV PORT=3040
 WORKDIR /app
 
