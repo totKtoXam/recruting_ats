@@ -99,7 +99,8 @@ export async function saveVacancy(input = {}, actor) {
       await replaceVacancyTemplates(tx, row.id, bindings, actor);
     }
 
-    return { ok: true, vacancy: toVacancy(row) };
+    // Перечитываем: обязательные этапы обновляются вместе с привязками шаблонов.
+    return { ok: true, vacancy: toVacancy(await tx.one('SELECT * FROM vacancies WHERE id = $1', [row.id])) };
   });
 }
 
@@ -304,54 +305,75 @@ export async function saveInterviewTemplate(input = {}, actor) {
 }
 
 // Этапы вакансии: [{ stage, templateId, required }] — на этапе не больше одного шаблона.
-// Необязательный шаблон при переходе можно пропустить.
-function normalizeTemplateBindings(bindings) {
+// Обязательный этап требует итог при переходе, а с шаблоном — ещё и ответы; обязательным
+// этап бывает и без шаблона. Необязательный этап без шаблона не хранится.
+export function normalizeTemplateBindings(bindings) {
   if (!Array.isArray(bindings)) fail('Некорректный список этапов вакансии.');
 
   const seen = new Set();
 
-  return bindings.map(item => {
-    const stage = clean(item && item.stage);
-    const templateId = optionalUuid(item && item.templateId, 'Шаблон не найден.');
-    const required = toBoolean(item && item.required);
+  return bindings
+    .map(item => {
+      const stage = clean(item && item.stage);
+      const templateId = optionalUuid(item && item.templateId, 'Шаблон не найден.');
+      const required = toBoolean(item && item.required);
 
-    if (!APP_CONFIG.PIPELINE_STATUSES.includes(stage)) {
-      fail('Выберите этап для каждого шаблона.');
-    }
+      if (!APP_CONFIG.PIPELINE_STATUSES.includes(stage)) {
+        fail('Выберите этап для каждого шаблона.');
+      }
 
-    if (!templateId) {
-      fail('Выберите шаблон для каждого этапа.');
-    }
+      if (seen.has(stage)) {
+        fail(`На этапе «${stage}» может быть только один шаблон.`);
+      }
+      seen.add(stage);
 
-    if (seen.has(stage)) {
-      fail(`На этапе «${stage}» может быть только один шаблон.`);
-    }
-    seen.add(stage);
-
-    return { stage, templateId, required };
-  });
+      return templateId || required ? { stage, templateId: templateId || '', required } : null;
+    })
+    .filter(Boolean);
 }
 
-// Заменяет привязки шаблонов вакансии; пишет в журнал вакансии, если они изменились.
-async function replaceVacancyTemplates(tx, vacancyId, bindings, actor) {
-  const describe = rows =>
-    rows.length
-      ? rows.map(row => `${row.stage}: ${row.name}${row.required ? ' (обязательный)' : ''}`).join('; ')
-      : '';
-  const load = () =>
-    tx.many(
-      `SELECT vt.stage, vt.template_id, vt.required, t.name
-       FROM vacancy_templates vt JOIN interview_templates t ON t.id = vt.template_id
-       WHERE vt.vacancy_id = $1
-       ORDER BY array_position($2::text[], vt.stage), t.number`,
-      [vacancyId, APP_CONFIG.PIPELINE_STATUSES]
-    );
+// Этапы вакансии для журнала: «этап: шаблон (обязательный)» в порядке воронки.
+function describeVacancyStages(rows, requiredStages) {
+  const byStage = new Map(rows.map(row => [row.stage, row]));
+  return APP_CONFIG.PIPELINE_STATUSES.map(stage => {
+    const row = byStage.get(stage);
+    const required = requiredStages.includes(stage);
+    if (!row && !required) return '';
+    return `${stage}: ${row ? row.name : 'без шаблона'}${required ? ' (обязательный)' : ''}`;
+  })
+    .filter(Boolean)
+    .join('; ');
+}
 
-  const existing = await load();
+// Заменяет этапы вакансии (привязки шаблонов и обязательные этапы); пишет в журнал вакансии,
+// если они изменились.
+async function replaceVacancyTemplates(tx, vacancyId, bindings, actor) {
+  const load = async () => {
+    const [rows, vacancy] = await Promise.all([
+      tx.many(
+        `SELECT vt.stage, vt.template_id, vt.required, t.name
+         FROM vacancy_templates vt JOIN interview_templates t ON t.id = vt.template_id
+         WHERE vt.vacancy_id = $1
+         ORDER BY array_position($2::text[], vt.stage), t.number`,
+        [vacancyId, APP_CONFIG.PIPELINE_STATUSES]
+      ),
+      tx.one('SELECT required_stages FROM vacancies WHERE id = $1', [vacancyId])
+    ]);
+    return { rows, requiredStages: (vacancy && vacancy.required_stages) || [] };
+  };
+  const describe = ({ rows, requiredStages }) => describeVacancyStages(rows, requiredStages);
+
+  const before = await load();
+  const existing = before.rows;
   const existingKeys = new Set(existing.map(row => `${row.stage}|${row.template_id}`));
 
+  const withTemplate = bindings.filter(binding => binding.templateId);
+  const requiredStages = APP_CONFIG.PIPELINE_STATUSES.filter(stage =>
+    bindings.some(binding => binding.stage === stage && binding.required)
+  );
+
   // Уже привязанный архивный шаблон остаётся; новые привязки — только к активным шаблонам.
-  for (const binding of bindings) {
+  for (const binding of withTemplate) {
     if (existingKeys.has(`${binding.stage}|${binding.templateId}`)) continue;
 
     const template = await tx.one(
@@ -366,14 +388,16 @@ async function replaceVacancyTemplates(tx, vacancyId, bindings, actor) {
 
   await tx.query('DELETE FROM vacancy_templates WHERE vacancy_id = $1', [vacancyId]);
 
-  for (const binding of bindings) {
+  for (const binding of withTemplate) {
     await tx.query(
       `INSERT INTO vacancy_templates (vacancy_id, stage, template_id, required) VALUES ($1, $2, $3, $4)`,
       [vacancyId, binding.stage, binding.templateId, binding.required]
     );
   }
 
-  const oldDisplay = describe(existing);
+  await tx.query('UPDATE vacancies SET required_stages = $2 WHERE id = $1', [vacancyId, requiredStages]);
+
+  const oldDisplay = describe(before);
   const newDisplay = describe(await load());
 
   if (oldDisplay !== newDisplay) {

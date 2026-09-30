@@ -25,7 +25,7 @@ export const MCP_INSTRUCTIONS = `Recruiting ATS — система подбор�
 1. Перед любым инструментом, который изменяет данные (у него нет readOnlyHint), покажи пользователю, что именно будет записано, и дождись явного подтверждения. Простые действия (комментарий, реакция, архив/восстановление, статус вакансии, подписка, отметка уведомлений, откат поля) — кратко в чате. Сложные формы (карточка кандидата, перевод по этапу с ответами на вопросы и отказ, вакансия с шаблонами, шаблон интервью, пользователь) — превью формы: визуальный виджет или артефакт, если клиент их поддерживает, иначе аккуратная таблица «поле — значение». Пользователь может переключить режим («покажи в чате» / «покажи превью») — соблюдай выбор до конца разговора.
 2. Идентификаторы бери из get_references и search_candidates, не придумывай.
 3. Нового кандидата из резюме по умолчанию создавай черновиком (create_candidate_draft): пользователь проверит форму в ATS и сохранит сам. save_candidate без id сразу создаёт кандидата — только по явной просьбе.
-4. Перед transition_candidate вызови get_interview_context: для обязательного шаблона нужны ответы на все вопросы (или skipped: true) и итог (result).
+4. Перед transition_candidate вызови get_interview_context: на обязательном этапе (resultRequired) нужен итог (result), а при обязательном шаблоне — ещё ответы на все вопросы (или skipped: true). На необязательном этапе итог можно не указывать.
 5. Файлы резюме передавай через create_upload_link + curl (uploadId); base64 — только если нет доступа к shell.
 6. Персональные данные кандидатов не выводи за пределы разговора с пользователем.`;
 
@@ -331,7 +331,7 @@ async function getReferences(_args, { user }) {
     vacancyStatusTransitions: r.vacancyStatusTransitions,
     rejectionReasons: r.rejectionReasons,
     otherReason: r.otherReason,
-    vacancies: r.vacancies.map(v => ({ id: v['Vacancy ID'], number: v['№'], name: v['Вакансия'], status: v['Статус'] })),
+    vacancies: r.vacancies.map(v => ({ id: v['Vacancy ID'], number: v['№'], name: v['Вакансия'], status: v['Статус'], requiredStages: v.requiredStages || [] })),
     sources: r.sources.map(s => ({ id: s['Source ID'], number: s['№'], name: s['Название'] })),
     responsibles: r.responsibles.map(u => ({
       id: u['Responsible ID'],
@@ -491,7 +491,7 @@ export const mcpTools = [
     name: 'get_interview_context',
     title: 'Контекст перехода',
     description:
-      'Что нужно для перевода кандидата на этап toStatus: шаблоны вопросов, привязанные к вакансии и этапу (required — обязательный), с вопросами и предпочтительными ответами.',
+      'Что нужно для перевода кандидата на этап toStatus: обязателен ли итог (resultRequired — этап обязательный), шаблоны вопросов, привязанные к вакансии и этапу (required — обязательный), с вопросами и предпочтительными ответами.',
     inputSchema: obj({ candidateId: id('ID кандидата'), toStatus: str('Целевой этап', { enum: ALL_STATUSES }) }, ['candidateId', 'toStatus']),
     annotations: READ,
     handler: async (args, context) => {
@@ -499,6 +499,7 @@ export const mcpTools = [
       return {
         fromStatus: result.fromStatus,
         toStatus: result.toStatus,
+        resultRequired: Boolean(result.resultRequired),
         templates: (result.templates || []).map(t => ({ ...templateOut(t), required: Boolean(t.required) }))
       };
     }
@@ -660,7 +661,7 @@ export const mcpTools = [
     name: 'transition_candidate',
     title: 'Перевести по этапу',
     description:
-      'Переводит кандидата на другой этап. Обычный переход: interview.result обязателен; при обязательном шаблоне — templateId и ответы на все вопросы (сначала get_interview_context). Отказ (toStatus «Отказано»): rejection с byType, reason из rejectionReasons, для «Другое» — comment. Возврат из отказа — только на прежний этап, с comment верхнего уровня.' +
+      'Переводит кандидата на другой этап. Обычный переход: interview.result обязателен на обязательном этапе (resultRequired в get_interview_context); при обязательном шаблоне — templateId и ответы на все вопросы (сначала get_interview_context). Отказ (toStatus «Отказано»): rejection с byType, reason из rejectionReasons, для «Другое» — comment. Возврат из отказа — только на прежний этап, с comment верхнего уровня.' +
       CONFIRM,
     inputSchema: obj(
       {
@@ -669,7 +670,7 @@ export const mcpTools = [
         interview: obj({
           templateId: str('Шаблон вопросов (uuid или пусто)'),
           answers: answersSchema,
-          result: str('Итог этапа (обязательно)'),
+          result: str('Итог этапа (обязателен на обязательном этапе)'),
           comment: str('Первый комментарий к результату интервью')
         }),
         rejection: obj({
@@ -697,7 +698,7 @@ export const mcpTools = [
     title: 'Изменить результат интервью',
     description: 'Меняет итог и (если переданы) ответы сохранённого результата интервью. answers заменяет все ответы.' + CONFIRM,
     inputSchema: obj(
-      { id: id('ID результата интервью'), result: str('Итог (обязательно)'), answers: answersSchema },
+      { id: id('ID результата интервью'), result: str('Итог (пустая строка допустима только для необязательного этапа)'), answers: answersSchema },
       ['id', 'result']
     ),
     annotations: WRITE,
@@ -800,7 +801,7 @@ export const mcpTools = [
     name: 'save_vacancy',
     title: 'Сохранить вакансию',
     description:
-      'Создаёт (без id, статус «Открыта») или изменяет вакансию. links и templates, если переданы, заменяют весь список; templates — привязки шаблонов к этапам (не больше одного на этап).' +
+      'Создаёт (без id, статус «Открыта») или изменяет вакансию. links и templates, если переданы, заменяют весь список; templates — этапы вакансии: шаблон вопросов (не больше одного на этап) и обязательность. Обязательный этап (required) требует итог при переходе, а с шаблоном — ещё ответы; обязательным может быть и этап без шаблона (templateId пустой).' +
       CONFIRM,
     inputSchema: obj(
       {
@@ -808,8 +809,8 @@ export const mcpTools = [
         name: str('Название (уникальное)'),
         links: arr(obj({ url: str('Ссылка'), name: str('Подпись') }, ['url']), 'Ссылки (до 20)'),
         templates: arr(
-          obj({ stage: str('Этап', { enum: PIPELINE }), templateId: id('Шаблон'), required: bool('Обязательный') }, ['stage', 'templateId']),
-          'Шаблоны вопросов по этапам'
+          obj({ stage: str('Этап', { enum: PIPELINE }), templateId: str('Шаблон (uuid или пусто — этап без шаблона)'), required: bool('Обязательный этап') }, ['stage']),
+          'Этапы: шаблоны вопросов и обязательность'
         )
       },
       ['name']

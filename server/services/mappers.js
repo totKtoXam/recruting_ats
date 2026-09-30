@@ -38,6 +38,8 @@ export function toVacancy(row) {
     'Вакансия': row.name,
     'Статус': row.status,
     links: Array.isArray(row.links) ? row.links : [],
+    // Этапы, на которых при переходе нужен итог (и ответы, если привязан шаблон).
+    requiredStages: row.required_stages || [],
     ...softDeleteFields(row)
   };
 }

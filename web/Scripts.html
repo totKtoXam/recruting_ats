@@ -462,34 +462,6 @@ function initSidebar(){
   NARROW_SCREEN.addEventListener('change',()=>applySidebarState(document.body.classList.contains('sidebar-collapsed')));
 }
 
-const SIDEBAR_GROUPS_KEY='ats:sidebar-groups';
-
-function sidebarGroupsState(){
-  try{return JSON.parse(localStorage.getItem(SIDEBAR_GROUPS_KEY)||'{}')||{}}catch(error){return {}}
-}
-
-function toggleSidebarGroup(key){
-  const groups=sidebarGroupsState();
-  groups[key]=!(groups[key]===false?false:true);
-  try{localStorage.setItem(SIDEBAR_GROUPS_KEY,JSON.stringify(groups))}catch(error){}
-  applySidebarGroups();
-}
-
-// Свёрнутые группы-аккордеоны; в режиме «только иконки» видны все пункты,
-// а группа с активным пунктом всегда раскрыта.
-function applySidebarGroups(){
-  const groups=sidebarGroupsState();
-  const iconsOnly=document.body.classList.contains('sidebar-collapsed')||NARROW_SCREEN.matches;
-  document.querySelectorAll('.sidebar-group').forEach(group=>{
-    const key=group.dataset.group;
-    const hasActive=!!group.querySelector('.sidebar-link.active');
-    const expanded=iconsOnly||hasActive||groups[key]!==false;
-    group.querySelector('.sidebar-group-toggle').setAttribute('aria-expanded',String(expanded));
-    group.querySelector('.sidebar-group-items').hidden=!expanded;
-    group.classList.toggle('expanded',expanded);
-  });
-}
-
 function toggleSidebar(){
   const collapsed=!document.body.classList.contains('sidebar-collapsed');
   applySidebarState(collapsed);
@@ -508,7 +480,6 @@ function applySidebarState(collapsed){
     if(iconsOnly)link.dataset.tip=link.textContent.trim();
     else delete link.dataset.tip;
   });
-  applySidebarGroups();
   const toggle=el('sidebarToggle');
   if(!toggle)return;
   const tip=collapsed?'Развернуть меню':'Свернуть меню';
@@ -605,7 +576,6 @@ function applyRoute(){
     if(active)link.setAttribute('aria-current','page');
     else link.removeAttribute('aria-current');
   });
-  applySidebarGroups();
 
   if(route.page==='admin'){
     if(typeof showAdminSection==='function')showAdminSection(route.path);
@@ -2964,8 +2934,10 @@ function startTransition(id,toStatus){
     fromStatus:candidate['Статус'],
     toStatus,
     template,
-    nextResponsible
+    nextResponsible,
+    resultRequired:isStageRequired(candidate['Vacancy ID'],toStatus)
   };
+  setResultLabel('transitionResultLabel',pendingTransition.resultRequired);
 
   el('transitionTitle').innerHTML=statusChip(candidate['Статус'],true)+' <span class="transition-arrow">'+icon('arrow-right','icon-sm')+'</span> '+statusChip(toStatus,true);
 
@@ -3111,6 +3083,17 @@ function closeTransition(){
   el('transitionModal').classList.remove('open');
   pendingTransition=null;
 }
+
+// Обязательный этап вакансии: при переходе на него нужен итог, а с шаблоном — ещё и ответы.
+function isStageRequired(vacancyId,stage){
+  const vacancy=state.vacancies.find(v=>String(v['Vacancy ID'])===String(vacancyId));
+  return !!vacancy&&(vacancy.requiredStages||[]).includes(stage);
+}
+
+function setResultLabel(id,required){
+  const label=el(id);
+  if(label)label.textContent=required?'Результат *':'Результат (необязательно)';
+}
 // На этапе вакансии не больше одного шаблона; без шаблона вопросы не запрашиваются.
 function selectedTransitionTemplate(){return pendingTransition?pendingTransition.template:null}
 
@@ -3216,8 +3199,8 @@ async function submitTransition(button){
     const result=richText(value('transitionResult'))?value('transitionResult'):'';
     const template=selectedTransitionTemplate();
 
-    if(!result){
-      UiKit.showFieldErrors([{field:'transitionResult',message:'Опишите итог этапа.'}]);
+    if(!result&&pendingTransition.resultRequired){
+      UiKit.showFieldErrors([{field:'transitionResult',message:'Этап обязательный — опишите итог.'}]);
       return;
     }
 
@@ -3413,6 +3396,8 @@ function editInterview(id){
     else syncSuggestionState(block.querySelector('.edit-answer'));
   });
   setRich('editInterviewResult',editingInterview['Результат']||'');
+  editingInterview.resultRequired=isStageRequired(editingInterview['Vacancy ID'],editingInterview['Этап']);
+  setResultLabel('editInterviewResultLabel',editingInterview.resultRequired);
   el('interviewEditModal').classList.add('open');
 }
 
@@ -3420,7 +3405,7 @@ function closeInterviewEdit(){el('interviewEditModal').classList.remove('open');
 
 async function saveInterviewEdit(button){
   if(!editingInterview)return;
-  if(!richText(value('editInterviewResult'))){UiKit.showFieldErrors([{field:'editInterviewResult',message:'Опишите итог этапа.'}]);return}
+  if(editingInterview.resultRequired&&!richText(value('editInterviewResult'))){UiKit.showFieldErrors([{field:'editInterviewResult',message:'Этап обязательный — опишите итог.'}]);return}
   await runUiTask({button,formId:'interviewEditForm',label:'Сохранение…'},async()=>{
     const payload={
       id:editingInterview['Interview ID'],

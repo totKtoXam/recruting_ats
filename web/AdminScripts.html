@@ -380,7 +380,7 @@ const vacancyTable=createServerTable({
     {label:'Статус',sort:'status',width:'120px',filter:{key:'status',type:'select',options:()=>['Открыта','На паузе','Закрыта']},render:item=>vacancyStatusChip(item['Статус'])},
     {label:'Кандидаты',sort:'candidates',width:'90px',render:item=>escapeHtml(item.candidateCount||0)},
     {label:'Публикации',width:'150px',render:item=>vacancyLinksHtml(item.links||[])},
-    {label:'Этапы с шаблонами',sort:'templates',render:item=>templateChips(item.templates||[])},
+    {label:'Этапы',sort:'templates',render:item=>templateChips(item.templates||[],item.requiredStages||[])},
     {label:'',width:'76px',render:item=>'<div class="row-actions">'+lifecycleButtons('vacancy',item['Vacancy ID'],item.state,true)+'</div>'}
   ]
 });
@@ -479,13 +479,20 @@ function visibleAdminTables(){
   return isAdminUser()?[...ADMIN_TABLES,'users']:ADMIN_TABLES;
 }
 
-function templateChips(templates){
-  if(!templates.length)return '<span class="muted">Нет шаблонов</span>';
-  return '<div class="chip-wrap">'+
-    templates.slice(0,4).map(t=>
+// Этапы вакансии в таблице: шаблоны по этапам и обязательные этапы без шаблона (* — обязательный).
+function templateChips(templates,requiredStages=[]){
+  const chips=(state.pipelineStatuses||[]).flatMap(stage=>{
+    const bound=templates.filter(t=>t.stage===stage);
+    if(bound.length)return bound.map(t=>
       '<span class="mini-chip status-'+statusKey(t.stage)+'">№'+escapeHtml(t.number)+' '+escapeHtml(t.name)+(t.required?' *':'')+'</span>'
-    ).join('')+
-    (templates.length>4?'<span class="more-chip">+'+(templates.length-4)+'</span>':'')+
+    );
+    return requiredStages.includes(stage)
+      ?['<span class="mini-chip status-'+statusKey(stage)+'" data-tip="Обязательный этап без шаблона — при переводе спросим только итог">'+escapeHtml(stage)+' · итог *</span>']
+      :[];
+  });
+  if(!chips.length)return '<span class="muted">Нет шаблонов</span>';
+  return '<div class="chip-wrap">'+chips.slice(0,4).join('')+
+    (chips.length>4?'<span class="more-chip">+'+(chips.length-4)+'</span>':'')+
   '</div>';
 }
 
@@ -719,6 +726,14 @@ function resetVacancyForm(){
 function editVacancy(id,item){
   const vacancy=item||tableItem('vacancies','Vacancy ID',id)||state.vacancies.find(x=>String(x['Vacancy ID'])===String(id));
   if(!vacancy)return;
+  // В справочнике и в ответе сохранения этапов нет — без них форма стёрла бы привязки шаблонов.
+  if(!Array.isArray(vacancy.templates)){
+    loadVacancyRow(vacancy).then(row=>{
+      if(row)editVacancy(id,row);
+      else showToast('Вакансия недоступна.','error');
+    }).catch(error=>showToast(error&&error.message?error.message:String(error),'error'));
+    return;
+  }
   Drawer.open('vacancyDrawer');
   currentVacancy=vacancy;
 
@@ -730,7 +745,7 @@ function editVacancy(id,item){
   setVacancyNameError('');
   renderVacancyLinks(vacancy.links||[],vacancy.state==='deleted');
   renderVacancyFormActions(vacancy);
-  renderVacancyStages(vacancy.templates||[],vacancy.state==='deleted');
+  renderVacancyStages(vacancy.templates||[],vacancy.state==='deleted',vacancy.requiredStages||[]);
   mountCommentThread('vacancy','vacancyComments','vacancy',id);
   rerenderServerTable('vacancies');
   Drawer.markClean('vacancyDrawer');
@@ -804,35 +819,52 @@ async function setVacancyStatusUi(id,status,button){
   });
 }
 
+// Строка таблицы вакансий (с этапами) по номеру — когда вакансии нет на загруженной странице.
+async function loadVacancyRow(vacancy){
+  const data=await rpc('listVacancies',{page:1,pageSize:5,filters:{number:vacancy['№'],state:'all'}});
+  return (data.items||[]).find(row=>String(row['Vacancy ID'])===String(vacancy['Vacancy ID']))||null;
+}
+
 // ---------- Шаблоны интервью ----------
 
-// Этапы вакансии: у каждого этапа воронки можно выбрать один шаблон вопросов и отметить,
-// обязателен ли он. Необязательный шаблон при переходе можно пропустить. Сохраняется вместе с вакансией.
-function renderVacancyStages(bindings,readOnly){
+// Этапы вакансии: у каждого этапа воронки — шаблон вопросов (не больше одного) и обязательность.
+// Обязательный этап: при переходе нужен итог, а с шаблоном — ещё ответы на вопросы; обязательным
+// можно сделать и этап без шаблона — тогда при переходе спрашивается только итог. Сохраняется вместе с вакансией.
+const STAGE_REQUIRED_NO_TEMPLATE='Шаблона нет — при переводе на этап спросим только итог одним текстом, без вопросов.';
+
+function renderVacancyStages(bindings,readOnly,requiredStages=[]){
   const byStage=new Map((bindings||[]).map(binding=>[binding.stage,binding]));
   const templates=state.templates||[];
   el('vacancyStageList').innerHTML=(state.pipelineStatuses||[]).map(stage=>{
     const binding=byStage.get(stage)||{};
     const templateId=binding.id||'';
+    const required=!!binding.required||requiredStages.includes(stage);
     const known=templates.some(t=>String(t['Template ID'])===String(templateId));
     const dis=readOnly?' disabled':'';
     return '<div class="stage-row" data-stage="'+escapeHtml(stage)+'" style="--st:var(--status-'+statusKey(stage)+')">'+
       '<span class="stage-row-name">'+statusChip(stage,true)+'</span>'+
-      '<select class="stage-template" aria-label="Шаблон вопросов этапа «'+escapeHtml(stage)+'»"'+dis+' onchange="onStageTemplateChange(this)">'+
+      '<select class="stage-template" aria-label="Шаблон вопросов этапа «'+escapeHtml(stage)+'»"'+dis+' onchange="syncStageRow(this)">'+
         option('','Без шаблона')+
         templates.map(t=>option(t['Template ID'],'№'+(t['№']||'—')+' · '+t['Название']+' · '+(t.questions||[]).length+' вопр.',String(t['Template ID'])===String(templateId))).join('')+
         (templateId&&!known?option(templateId,'№'+(binding.number||'—')+' · '+(binding.name||'Шаблон')+' (в архиве)',true):'')+
       '</select>'+
-      '<label class="checkbox-line stage-required"><input type="checkbox" class="stage-required-input"'+(binding.required?' checked':'')+(readOnly||!templateId?' disabled':'')+'><span>Обязательный</span></label>'+
+      '<span class="stage-required-cell">'+
+        '<label class="checkbox-line stage-required" data-tip="Итог при переводе на этап обязателен; с шаблоном — ещё и ответы"><input type="checkbox" class="stage-required-input"'+(required?' checked':'')+dis+' onchange="syncStageRow(this)"><span>Обязательный</span></label>'+
+        '<span class="stage-required-warn" role="img" aria-label="'+escapeHtml(STAGE_REQUIRED_NO_TEMPLATE)+'" data-tip="'+escapeHtml(STAGE_REQUIRED_NO_TEMPLATE)+'" hidden>'+icon('alert','icon-sm')+'</span>'+
+      '</span>'+
+      '<small class="stage-row-note" hidden>'+escapeHtml(STAGE_REQUIRED_NO_TEMPLATE)+'</small>'+
     '</div>';
   }).join('');
+  document.querySelectorAll('#vacancyStageList .stage-row').forEach(row=>syncStageRow(row));
   updateVacancyStagesCount();
 }
 
-function onStageTemplateChange(select){
-  const checkbox=select.closest('.stage-row').querySelector('.stage-required-input');
-  checkbox.disabled=!select.value;
-  if(!select.value)checkbox.checked=false;
+// Предупреждение «обязательный без шаблона» — значок у флажка и пояснение под строкой.
+function syncStageRow(node){
+  const row=node.closest('.stage-row');
+  const warn=!row.querySelector('.stage-template').value&&row.querySelector('.stage-required-input').checked;
+  row.querySelector('.stage-required-warn').hidden=!warn;
+  row.querySelector('.stage-row-note').hidden=!warn;
   updateVacancyStagesCount();
 }
 
@@ -845,7 +877,7 @@ function collectVacancyTemplates(){
     stage:row.dataset.stage,
     templateId:row.querySelector('.stage-template').value,
     required:row.querySelector('.stage-required-input').checked
-  })).filter(binding=>binding.templateId);
+  })).filter(binding=>binding.templateId||binding.required);
 }
 
 function answerChip(answer){

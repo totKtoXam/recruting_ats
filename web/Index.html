@@ -52,15 +52,10 @@
     <aside id="sidebar" class="sidebar" aria-label="Основное меню">
       <nav class="sidebar-nav">
         <a class="sidebar-link sidebar-link-top" href="#/home" data-route="home" data-short="Главная"><svg class="icon"><use href="#i-house"/></svg><span>Главная</span></a>
-        <div class="sidebar-group" data-group="recruiting">
-          <button type="button" class="sidebar-group-toggle" aria-expanded="true" onclick="toggleSidebarGroup('recruiting')"><svg class="icon"><use href="#i-kanban"/></svg><span>Рекрутинг</span><svg class="icon chevron"><use href="#i-chevron-right"/></svg></button>
-          <div class="sidebar-group-items" id="sidebarGroup-recruiting">
-          <a class="sidebar-link" href="#/candidates" data-route="candidates" data-short="Кандидаты"><svg class="icon"><use href="#i-users"/></svg><span>Кандидаты</span></a>
-          <a class="sidebar-link" href="#/vacancies" data-route="vacancies" data-short="Вакансии"><svg class="icon"><use href="#i-briefcase"/></svg><span>Вакансии</span></a>
-          <a class="sidebar-link" href="#/templates" data-route="templates" data-short="Шаблоны"><svg class="icon"><use href="#i-template"/></svg><span>Шаблоны вопросов</span></a>
-          <a class="sidebar-link" href="#/analytics" data-route="analytics" data-short="Аналитика"><svg class="icon"><use href="#i-chart"/></svg><span>Аналитика</span></a>
-          </div>
-        </div>
+        <a class="sidebar-link" href="#/candidates" data-route="candidates" data-short="Кандидаты"><svg class="icon"><use href="#i-users"/></svg><span>Кандидаты</span></a>
+        <a class="sidebar-link" href="#/vacancies" data-route="vacancies" data-short="Вакансии"><svg class="icon"><use href="#i-briefcase"/></svg><span>Вакансии</span></a>
+        <a class="sidebar-link" href="#/templates" data-route="templates" data-short="Шаблоны"><svg class="icon"><use href="#i-template"/></svg><span>Шаблоны вопросов</span></a>
+        <a class="sidebar-link" href="#/analytics" data-route="analytics" data-short="Аналитика"><svg class="icon"><use href="#i-chart"/></svg><span>Аналитика</span></a>
         <!-- Все настройки — одна страница с вкладками (источники, пользователи, интеграции). -->
         <a class="sidebar-link sidebar-link-top" href="#/settings/sources" data-route="settings" data-short="Настройки"><svg class="icon"><use href="#i-settings"/></svg><span>Настройки</span></a>
       </nav>
@@ -464,7 +459,7 @@
           </div>
 
           <div class="field full">
-            <label>Результат *</label>
+            <label id="transitionResultLabel">Результат *</label>
             <textarea id="transitionResult" data-rich placeholder="Итог этапа"></textarea>
           </div>
         </div>
@@ -486,7 +481,7 @@
         <div id="editInterviewQuestions"></div>
 
         <div class="field">
-          <label>Результат *</label>
+          <label id="editInterviewResultLabel">Результат *</label>
           <textarea id="editInterviewResult" data-rich></textarea>
         </div>
       </section>

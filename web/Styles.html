@@ -2357,63 +2357,6 @@ body.sidebar-collapsed .sidebar-toggle{align-self:center}
 .user-meta-row span:first-child{color:var(--muted)}
 
 /* =====================================================================
-   Sidebar accordion (App shell, continued)
-   <button class="sidebar-group-toggle" aria-expanded="true|false">
-     <svg class="icon">…</svg><span>Группа</span><svg class="icon chevron">…</svg>
-   </button>
-   <div class="sidebar-group-items" [hidden]>…links…</div>
-   ===================================================================== */
-.sidebar-group-toggle{
-  display:flex;
-  align-items:center;
-  gap:8px;
-  width:100%;
-  height:28px;
-  margin:10px 0 2px;
-  padding:0 6px 0 8px;
-  border:0;
-  border-radius:var(--radius);
-  background:transparent;
-  color:var(--faint);
-  font-size:12px;
-  font-weight:600;
-  letter-spacing:.04em;
-  text-transform:uppercase;
-  text-align:left;
-  white-space:nowrap;
-  cursor:pointer;
-  transition:background-color .12s,color .12s
-}
-.sidebar-nav>.sidebar-group-toggle:first-child,
-.sidebar-nav>.sidebar-group:first-child>.sidebar-group-toggle{margin-top:0}
-.sidebar-group-toggle>.icon{width:15px;height:15px;flex:0 0 15px}
-.sidebar-group-toggle>span{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
-.sidebar-group-toggle .chevron{
-  width:14px;height:14px;flex:0 0 14px;
-  margin-left:auto;
-  color:var(--faint);
-  transition:transform .15s ease,color .12s
-}
-.sidebar-group-toggle[aria-expanded="true"] .chevron{transform:rotate(90deg)}
-.sidebar-group-toggle:hover{background:var(--hover);color:var(--text-2)}
-.sidebar-group-toggle:hover .chevron{color:var(--muted)}
-.sidebar-group-toggle:focus{outline:none}
-.sidebar-group-toggle:focus-visible{box-shadow:0 0 0 2px var(--primary-ring)}
-.sidebar-group-toggle:has(+.sidebar-group-items .sidebar-link.active){color:var(--text-2)}
-.sidebar-group-items{display:flex;flex-direction:column;gap:1px;padding:1px 0 2px}
-
-/* Icon-only sidebar: groups render as a divider + icons, items always visible. */
-body.sidebar-collapsed .sidebar-group-toggle{justify-content:center;padding:0;border-top:1px solid var(--line-soft);border-radius:0}
-body.sidebar-collapsed .sidebar-group-toggle>span,
-body.sidebar-collapsed .sidebar-group-toggle .chevron{display:none}
-body.sidebar-collapsed .sidebar-group-items[hidden]{display:flex!important}
-@media(max-width:900px){
-  .sidebar-group-toggle{justify-content:center;padding:0;border-top:1px solid var(--line-soft);border-radius:0}
-  .sidebar-group-toggle>span,.sidebar-group-toggle .chevron{display:none}
-  .sidebar-group-items[hidden]{display:flex!important}
-}
-
-/* =====================================================================
    Accessibility & interaction baseline
    (contrast, focus, targets, feedback — shared by every screen)
    ===================================================================== */
@@ -2580,7 +2523,6 @@ button,a,summary,label,[role="button"],.candidate-card{touch-action:manipulation
   .icon-btn-sm,.admin-table td .icon-btn,.data-table td .icon-btn,.answer-chip .icon-btn{width:36px;height:36px}
   .button-small{height:36px}
   .nav-button,.sidebar-link,.tab{min-height:44px;height:auto}
-  .sidebar-group-toggle{height:40px}
   .transition-pill,.suggestion-chip,.vacancy-stat-chip,.status-action,.stage-check{min-height:36px}
   .segmented{height:44px}
   .icon-btn-group,.cell-actions,.card-actions,.row-actions,.header-actions{gap:6px}
@@ -2703,9 +2645,6 @@ th.sortable:focus-visible{outline:2px solid var(--primary-ring);outline-offset:-
     box-shadow:0 -4px 16px -8px rgba(15,23,42,.18)
   }
   .sidebar-nav{flex-direction:row;align-items:stretch;gap:0;padding:4px 4px 2px;overflow:visible}
-  .sidebar-group{display:contents}
-  .sidebar-group-toggle{display:none!important}
-  .sidebar-group-items,.sidebar-group-items[hidden]{display:contents!important}
   .sidebar-toggle{display:none}
   .sidebar-link,.sidebar-sublink{
     flex:1 1 0;min-width:0;height:56px;min-height:56px;padding:4px 2px;
@@ -2881,6 +2820,14 @@ th.sortable:focus-visible{outline:2px solid var(--primary-ring);outline-offset:-
 .stage-row select{min-width:0;width:100%}
 .stage-required{white-space:nowrap;font-size:13px}
 .stage-required:has(input:disabled){opacity:.5}
+.stage-required-cell{display:inline-flex;align-items:center;gap:6px}
+.stage-required-warn{display:inline-flex;color:var(--warning)}
+.stage-required-warn[hidden]{display:none}
+.stage-row-note{
+  grid-column:1/-1;padding:4px 8px;border-radius:var(--radius);
+  background:var(--warning-tint);color:var(--text-2);font-size:12px;line-height:1.4
+}
+.stage-row-note[hidden]{display:none}
 @media (max-width:640px){
   .stage-row{grid-template-columns:minmax(0,1fr) auto}
   .stage-row select{grid-column:1/-1;grid-row:2}

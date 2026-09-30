@@ -80,19 +80,13 @@ button.home-bar-row:focus-visible{outline:none;box-shadow:var(--focus-ring)}
 .home-done{display:flex;align-items:center;gap:8px;padding:16px;color:var(--muted);font-size:13px}
 .home-done .icon{color:var(--success)}
 
-/* Вакансии: кандидаты по этапам, ячейка открывает доску */
+/* Вакансии: кандидаты по этапам; действия — явными кнопками в конце строки */
 .home-vacancy-name{display:flex;align-items:center;gap:8px;min-width:0}
-.home-vacancy-name button{min-width:0;max-width:320px;padding:0;border:0;background:none;color:var(--text);font:inherit;font-weight:600;text-align:left;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.home-vacancy-name button:hover{color:var(--primary)}
-.home-vacancy-name button:focus-visible{outline:none;box-shadow:var(--focus-ring);border-radius:4px}
-.home-stage-cell{
-  min-width:32px;height:26px;padding:0 6px;border:0;border-radius:var(--radius);background:transparent;
-  color:var(--text);font:inherit;font-weight:600;font-variant-numeric:tabular-nums;cursor:pointer
-}
-.home-stage-cell:hover{background:var(--primary-tint);color:var(--primary)}
-.home-stage-cell:focus-visible{outline:none;box-shadow:var(--focus-ring)}
-.home-stage-cell.is-zero{color:var(--text-3);font-weight:400}
-.home-table td.num:has(>.home-stage-cell){padding:3px 2px}
+.home-vacancy-name strong{min-width:0;max-width:320px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home-stage-count{font-weight:600}
+.home-stage-count.is-zero{color:var(--text-3);font-weight:400}
+.home-row-actions{display:flex;justify-content:flex-end;gap:2px}
+.home-table td.home-actions-cell{width:1%;padding-top:3px;padding-bottom:3px;white-space:nowrap}
 .home-fresh{color:var(--success);font-weight:600}
 
 /* Лента событий */
@@ -324,6 +318,7 @@ function homeOpenForm(route,fnName){
 
 function homeOpenVacancy(id){
   if(!homeReferencesReady())return;
+  // Форма откроется поверх раздела «Вакансии»; этапы вакансии editVacancy догрузит сама.
   homeAfterRoute('vacancies',()=>{if(typeof editVacancy==='function')editVacancy(id)});
 }
 
@@ -449,7 +444,7 @@ function homeBodyHtml(data){
       '<div class="home-side">'+side+'</div>'+
     '</div>'+
     (team?homeCard('Вакансии','',homeVacanciesHtml(data),{
-      sub:'Кандидаты в работе по этапам. Нажмите на число, чтобы открыть их на доске.',
+      sub:'Кандидаты в работе по этапам',
       actions:'<button type="button" class="icon-btn icon-btn-sm" data-tip="Новая вакансия" aria-label="Новая вакансия" onclick="homeOpenForm(\'vacancies\',\'resetVacancyForm\')">'+icon('plus','icon-sm')+'</button>',
       link:["navigateTo('vacancies')",'Все вакансии'],
       flush:true
@@ -489,20 +484,24 @@ function homeVacanciesHtml(data){
   const stages=getStatuses();
   const head=stages.map(stage=>'<th class="num" data-tip="'+escapeHtml(stage)+'">'+escapeHtml(HOME_STAGE_SHORT[stage]||stage)+'</th>').join('');
   return '<div class="table-scroll"><table class="home-table"><thead><tr>'+
-    '<th>Вакансия</th>'+head+'<th class="num" data-tip="Новых кандидатов за '+data.freshDays+' дн.">За '+data.freshDays+' дн.</th><th class="num" data-tip="Дней с открытия вакансии">Открыта</th>'+
+    '<th>Вакансия</th>'+head+'<th class="num" data-tip="Новых кандидатов за '+data.freshDays+' дн.">За '+data.freshDays+' дн.</th><th class="num" data-tip="Дней с открытия вакансии">Дней</th><th><span class="sr-only">Действия</span></th>'+
     '</tr></thead><tbody>'+
     items.map(item=>{
+      const title='№'+item.number+' · '+item.name;
       const cells=stages.map(stage=>{
         const count=(item.stages||{})[stage]||0;
-        return '<td class="num"><button type="button" class="home-stage-cell'+(count?'':' is-zero')+'" aria-label="'+escapeHtml(stage+': '+count+' — открыть на доске')+'" '+
-          'onclick="homeOpenBoard({vacancy:\''+escJs(item.id)+'\',status:\''+escJs(stage)+'\'})">'+(count||'—')+'</button></td>';
+        return '<td class="num"><span class="home-stage-count'+(count?'':' is-zero')+'">'+(count||'—')+'</span></td>';
       }).join('');
       return '<tr>'+
-        '<td><span class="home-vacancy-name"><button type="button" data-tip="Открыть кандидатов вакансии на доске" onclick="homeOpenBoard({vacancy:\''+escJs(item.id)+'\'})">№'+escapeHtml(item.number)+' · '+escapeHtml(item.name)+'</button>'+
+        '<td><span class="home-vacancy-name"><strong>'+escapeHtml(title)+'</strong>'+
           (item.status!=='Открыта'?vacancyStatusChip(item.status):'')+'</span></td>'+
         cells+
         '<td class="num">'+(item.fresh?'<span class="home-fresh">+'+item.fresh+'</span>':'<span class="muted">0</span>')+'</td>'+
-        '<td class="num">'+item.daysOpen+' дн.</td>'+
+        '<td class="num">'+item.daysOpen+'</td>'+
+        '<td class="home-actions-cell"><span class="home-row-actions">'+
+          '<button type="button" class="icon-btn icon-btn-sm" data-tip="Кандидаты вакансии на доске" aria-label="'+escapeHtml('Кандидаты вакансии '+title+' на доске')+'" onclick="homeOpenBoard({vacancy:\''+escJs(item.id)+'\'})">'+icon('kanban','icon-sm')+'</button>'+
+          '<button type="button" class="icon-btn icon-btn-sm" data-tip="Редактировать вакансию" aria-label="'+escapeHtml('Редактировать вакансию '+title)+'" onclick="homeOpenVacancy(\''+escJs(item.id)+'\')">'+icon('edit','icon-sm')+'</button>'+
+        '</span></td>'+
       '</tr>';
     }).join('')+
   '</tbody></table></div>';

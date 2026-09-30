@@ -10,6 +10,7 @@ import { toPublicError } from './lib/errors.js';
 import { rpcHandlers } from './rpc.js';
 import { handleEvents } from './services/realtime.js';
 import { authRouter, loadUser, requireUserApi, requireUserPage } from './routes/auth.js';
+import { docsRouter } from './routes/docs.js';
 import { filesRouter } from './routes/files.js';
 import { escapeJsString } from './routes/html.js';
 import { intakeRouter } from './routes/intake.js';
@@ -104,6 +105,8 @@ export function createApp() {
   router.use(authRouter());
   router.use(oauthRouter());
   router.use(filesRouter());
+  // Swagger UI и OpenAPI всего API — только для вошедших пользователей.
+  router.use(docsRouter());
 
   router.get('/api/events', requireUserApi, handleEvents);
 

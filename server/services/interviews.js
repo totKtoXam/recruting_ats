@@ -66,16 +66,25 @@ export async function getInterviewContext(input = {}) {
   const toStatus = clean(input.toStatus);
   assertTransitionAllowed(candidate, toStatus);
 
+  const regular = toStatus !== REJECTED && candidate.status !== REJECTED;
   return {
     candidate: await loadCandidateDto(candidate.id),
     fromStatus: candidate.status,
     toStatus,
     // Шаблон вопросов относится к этапу, НА который переводят кандидата.
-    templates:
-      toStatus === REJECTED || candidate.status === REJECTED
-        ? []
-        : await getTemplatesFor(candidate.vacancy_id, toStatus)
+    templates: regular ? await getTemplatesFor(candidate.vacancy_id, toStatus) : [],
+    // Обязательный этап: без итога (result) переход не сохранится.
+    resultRequired: regular && (await isStageRequired(db, candidate.vacancy_id, toStatus))
   };
+}
+
+// Обязательный этап вакансии: при переходе на него нужен итог, а с шаблоном — ещё и ответы.
+export async function isStageRequired(executor, vacancyId, stage) {
+  const row = await executor.one('SELECT $2 = ANY(required_stages) AS required FROM vacancies WHERE id = $1', [
+    vacancyId,
+    stage
+  ]);
+  return Boolean(row && row.required);
 }
 
 // Ответ — форматированный текст (HTML после очистки). Пропущенный вопрос (skipped: true) —
@@ -142,8 +151,8 @@ async function saveStageInterview(tx, candidate, fromStatus, toStatus, input, re
 
   const result = richFromInput(input.result);
 
-  if (!result) {
-    fail('Укажите результат интервью/этапа.');
+  if (!result && (await isStageRequired(tx, candidate.vacancy_id, toStatus))) {
+    fail(`Этап «${toStatus}» обязательный — укажите результат интервью/этапа.`);
   }
 
   const saved = await tx.one(
@@ -378,12 +387,17 @@ export async function updateInterview(input, actor) {
 
   const result = richFromInput(input.result);
 
-  if (!result) {
-    fail('Укажите результат интервью/этапа.');
-  }
-
   await transaction(async tx => {
     const before = await tx.one('SELECT * FROM interviews WHERE id = $1 AND deleted_at IS NULL FOR UPDATE', [id]);
+
+    if (!before) {
+      fail('Результат интервью не найден.', 404);
+    }
+
+    if (!result && (await isStageRequired(tx, before.vacancy_id, before.to_status))) {
+      fail(`Этап «${before.to_status}» обязательный — укажите результат интервью/этапа.`);
+    }
+
     const saved = await tx.one(
       `UPDATE interviews
        SET answers = COALESCE($2::jsonb, answers), result = $3, updated_at = now()
