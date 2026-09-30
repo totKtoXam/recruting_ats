@@ -42,7 +42,7 @@ img.avatar-lg{border-radius:50%;object-fit:cover}
 .profile-page{display:flex;flex-direction:column;gap:16px;padding:16px var(--page-pad) var(--page-pad);max-width:1280px}
 .profile-page .admin-list-card{border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface);box-shadow:var(--shadow);overflow:hidden}
 .profile-page .admin-list-card>.section-title-row{position:static;margin:0;padding:12px 16px;min-height:52px}
-#profileAccount,#profileTheme,#profileMcp,#profileAiGuide,#notifyChannels{padding:16px}
+#profileAccount,#profileTheme,#profileMcp,#profileAiGuide{padding:16px}
 .profile-wide{grid-column:1/-1}
 .profile-notify,.profile-ai{display:flex;flex-direction:column;gap:16px}
 .profile-notify[hidden],.profile-ai[hidden]{display:none}
@@ -214,9 +214,11 @@ window.addEventListener('hashchange',()=>{if(profileMenuOpen)toggleProfileMenu(f
 
 // Вкладки профиля. Журнал и настройки уведомлений — одна вкладка: #/profile/log открывает её
 // на журнале, #/profile/notifications — на настройках.
+// Вкладки профиля. «Уведомления» — журнал; #/profile/log открывает его, #/profile/notifications —
+// журнал и поверх него боковую панель настроек.
 const PROFILE_TABS={
   '':{title:'Профиль'},
-  notifications:{title:'Уведомления',pane:'notifications',anchor:'notifyTabSettings'},
+  notifications:{title:'Уведомления',pane:'notifications',settings:true},
   log:{title:'Уведомления',pane:'notifications'},
   ai:{title:'ИИ-ассистенты'}
 };
@@ -229,16 +231,26 @@ function showProfile(tab){
   el('profileTabNotify').hidden=pane!=='notifications';
   el('profileTabAi').hidden=pane!=='ai';
   if(pane==='')renderProfileMain();
-  if(pane==='notifications'){
-    loadServerTable('notificationLog');
-    // К настройкам прокручиваем, когда они отрисованы: иначе фокус на заголовке раздела вернёт страницу наверх.
-    const anchor=PROFILE_TABS[tab].anchor;
-    loadNotificationSettings().then(()=>{
-      if(anchor&&getRoute().tab===tab)el(anchor).scrollIntoView({block:'start',behavior:'smooth'});
-    });
-  }
+  if(pane==='notifications')loadServerTable('notificationLog');
+  if(PROFILE_TABS[tab].settings)openNotifySettings();
+  else if(Drawer.isOpen('notifySettingsDrawer'))Drawer.close('notifySettingsDrawer');
   if(pane==='ai')renderProfileAi();
 }
+
+function openNotifySettings(){
+  if(!Drawer.isOpen('notifySettingsDrawer')){
+    Drawer.open('notifySettingsDrawer',{
+      // Закрыли панель — адрес возвращается к журналу (без повторного перехода по маршруту).
+      onClose:()=>{if(getRoute().tab==='notifications')history.replaceState(null,'','#/profile/log')}
+    });
+  }
+  loadNotificationSettings();
+}
+
+// Ушли со страницы профиля с открытой панелью — закрываем её.
+window.addEventListener('hashchange',()=>{
+  if(getRoute().page!=='profile'&&Drawer.isOpen('notifySettingsDrawer'))Drawer.close('notifySettingsDrawer');
+});
 
 function renderProfileTheme(){
   const current=window.ThemeManager?ThemeManager.get():'system';
