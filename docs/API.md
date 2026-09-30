@@ -268,7 +268,7 @@ curl -sS -X POST --data-binary @cv.pdf -H "Content-Type: application/octet-strea
 
 ### Плагин Claude Code
 
-`plugins/recruiting-ats` — плагин с MCP-сервером, скиллом `recruiting-ats` (правила, превью форм перед записью, сценарии) и командами (`/recruiting-ats:candidate`, `:resume`, `:move`, `:reject`, `:comment`, `:pipeline`, `:today`, `:report`, `:form-mode`). Маркетплейс — `.claude-plugin/marketplace.json` в корне репозитория. Адрес сервера по умолчанию — `https://portal.devexpert.kz/hr-ats/mcp`, другой задаётся переменной окружения `ATS_MCP_URL` до запуска Claude Code.
+`plugins/recruiting-ats` — плагин с MCP-сервером, скиллом `recruiting-ats` (правила, превью форм перед записью, сценарии) и командами (`/recruiting-ats:candidate`, `:resume`, `:move`, `:reject`, `:comment`, `:pipeline`, `:today`, `:report`, `:form-mode`, `:interview-kit`, `:screen`, `:tech-interview`, `:debrief`), а также скиллами собеседований: `interview-design` (шаблоны вопросов по этапам со шкалой оценки), `hr-screening`, `tech-interview-dotnet`, `interview-debrief` (методика — по открытым материалам, см. `plugins/recruiting-ats/NOTICE.md`). Маркетплейс — `.claude-plugin/marketplace.json` в корне репозитория. Адрес сервера по умолчанию — `https://portal.devexpert.kz/hr-ats/mcp`, другой задаётся переменной окружения `ATS_MCP_URL` до запуска Claude Code.
 
 ```text
 /plugin marketplace add totKtoXam/recruting_ats

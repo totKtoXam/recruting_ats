@@ -671,7 +671,7 @@ npm run cleanup-drafts
 
 `{PUBLIC_URL}/mcp` — MCP-сервер, через который Claude (Claude Code, Claude Desktop) ищет кандидатов, читает резюме, заводит черновики, переводит по этапам, комментирует и строит отчёты — от имени пользователя и с его правами. Подключение — кнопкой «Connect» / «Authenticate» в клиенте: открывается вход в ATS и страница «Разрешить доступ» (OAuth 2.1 + PKCE, без ключей в конфиге). Подключения видны и отключаются в «Профиль → Claude и AI-ассистенты».
 
-Плагин Claude Code — `plugins/recruiting-ats` (MCP-сервер, скилл с правилами превью и подтверждения, команды `/recruiting-ats:*`):
+Плагин Claude Code — `plugins/recruiting-ats` (MCP-сервер, скилл с правилами превью и подтверждения, скиллы собеседований — шаблоны вопросов по этапам, HR-скрининг, техническое интервью .NET, оформление результатов — и команды `/recruiting-ats:*`):
 
 ```text
 /plugin marketplace add totKtoXam/recruting_ats

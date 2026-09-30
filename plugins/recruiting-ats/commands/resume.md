@@ -1,6 +1,6 @@
 ---
 description: Разобрать резюме и завести кандидата в ATS (по умолчанию — черновик для проверки)
-argument-hint: <путь к файлу PDF/DOC/DOCX> [вакансия] [источник]
+argument-hint: "<путь к файлу PDF/DOC/DOCX> [вакансия] [источник]"
 ---
 
 Используй скилл `recruiting-ats` и сценарий «Резюме → кандидат» из его references/workflows.md.

@@ -1,6 +1,6 @@
 ---
 description: Как показывать формы перед изменениями в ATS — в чате или превью
-argument-hint: chat | preview | auto
+argument-hint: "chat | preview | auto"
 ---
 
 Пользователь выбрал режим показа форм перед записью в ATS: `$ARGUMENTS`.
