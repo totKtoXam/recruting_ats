@@ -653,7 +653,7 @@ export function buildOpenApiSpec() {
           description: 'Тот же ключ в query — для клиентов без заголовков (попадает в логи прокси).'
         },
         mcpBearer: { type: 'http', scheme: 'bearer', description: 'OAuth access-токен MCP или личный токен `atsp_…`.' },
-        mcpPersonalToken: { type: 'apiKey', in: 'header', name: 'X-ATS-Token', description: 'Личный токен из «Профиль → Claude и AI-ассистенты».' }
+        mcpPersonalToken: { type: 'apiKey', in: 'header', name: 'X-ATS-Token', description: 'Личный токен из «Профиль → ИИ-ассистенты».' }
       }
     }
   };

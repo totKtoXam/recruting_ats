@@ -931,6 +931,32 @@ export default {
     }
   },
 
+  renameMcpToken: {
+    tag: 'Интеграции профиля',
+    summary: 'Переименовать личный токен',
+    description:
+      'Меняет название своего действующего личного токена (сам токен, срок и доступ не меняются). ' +
+      'Название обрезается до 80 символов; пустое — 400 «Введите название токена.». ' +
+      'Некорректный ID — 400; чужой, отозванный, истёкший или несуществующий токен — 404 «Токен не найден.».',
+    args: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', format: 'uuid', description: 'ID токена из listMcpConnections.tokens' },
+        name: { type: 'string', maxLength: 80, description: 'Новое название' }
+      },
+      required: ['id', 'name']
+    },
+    example: { id: '00000000-0000-4000-8000-000000000004', name: 'Claude Code, ноутбук' },
+    result: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', format: 'uuid' },
+        name: { type: 'string', description: 'Сохранённое название (после обрезки пробелов и длины).' }
+      },
+      required: ['id', 'name']
+    }
+  },
+
   revokeMcpToken: {
     tag: 'Интеграции профиля',
     summary: 'Отозвать личный токен',

@@ -124,6 +124,7 @@ export const rpcHandlers = {
   listMcpConnections: (input, { user }) => oauth.listConnections(input, user),
   revokeMcpConnection: (id, { user }) => oauth.revokeConnection(id, user),
   createMcpToken: (input, { user }) => oauth.createPersonalToken(input, user),
+  renameMcpToken: (input, { user }) => oauth.renamePersonalToken(input, user),
   revokeMcpToken: (id, { user }) => oauth.revokePersonalToken(id, user),
   // «Настройки → Для разработчиков»: версия, ссылки, MCP, Intake; состояние интеграций — администраторам.
   getDeveloperInfo: (input, { user }) => developer.getDeveloperInfo(input, user),

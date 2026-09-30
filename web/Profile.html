@@ -82,6 +82,9 @@ img.avatar-lg{border-radius:50%;object-fit:cover}
 .mcp-connection-name{font-weight:600}
 .mcp-section-title{margin:18px 0 4px;font-size:14px;font-weight:600}
 .mcp-prefix{font-size:12px;font-weight:400;color:var(--muted)}
+.mcp-connection .text-btn+.text-btn{margin-left:4px}
+.mcp-rename-form{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-weight:400}
+.mcp-rename-form input{flex:1 1 200px;min-width:0}
 .mcp-token-form{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
 .mcp-token-form input{flex:1 1 220px;min-width:0}
 .mcp-token-form .ui-select{flex:0 0 140px;width:140px}
@@ -251,6 +254,9 @@ function renderProfileTheme(){
 const mcpServerUrl=()=>location.origin+(window.__BASE_PATH__||'')+'/mcp';
 let mcpLoading=false;
 let mcpNewToken=null;
+let mcpData={connections:[],tokens:[]};
+// ID токена, название которого редактируется прямо в списке.
+let mcpRenamingId=null;
 
 async function loadMcpConnections(){
   const box=el('profileMcp');
@@ -259,7 +265,8 @@ async function loadMcpConnections(){
   if(!box.innerHTML)box.innerHTML='<div class="skeleton" style="height:96px"></div>';
   try{
     const data=await rpc('listMcpConnections');
-    renderMcpConnections(data.connections||[],data.tokens||[]);
+    mcpData={connections:data.connections||[],tokens:data.tokens||[]};
+    renderMcpConnections(mcpData.connections,mcpData.tokens);
   }catch(error){
     box.innerHTML='<div class="empty-state compact">'+escapeHtml(error.message)+'</div>';
   }finally{
@@ -276,11 +283,24 @@ function renderMcpConnections(connections,tokens){
   const used=item=>item.lastUsedAt?' · последнее использование '+escapeHtml(fmtDate(item.lastUsedAt)):' · ещё не использовался';
 
   const tokenList=tokens.length
-    ?'<div class="mcp-connections">'+tokens.map(item=>mcpRow('key',
-        escapeHtml(item.name)+' <code class="mcp-prefix">'+escapeHtml(item.prefix)+'…</code>',
-        'Создан '+escapeHtml(fmtDate(item.createdAt))+used(item)+
-          (item.expiresAt?' · действует до '+escapeHtml(fmtDate(item.expiresAt)):' · без срока'),
-        '<button type="button" class="text-btn" onclick="revokeMcpToken(\''+escapeHtml(item.id)+'\')">Отключить</button>')).join('')+'</div>'
+    ?'<div class="mcp-connections">'+tokens.map(item=>{
+        const id=escapeHtml(item.id);
+        const renaming=item.id===mcpRenamingId;
+        const title=renaming
+          ?'<form class="mcp-rename-form" onsubmit="saveMcpTokenName(event,\''+id+'\')">'+
+              '<input id="mcpRenameInput" maxlength="80" value="'+escapeHtml(item.name)+'" aria-label="Новое название токена" onkeydown="if(event.key===\'Escape\'){event.preventDefault();cancelMcpRename()}">'+
+              '<button type="submit" class="button button-primary button-small">Сохранить</button>'+
+              '<button type="button" class="button button-secondary button-small" onclick="cancelMcpRename()">Отмена</button>'+
+            '</form>'
+          :escapeHtml(item.name)+' <code class="mcp-prefix">'+escapeHtml(item.prefix)+'…</code>';
+        const actions=renaming?'':
+          '<button type="button" class="text-btn" onclick="startMcpRename(\''+id+'\')">Переименовать</button>'+
+          '<button type="button" class="text-btn" onclick="revokeMcpToken(\''+id+'\')">Отключить</button>';
+        return mcpRow('key',title,
+          'Создан '+escapeHtml(fmtDate(item.createdAt))+used(item)+
+            (item.expiresAt?' · действует до '+escapeHtml(fmtDate(item.expiresAt)):' · без срока'),
+          actions);
+      }).join('')+'</div>'
     :'<div class="empty-state compact">Личных токенов нет.</div>';
 
   const connectionList=connections.length
@@ -400,6 +420,37 @@ async function copyMcpText(id){
     showToast('Скопировано.');
   }catch{
     showToast('Не удалось скопировать.','error');
+  }
+}
+
+function startMcpRename(id){
+  mcpRenamingId=id;
+  renderMcpConnections(mcpData.connections,mcpData.tokens);
+  const input=el('mcpRenameInput');
+  if(input){input.focus();input.select()}
+}
+
+function cancelMcpRename(){
+  mcpRenamingId=null;
+  renderMcpConnections(mcpData.connections,mcpData.tokens);
+}
+
+async function saveMcpTokenName(event,id){
+  event.preventDefault();
+  const name=el('mcpRenameInput').value.trim();
+  if(!name){showToast('Введите название токена.','error');el('mcpRenameInput').focus();return}
+  const buttons=event.target.querySelectorAll('button');
+  buttons.forEach(button=>button.disabled=true);
+  try{
+    const result=await rpc('renameMcpToken',{id,name});
+    const token=mcpData.tokens.find(item=>item.id===id);
+    if(token)token.name=result.name;
+    mcpRenamingId=null;
+    renderMcpConnections(mcpData.connections,mcpData.tokens);
+    showToast('Название сохранено.');
+  }catch(error){
+    buttons.forEach(button=>button.disabled=false);
+    showToast(error.message,'error');
   }
 }
 

@@ -343,6 +343,25 @@ export async function revokePersonalToken(id, user) {
   return { ok: true };
 }
 
+// Название помогает отличать токены (ноутбук, CI…); сам токен и срок не меняются.
+export async function renamePersonalToken(input, user) {
+  const id = input && input.id;
+  const name = clean(input && input.name).slice(0, 80);
+
+  if (!isUuid(id)) fail('Некорректный идентификатор.');
+  if (!name) fail('Введите название токена.');
+
+  const result = await db.query(
+    `UPDATE mcp_personal_tokens SET name = $3
+     WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())`,
+    [id, user.id, name]
+  );
+
+  if (!result.rowCount) fail('Токен не найден.', 404);
+
+  return { id, name };
+}
+
 // ---------- Подключения пользователя (профиль) ----------
 
 export async function listConnections(_input, user) {
