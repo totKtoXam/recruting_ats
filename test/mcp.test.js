@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { handleMessage } from '../server/routes/mcp.js';
 import { mcpTools } from '../server/mcp/tools.js';
-import { isAllowedRedirectUri } from '../server/services/oauth.js';
+import { isAllowedRedirectUri, isPersonalToken } from '../server/services/oauth.js';
 
 test('isAllowedRedirectUri accepts https and loopback, rejects others', () => {
   for (const uri of [
@@ -72,4 +72,11 @@ test('openid-configuration carries the fields OpenID discovery requires', async 
     assert.ok(Array.isArray(metadata[key]) && metadata[key].length, key);
   }
   assert.ok(metadata.code_challenge_methods_supported.includes('S256'));
+});
+
+test('personal tokens are recognised by prefix, OAuth tokens are not', () => {
+  assert.equal(isPersonalToken('atsp_abc'), true);
+  for (const token of ['atsa_abc', 'atsr_abc', '', undefined, null, 'Bearer atsp_abc']) {
+    assert.equal(isPersonalToken(token), false, String(token));
+  }
 });

@@ -2,7 +2,10 @@
   "mcpServers": {
     "recruiting-ats": {
       "type": "http",
-      "url": "${ATS_MCP_URL:-https://portal.devexpert.kz/hr-ats/mcp}"
+      "url": "${ATS_MCP_URL:-https://portal.devexpert.kz/hr-ats/mcp}",
+      "headers": {
+        "X-ATS-Token": "${ATS_MCP_TOKEN:-}"
+      }
     }
   }
 }

@@ -6,7 +6,7 @@ import { config } from '../config.js';
 import { toPublicError } from '../lib/errors.js';
 import { MCP_INSTRUCTIONS, mcpTools } from '../mcp/tools.js';
 import { uploadsRouter } from '../mcp/uploads.js';
-import { authenticateAccessToken } from '../services/oauth.js';
+import { authenticateAccessToken, authenticatePersonalToken, isPersonalToken } from '../services/oauth.js';
 import { allowAnyOrigin, protectedResourceMetadataUrl } from './oauth.js';
 
 const SUPPORTED_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
@@ -139,14 +139,21 @@ function unauthorized(res, description) {
 
 async function requireBearer(req, res, next) {
   try {
-    const header = req.get('authorization') || '';
-    const match = /^Bearer\s+(.+)$/i.exec(header);
+    // Личный токен из профиля приходит в X-ATS-Token (плагин Claude Code: заголовок Authorization
+    // в конфиге отключил бы запасной вход через OAuth) или как Bearer; иначе — access-токен OAuth.
+    const personal = String(req.get('x-ats-token') || '').trim();
+    const match = /^Bearer\s+(.+)$/i.exec(req.get('authorization') || '');
+    const bearer = match ? match[1].trim() : '';
 
-    if (!match) {
+    if (!personal && !bearer) {
       return unauthorized(res, 'Authorization required');
     }
 
-    const auth = await authenticateAccessToken(match[1].trim());
+    const auth = personal
+      ? (await authenticatePersonalToken(personal)) || (bearer ? await authenticateAccessToken(bearer) : null)
+      : isPersonalToken(bearer)
+        ? await authenticatePersonalToken(bearer)
+        : await authenticateAccessToken(bearer);
 
     if (!auth) {
       return unauthorized(res, 'Invalid or expired token');

@@ -115,6 +115,8 @@ export const rpcHandlers = {
   // Подключённые MCP-клиенты (Claude и др.): список и отключение в профиле.
   listMcpConnections: (input, { user }) => oauth.listConnections(input, user),
   revokeMcpConnection: (id, { user }) => oauth.revokeConnection(id, user),
+  createMcpToken: (input, { user }) => oauth.createPersonalToken(input, user),
+  revokeMcpToken: (id, { user }) => oauth.revokePersonalToken(id, user),
   createTelegramLink: (input, { user }) => telegram.createTelegramLink(input, user),
   unlinkTelegram: (input, { user }) => telegram.unlinkTelegram(input, user),
 

@@ -51,6 +51,15 @@ img.avatar-lg{border-radius:50%;object-fit:cover}
 .mcp-connection+.mcp-connection{border-top:1px solid var(--line-soft)}
 .mcp-connection>div{flex:1;min-width:0}
 .mcp-connection-name{font-weight:600}
+.mcp-section-title{margin:18px 0 4px;font-size:14px;font-weight:600}
+.mcp-prefix{font-size:12px;font-weight:400;color:var(--muted)}
+.mcp-token-form{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.mcp-token-form input{flex:1 1 220px;min-width:0}
+.mcp-token-form .ui-select{flex:0 0 140px;width:140px}
+.mcp-token-form>.button{flex:0 0 auto}
+.mcp-new-token{margin:10px 0;padding:12px;border:1px solid var(--primary);border-radius:var(--radius);background:var(--primary-tint)}
+.mcp-new-token pre{margin:6px 0 10px;padding:8px 10px;border-radius:var(--radius);background:var(--surface-3);font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+.mcp-new-token .mcp-url-row{margin:8px 0}
 #notifyTabLog{min-height:360px}
 .profile-tabs{align-self:flex-start}
 .profile-tabs .icon{vertical-align:-2px;margin-right:4px}
@@ -196,10 +205,12 @@ function renderProfileTheme(){
 }
 
 // ---------- Подключения MCP (Claude и другие AI-ассистенты) ----------
-// Клиент подключается кнопкой «Connect»/«Authenticate»: вход в ATS -> согласие -> OAuth-токен.
+// Два способа: кнопка «Connect»/«Authenticate» в клиенте (OAuth: вход в ATS -> согласие)
+// или личный токен из этого блока — клиент передаёт его в заголовке Authorization.
 
 const mcpServerUrl=()=>location.origin+(window.__BASE_PATH__||'')+'/mcp';
 let mcpLoading=false;
+let mcpNewToken=null;
 
 async function loadMcpConnections(){
   const box=el('profileMcp');
@@ -207,8 +218,8 @@ async function loadMcpConnections(){
   mcpLoading=true;
   if(!box.innerHTML)box.innerHTML='<div class="skeleton" style="height:96px"></div>';
   try{
-    const {connections}=await rpc('listMcpConnections');
-    renderMcpConnections(connections);
+    const data=await rpc('listMcpConnections');
+    renderMcpConnections(data.connections||[],data.tokens||[]);
   }catch(error){
     box.innerHTML='<div class="empty-state compact">'+escapeHtml(error.message)+'</div>';
   }finally{
@@ -216,22 +227,105 @@ async function loadMcpConnections(){
   }
 }
 
-function renderMcpConnections(connections){
-  const list=connections.length
-    ?'<div class="mcp-connections">'+connections.map(item=>
-      '<div class="mcp-connection">'+icon('link')+
-        '<div><div class="mcp-connection-name">'+escapeHtml(item.clientName)+'</div>'+
-        '<div class="muted">Подключено '+escapeHtml(fmtDate(item.createdAt))+
-          (item.lastUsedAt?' · последнее использование '+escapeHtml(fmtDate(item.lastUsedAt)):'')+'</div></div>'+
-        '<button type="button" class="text-btn" onclick="revokeMcpConnection(\''+escapeHtml(item.id)+'\')">Отключить</button>'+
-      '</div>').join('')+'</div>'
-    :'<div class="empty-state compact">Нет подключённых приложений.</div>';
+function mcpRow(iconName,title,meta,action){
+  return '<div class="mcp-connection">'+icon(iconName)+
+    '<div><div class="mcp-connection-name">'+title+'</div><div class="muted">'+meta+'</div></div>'+action+'</div>';
+}
+
+function renderMcpConnections(connections,tokens){
+  const used=item=>item.lastUsedAt?' · последнее использование '+escapeHtml(fmtDate(item.lastUsedAt)):' · ещё не использовался';
+
+  const tokenList=tokens.length
+    ?'<div class="mcp-connections">'+tokens.map(item=>mcpRow('key',
+        escapeHtml(item.name)+' <code class="mcp-prefix">'+escapeHtml(item.prefix)+'…</code>',
+        'Создан '+escapeHtml(fmtDate(item.createdAt))+used(item)+
+          (item.expiresAt?' · действует до '+escapeHtml(fmtDate(item.expiresAt)):' · без срока'),
+        '<button type="button" class="text-btn" onclick="revokeMcpToken(\''+escapeHtml(item.id)+'\')">Отключить</button>')).join('')+'</div>'
+    :'<div class="empty-state compact">Личных токенов нет.</div>';
+
+  const connectionList=connections.length
+    ?'<div class="mcp-connections">'+connections.map(item=>mcpRow('link',
+        escapeHtml(item.clientName),
+        'Подключено '+escapeHtml(fmtDate(item.createdAt))+(item.lastUsedAt?' · последнее использование '+escapeHtml(fmtDate(item.lastUsedAt)):''),
+        '<button type="button" class="text-btn" onclick="revokeMcpConnection(\''+escapeHtml(item.id)+'\')">Отключить</button>')).join('')+'</div>'
+    :'<div class="empty-state compact">Нет подключений через «Connect».</div>';
 
   el('profileMcp').innerHTML=
-    '<div class="muted">Claude (Claude Code, Claude Desktop) работает с ATS от вашего имени через MCP-сервер. Добавьте адрес в клиент и нажмите «Connect» / «Authenticate» — откроется вход в ATS и запрос доступа.</div>'+
+    '<div class="muted">Claude (Claude Code, Claude Desktop) работает с ATS от вашего имени через MCP-сервер: с вашими правами, все изменения пишутся в журнал под вашим именем.</div>'+
     '<div class="mcp-url-row"><code>'+escapeHtml(mcpServerUrl())+'</code>'+
       '<button type="button" class="text-btn" onclick="copyMcpUrl()">'+icon('copy','icon-sm')+' Копировать</button></div>'+
-    list;
+
+    '<h4 class="mcp-section-title">Личные токены</h4>'+
+    '<div class="muted">Токен для плагина Claude Code «recruiting-ats» или любого MCP-клиента. Никому не передавайте его: с ним можно работать в ATS от вашего имени.</div>'+
+    (mcpNewToken?mcpNewTokenHtml(mcpNewToken):'')+
+    '<form class="mcp-token-form" onsubmit="createMcpToken(event)">'+
+      '<input id="mcpTokenName" maxlength="80" placeholder="Название, например «Claude Code, ноутбук»" aria-label="Название токена">'+
+      '<select id="mcpTokenTtl" aria-label="Срок действия">'+
+        '<option value="30">30 дней</option><option value="90" selected>90 дней</option><option value="365">1 год</option><option value="0">Без срока</option>'+
+      '</select>'+
+      '<button type="submit" class="button button-primary button-small">'+icon('plus','icon-sm')+'<span>Создать токен</span></button>'+
+    '</form>'+
+    tokenList+
+
+    '<h4 class="mcp-section-title">Подключения через «Connect»</h4>'+
+    connectionList;
+}
+
+// Токен показывается один раз, сразу после создания.
+function mcpNewTokenHtml(token){
+  const settings='"env": {\n  "ATS_MCP_TOKEN": "'+token+'"\n}';
+  const cli='claude mcp add --transport http recruiting-ats '+mcpServerUrl()+' --header "X-ATS-Token: '+token+'"';
+  return '<div class="mcp-new-token">'+
+    '<div class="mcp-connection-name">Токен создан — скопируйте его сейчас, повторно он не показывается</div>'+
+    '<div class="mcp-url-row"><code id="mcpNewTokenValue">'+escapeHtml(token)+'</code>'+
+      '<button type="button" class="text-btn" onclick="copyMcpText(\'mcpNewTokenValue\')">'+icon('copy','icon-sm')+' Копировать</button></div>'+
+    '<div class="muted">Плагин Claude Code «recruiting-ats»: добавьте в <code>~/.claude/settings.json</code> и откройте новую сессию Claude:</div>'+
+    '<pre>'+escapeHtml(settings)+'</pre>'+
+    '<div class="muted">Без плагина — команда в терминале:</div>'+
+    '<pre>'+escapeHtml(cli)+'</pre>'+
+    '<div class="channel-card-actions"><button type="button" class="text-btn" onclick="hideMcpNewToken()">Скопировал, скрыть</button></div>'+
+  '</div>';
+}
+
+async function createMcpToken(event){
+  event.preventDefault();
+  const button=event.target.querySelector('button[type=submit]');
+  button.disabled=true;
+  try{
+    const result=await rpc('createMcpToken',{name:el('mcpTokenName').value,expiresInDays:Number(el('mcpTokenTtl').value)});
+    mcpNewToken=result.token;
+    await loadMcpConnections();
+  }catch(error){
+    showToast(error.message,'error');
+  }finally{
+    button.disabled=false;
+  }
+}
+
+function hideMcpNewToken(){
+  mcpNewToken=null;
+  loadMcpConnections();
+}
+
+async function copyMcpText(id){
+  try{
+    await writeClipboardText(el(id).textContent);
+    showToast('Скопировано.');
+  }catch{
+    showToast('Не удалось скопировать.','error');
+  }
+}
+
+async function revokeMcpToken(id){
+  const ok=await showConfirm('Клиенты с этим токеном потеряют доступ к ATS.','Отключить токен?',{confirmLabel:'Отключить'});
+  if(!ok)return;
+  try{
+    await rpc('revokeMcpToken',id);
+    showToast('Токен отключён.');
+    loadMcpConnections();
+  }catch(error){
+    showToast(error.message,'error');
+  }
 }
 
 async function copyMcpUrl(){

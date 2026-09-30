@@ -271,6 +271,78 @@ export async function revokeToken(token) {
   );
 }
 
+// ---------- Личные токены ----------
+// Выпускаются в профиле и передаются клиентом в заголовке Authorization как есть.
+// Нужны, когда клиент не может пройти OAuth (например, прокси не пропускает /.well-known/*).
+
+const PERSONAL_TOKEN_PREFIX = 'atsp_';
+const MAX_PERSONAL_TOKENS = 10;
+const PERSONAL_TOKEN_TTL_DAYS = [30, 90, 365, 0];
+
+export const isPersonalToken = token => String(token || '').startsWith(PERSONAL_TOKEN_PREFIX);
+
+export async function createPersonalToken(input, user) {
+  const name = clean(input && input.name).slice(0, 80) || 'Claude';
+  const days = Number(input && input.expiresInDays);
+  const ttlDays = PERSONAL_TOKEN_TTL_DAYS.includes(days) ? days : 90;
+
+  const { count } = await db.one(
+    `SELECT count(*)::int AS count FROM mcp_personal_tokens
+     WHERE user_id = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())`,
+    [user.id]
+  );
+
+  if (count >= MAX_PERSONAL_TOKENS) {
+    fail(`Не больше ${MAX_PERSONAL_TOKENS} действующих токенов. Отключите ненужные.`);
+  }
+
+  const token = newToken(PERSONAL_TOKEN_PREFIX);
+
+  const row = await db.one(
+    `INSERT INTO mcp_personal_tokens (user_id, name, token_hash, token_prefix, expires_at)
+     VALUES ($1, $2, $3, $4, CASE WHEN $5::int > 0 THEN now() + make_interval(days => $5::int) END)
+     RETURNING id, expires_at`,
+    [user.id, name, sha256(token), token.slice(0, PERSONAL_TOKEN_PREFIX.length + 6), ttlDays]
+  );
+
+  // Сам токен показывается один раз — в БД остаётся только хеш.
+  return { id: row.id, token, expiresAt: row.expires_at ? formatDateTime(row.expires_at) : null };
+}
+
+export async function authenticatePersonalToken(token) {
+  if (!isPersonalToken(token)) return null;
+
+  const row = await db.one(
+    `SELECT id, user_id, last_used_at FROM mcp_personal_tokens
+     WHERE token_hash = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())`,
+    [sha256(token)]
+  );
+
+  if (!row) return null;
+
+  const user = await getActiveUser(row.user_id);
+  if (!user) return null;
+
+  if (!row.last_used_at || Date.now() - new Date(row.last_used_at).getTime() > 5 * 60 * 1000) {
+    db.query('UPDATE mcp_personal_tokens SET last_used_at = now() WHERE id = $1', [row.id]).catch(() => {});
+  }
+
+  return { user, tokenId: row.id };
+}
+
+export async function revokePersonalToken(id, user) {
+  if (!isUuid(id)) fail('Некорректный идентификатор.');
+
+  const result = await db.query(
+    'UPDATE mcp_personal_tokens SET revoked_at = now() WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL',
+    [id, user.id]
+  );
+
+  if (!result.rowCount) fail('Токен не найден.', 404);
+
+  return { ok: true };
+}
+
 // ---------- Подключения пользователя (профиль) ----------
 
 export async function listConnections(_input, user) {
@@ -282,12 +354,27 @@ export async function listConnections(_input, user) {
     [user.id]
   );
 
+  const tokens = await db.many(
+    `SELECT id, name, token_prefix, expires_at, created_at, last_used_at FROM mcp_personal_tokens
+     WHERE user_id = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())
+     ORDER BY created_at DESC`,
+    [user.id]
+  );
+
   return {
     connections: rows.map(row => ({
       id: row.id,
       clientName: row.client_name || 'MCP-клиент',
       createdAt: formatDateTime(row.created_at),
       lastUsedAt: row.last_used_at ? formatDateTime(row.last_used_at) : null
+    })),
+    tokens: tokens.map(row => ({
+      id: row.id,
+      name: row.name,
+      prefix: row.token_prefix,
+      createdAt: formatDateTime(row.created_at),
+      lastUsedAt: row.last_used_at ? formatDateTime(row.last_used_at) : null,
+      expiresAt: row.expires_at ? formatDateTime(row.expires_at) : null
     }))
   };
 }
@@ -308,6 +395,10 @@ export async function revokeConnection(id, user) {
 // Уборка: истёкшие коды, мёртвые подключения и клиенты, которые так и не получили доступ.
 export async function cleanupOAuth() {
   await db.query('DELETE FROM oauth_codes WHERE expires_at < now()');
+  await db.query(
+    `DELETE FROM mcp_personal_tokens
+     WHERE revoked_at < now() - interval '7 days' OR expires_at < now() - interval '7 days'`
+  );
   await db.query(
     `DELETE FROM oauth_grants
      WHERE refresh_expires_at < now() - interval '7 days' OR revoked_at < now() - interval '7 days'`

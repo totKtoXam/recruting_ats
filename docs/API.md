@@ -241,6 +241,12 @@ curl -s -X POST "$ATS_URL/intake?api=candidate-draft" \
 
 В БД хранятся только SHA-256 токенов и кодов (миграция `012_oauth_mcp.sql`: `oauth_clients`, `oauth_codes`, `oauth_grants`). Если пользователю закрыли доступ в ATS, его токены перестают работать сразу. Свои подключения пользователь видит и отключает в «Профиль → Claude и AI-ассистенты» (RPC `listMcpConnections`, `revokeMcpConnection`).
 
+### Личные токены
+
+Если клиент не может пройти OAuth (например, reverse proxy не пропускает `/.well-known/*`), пользователь выпускает **личный токен** в «Профиль → Claude и AI-ассистенты»: название, срок (30 / 90 / 365 дней или без срока), не больше 10 действующих. Токен (`atsp_…`) показывается один раз; в БД хранится только SHA-256 и первые символы для узнавания (миграция `013_mcp_personal_tokens.sql`). Отзыв — там же (RPC `createMcpToken`, `revokeMcpToken`; список — в `listMcpConnections.tokens`).
+
+Токен передаётся в заголовке `X-ATS-Token: <токен>` (или `Authorization: Bearer <токен>`). Плагин Claude Code использует `X-ATS-Token` из переменной `ATS_MCP_TOKEN`: если в конфиге задан заголовок `Authorization`, Claude Code отключает запасной вход через OAuth, а с отдельным заголовком без токена по-прежнему работает кнопка «Authenticate». Инструменты с токеном выполняются от имени его владельца; если доступ пользователя к ATS закрыт, токен перестаёт работать.
+
 ### Инструменты
 
 Реестр — `server/mcp/tools.js`. Инструменты вызывают те же сервисы и RPC-методы, что и интерфейс, поэтому права, проверки и журнал общие. У инструментов чтения — `readOnlyHint: true`; инструменты записи в описании требуют показать пользователю превью и получить подтверждение (то же правило — в `instructions` ответа `initialize`).
@@ -276,7 +282,7 @@ curl -sS -X POST --data-binary @cv.pdf -H "Content-Type: application/octet-strea
 /mcp   → recruiting-ats → Authenticate
 ```
 
-Без плагина сервер подключается напрямую: `claude mcp add --transport http recruiting-ats https://portal.devexpert.kz/hr-ats/mcp`. В claude.ai / Claude Desktop — «Настройки → Коннекторы → Добавить свой коннектор» с тем же адресом; для этого сервер должен быть доступен из интернета по HTTPS.
+С личным токеном — `ATS_MCP_TOKEN` в `env` файла `~/.claude/settings.json` (подсказка с готовым блоком показывается при создании токена). Без плагина сервер подключается напрямую: `claude mcp add --transport http recruiting-ats https://portal.devexpert.kz/hr-ats/mcp` (OAuth) или с `--header "X-ATS-Token: <токен>"`. В claude.ai / Claude Desktop — «Настройки → Коннекторы → Добавить свой коннектор» с тем же адресом; для этого сервер должен быть доступен из интернета по HTTPS.
 
 ## Внутренний RPC
 

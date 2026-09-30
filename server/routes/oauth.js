@@ -69,7 +69,7 @@ export function allowAnyOrigin(req, res, next) {
   res.set({
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Authorization, Content-Type, Mcp-Protocol-Version, Mcp-Session-Id',
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type, Mcp-Protocol-Version, Mcp-Session-Id, X-ATS-Token',
     'Access-Control-Expose-Headers': 'WWW-Authenticate, Mcp-Session-Id'
   });
 
