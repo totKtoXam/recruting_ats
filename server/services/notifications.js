@@ -100,6 +100,27 @@ async function loadPreferences(executor, userIds) {
 
 const enabledChannels = prefs => CHANNEL_KEYS.filter(channel => prefs[channel]);
 
+// Матрица с учётом общих выключателей пользователя: выключенный канал или вид не доставляется,
+// а сами отметки матрицы сохраняются — включили обратно, и работают прежние.
+export function applySwitches(prefs, { mutedChannels = [], mutedKinds = [] } = {}) {
+  return Object.fromEntries(
+    Object.entries(prefs).map(([kind, channels]) => [
+      kind,
+      Object.fromEntries(
+        Object.entries(channels).map(([channel, enabled]) => [
+          channel,
+          Boolean(enabled) && !mutedKinds.includes(kind) && !mutedChannels.includes(channel)
+        ])
+      )
+    ])
+  );
+}
+
+const userSwitches = user => ({
+  mutedChannels: (user && user.notify_muted_channels) || [],
+  mutedKinds: (user && user.notify_muted_kinds) || []
+});
+
 export function candidateLink(candidateId) {
   return `${config.publicUrl}/#/candidate/${encodeURIComponent(candidateId)}`;
 }
@@ -250,7 +271,7 @@ export async function notifyCandidateEvent(tx, candidateId, actor, event) {
   let created = 0;
 
   for (const user of users) {
-    const prefs = preferences.get(user.id);
+    const prefs = applySwitches(preferences.get(user.id), userSwitches(user));
     const candidates = [specific.get(user.id), audience.has(user.id) ? generalKind : null].filter(Boolean);
 
     // Первый вид, у которого включён хотя бы один канал.
@@ -566,7 +587,9 @@ export async function setCandidateWatch({ candidateId, watch = true } = {}, user
 export async function getNotificationSettings(_input, user) {
   const [prefs] = [...(await loadPreferences(db, [user.id])).values()];
   const row = await db.one(
-    'SELECT email, telegram_username, telegram_chat_id, telegram_verified_at FROM users WHERE id = $1',
+    `SELECT email, telegram_username, telegram_chat_id, telegram_verified_at,
+            notify_muted_channels, notify_muted_kinds
+     FROM users WHERE id = $1`,
     [user.id]
   );
   const { getBotUsername } = await import('./telegram.js');
@@ -590,7 +613,9 @@ export async function getNotificationSettings(_input, user) {
               : !row.telegram_chat_id ? 'Привяжите Telegram, чтобы получать уведомления.' : ''
             : ''
     })),
+    // Отметки матрицы как есть; общие выключатели — отдельно (выключенное не доставляется).
     preferences: prefs,
+    ...userSwitches(row),
     email: row.email.endsWith('.invalid') ? '' : row.email,
     telegram: {
       botConfigured: telegramConfigured(),
@@ -614,6 +639,27 @@ export async function setNotificationPreference({ kind, channel, enabled } = {},
   );
 
   return { ok: true };
+}
+
+// Общий выключатель: scope 'channel' — канал целиком, 'kind' — вид уведомления целиком.
+const SWITCH_COLUMNS = { channel: 'notify_muted_channels', kind: 'notify_muted_kinds' };
+
+export async function setNotificationSwitch({ scope, key, enabled } = {}, user) {
+  const column = SWITCH_COLUMNS[scope];
+  if (!column) fail('Неизвестный выключатель.');
+  if (!(scope === 'channel' ? CHANNEL_KEYS : KIND_KEYS).includes(key)) {
+    fail(scope === 'channel' ? 'Неизвестный канал.' : 'Неизвестный вид уведомления.');
+  }
+
+  const row = await db.one(
+    `UPDATE users
+     SET ${column} = CASE WHEN $3 THEN array_remove(${column}, $2) ELSE array_append(array_remove(${column}, $2), $2) END
+     WHERE id = $1
+     RETURNING notify_muted_channels, notify_muted_kinds`,
+    [user.id, key, Boolean(enabled)]
+  );
+
+  return { ok: true, ...userSwitches(row) };
 }
 
 // Все виды разом по одному каналу (или все каналы одного вида).

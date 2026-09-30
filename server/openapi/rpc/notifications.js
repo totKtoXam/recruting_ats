@@ -694,6 +694,16 @@ export default {
             }
           }
         },
+        mutedChannels: {
+          type: 'array',
+          items: { type: 'string', enum: CHANNEL_KEYS },
+          description: 'Каналы, выключенные целиком (отметки матрицы по ним сохраняются, но не действуют)'
+        },
+        mutedKinds: {
+          type: 'array',
+          items: { type: 'string', enum: KIND_KEYS },
+          description: 'Виды уведомлений, выключенные целиком'
+        },
         email: { type: 'string', description: 'Email пользователя (пусто, если не указан)' },
         telegram: {
           type: 'object',
@@ -763,6 +773,35 @@ export default {
       ]
     },
     result: okResult
+  },
+
+  setNotificationSwitch: {
+    tag: 'Уведомления',
+    summary: 'Включить или выключить канал либо вид уведомлений целиком',
+    description:
+      'Общий выключатель текущего пользователя поверх матрицы «вид × канал»: `scope: "channel"` — канал целиком ' +
+      '(`key` — app, email, telegram), `scope: "kind"` — вид целиком. Отметки матрицы не меняются: после повторного ' +
+      'включения действуют прежние.\n\n' +
+      '- Неизвестный `scope` — 400 «Неизвестный выключатель.».\n' +
+      '- Неизвестный канал — 400 «Неизвестный канал.», неизвестный вид — 400 «Неизвестный вид уведомления.».',
+    args: {
+      type: 'object',
+      properties: {
+        scope: { type: 'string', enum: ['channel', 'kind'] },
+        key: { type: 'string', enum: [...CHANNEL_KEYS, ...KIND_KEYS] },
+        enabled: { type: 'boolean' }
+      },
+      required: ['scope', 'key']
+    },
+    example: { scope: 'channel', key: 'email', enabled: false },
+    result: {
+      type: 'object',
+      properties: {
+        ok: { type: 'boolean', const: true },
+        mutedChannels: { type: 'array', items: { type: 'string', enum: CHANNEL_KEYS } },
+        mutedKinds: { type: 'array', items: { type: 'string', enum: KIND_KEYS } }
+      }
+    }
   },
 
   getCandidateWatch: {

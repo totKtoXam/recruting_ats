@@ -154,7 +154,7 @@
     <div class="page-header">
       <div>
         <h2>Профиль</h2>
-        <p class="page-description">Личные настройки: уведомления, Telegram, оформление.</p>
+        <p class="page-description">Личные настройки: аккаунт и Telegram, уведомления, ИИ-ассистенты.</p>
       </div>
     </div>
 
@@ -162,9 +162,10 @@
       <div class="segmented profile-tabs" role="tablist">
         <label class="segmented-option"><input type="radio" name="profileTab" value="" onchange="navigateTo('profile')"><span><svg class="icon icon-sm"><use href="#i-user"/></svg>Профиль</span></label>
         <label class="segmented-option"><input type="radio" name="profileTab" value="notifications" onchange="navigateTo('profile/notifications')"><span><svg class="icon icon-sm"><use href="#i-bell"/></svg>Уведомления</span></label>
-        <label class="segmented-option"><input type="radio" name="profileTab" value="log" onchange="navigateTo('profile/log')"><span><svg class="icon icon-sm"><use href="#i-history"/></svg>Журнал</span></label>
+        <label class="segmented-option"><input type="radio" name="profileTab" value="ai" onchange="navigateTo('profile/ai')"><span><svg class="icon icon-sm"><use href="#i-sparkles"/></svg>ИИ-ассистенты</span></label>
       </div>
 
+      <!-- Профиль: аккаунт (в том числе привязка Telegram) и оформление. -->
       <div id="profileTabMain" class="profile-grid">
         <div class="admin-list-card">
           <div class="section-title-row"><h3>Аккаунт</h3></div>
@@ -174,37 +175,53 @@
           <div class="section-title-row"><h3>Оформление</h3></div>
           <div id="profileTheme"></div>
         </div>
-        <div class="admin-list-card profile-wide">
-          <div class="section-title-row"><h3>Claude и AI-ассистенты</h3></div>
-          <div id="profileMcp"></div>
-        </div>
       </div>
 
-    <div id="notifyTabSettings" class="notify-settings-grid">
-        <div class="admin-list-card">
-          <div class="section-title-row"><h3>Каналы</h3></div>
-          <div id="notifyChannels" class="notify-channels"><div class="empty-state compact">Загрузка…</div></div>
-        </div>
-  
-        <div class="admin-list-card">
-          <div class="section-title-row">
-            <div>
-              <h3>Что присылать</h3>
-              <p class="muted notify-hint">Уведомления приходят по кандидатам, где вы назначены рекрутером, HR или проф. интервьювером, и по тем, за которыми вы следите (<svg class="icon icon-sm"><use href="#i-eye"/></svg> в карточке кандидата). О своих действиях уведомлений нет.</p>
+      <!-- Уведомления: журнал и настройки на одной вкладке. -->
+      <div id="profileTabNotify" class="profile-notify" hidden>
+        <div id="notifyTabLog" class="admin-list-card directory-table-card">
+          <div class="section-title-row table-toolbar">
+            <h3>Журнал уведомлений</h3>
+            <div class="header-actions">
+              <button class="icon-btn" data-tip="Отметить все как прочитанные" aria-label="Отметить все как прочитанные" onclick="markAllNotificationsRead(this)"><svg class="icon"><use href="#i-check-check"/></svg></button>
             </div>
           </div>
-          <div id="notifyMatrix"></div>
+          <div id="notificationLogTable"></div>
+        </div>
+
+        <div id="notifyTabSettings" class="notify-settings-grid">
+          <div class="admin-list-card">
+            <div class="section-title-row">
+              <div>
+                <h3>Каналы</h3>
+                <p class="muted notify-hint">Выключенный канал не присылает ничего; отметки в таблице сохраняются и снова заработают, когда включите канал.</p>
+              </div>
+            </div>
+            <div id="notifyChannels" class="notify-channels"><div class="empty-state compact">Загрузка…</div></div>
+          </div>
+
+          <div class="admin-list-card">
+            <div class="section-title-row">
+              <div>
+                <h3>Что присылать</h3>
+                <p class="muted notify-hint">Уведомления приходят по кандидатам, где вы назначены рекрутером, HR или проф. интервьювером, и по тем, за которыми вы следите (<svg class="icon icon-sm"><use href="#i-eye"/></svg> в карточке кандидата). О своих действиях уведомлений нет. Переключатель в строке выключает вид уведомления целиком.</p>
+              </div>
+            </div>
+            <div id="notifyMatrix"></div>
+          </div>
         </div>
       </div>
 
-    <div id="notifyTabLog" class="admin-list-card directory-table-card" hidden>
-        <div class="section-title-row table-toolbar">
-          <h3>Журнал уведомлений</h3>
-          <div class="header-actions">
-            <button class="icon-btn" data-tip="Отметить все как прочитанные" aria-label="Отметить все как прочитанные" onclick="markAllNotificationsRead(this)"><svg class="icon"><use href="#i-check-check"/></svg></button>
-          </div>
+      <!-- ИИ-ассистенты: MCP-сервер, личные токены, подключения и инструкции (Profile.html). -->
+      <div id="profileTabAi" class="profile-ai" hidden>
+        <div class="admin-list-card">
+          <div class="section-title-row"><h3>Подключение к ATS</h3></div>
+          <div id="profileMcp"></div>
         </div>
-        <div id="notificationLogTable"></div>
+        <div class="admin-list-card">
+          <div class="section-title-row"><h3>Как подключить</h3></div>
+          <div id="profileAiGuide"></div>
+        </div>
       </div>
     </div>
   </main>

@@ -114,6 +114,7 @@ export const rpcHandlers = {
   getNotificationSettings: (input, { user }) => notifications.getNotificationSettings(input, user),
   setNotificationPreference: (input, { user }) => notifications.setNotificationPreference(input, user),
   setNotificationPreferences: (input, { user }) => notifications.setNotificationPreferences(input, user),
+  setNotificationSwitch: (input, { user }) => notifications.setNotificationSwitch(input, user),
   getCandidateWatch: (id, { user }) => notifications.getCandidateWatch(id, user),
   setCandidateWatch: (input, { user }) => notifications.setCandidateWatch(input, user),
   // Подключённые MCP-клиенты (Claude и др.): список и отключение в профиле.

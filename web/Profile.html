@@ -42,8 +42,37 @@ img.avatar-lg{border-radius:50%;object-fit:cover}
 .profile-page{display:flex;flex-direction:column;gap:16px;padding:16px var(--page-pad) var(--page-pad);max-width:1280px}
 .profile-page .admin-list-card{border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface);box-shadow:var(--shadow);overflow:hidden}
 .profile-page .admin-list-card>.section-title-row{position:static;margin:0;padding:12px 16px;min-height:52px}
-#profileAccount,#profileTheme,#profileMcp,#notifyChannels{padding:16px}
+#profileAccount,#profileTheme,#profileMcp,#profileAiGuide,#notifyChannels{padding:16px}
 .profile-wide{grid-column:1/-1}
+.profile-notify,.profile-ai{display:flex;flex-direction:column;gap:16px}
+.profile-notify[hidden],.profile-ai[hidden]{display:none}
+.profile-telegram{margin-top:4px}
+
+/* Инструкции по подключению ИИ-ассистентов: раскрывающиеся блоки по клиентам */
+.ai-guide{border:1px solid var(--line-soft);border-radius:var(--radius);background:var(--surface-2)}
+.ai-guide+.ai-guide{margin-top:8px}
+.ai-guide summary{display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;list-style:none;border-radius:var(--radius)}
+.ai-guide summary::-webkit-details-marker{display:none}
+.ai-guide summary:hover{background:var(--hover)}
+.ai-guide summary:focus-visible{outline:none;box-shadow:var(--focus-ring)}
+.ai-guide summary>.icon:first-child{flex:0 0 auto;width:18px;height:18px;color:var(--primary)}
+.ai-guide-title{font-weight:600}
+.ai-guide-note{font-size:12px;margin-left:auto;text-align:right}
+.ai-guide-chevron{flex:0 0 auto;color:var(--muted);transition:transform var(--dur-fast)}
+.ai-guide[open] .ai-guide-chevron{transform:rotate(180deg)}
+.ai-guide-body{padding:2px 14px 12px 40px;font-size:14px;line-height:1.55}
+.ai-guide-body ol{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
+.ai-guide-body code{padding:1px 5px;border-radius:4px;background:var(--surface-3);font-size:12.5px;overflow-wrap:anywhere}
+.ai-guide-body pre{margin:10px 0 0;padding:10px 12px;border-radius:var(--radius);background:var(--surface-3);font-size:12.5px;overflow-x:auto}
+.ai-guide-body p{margin:10px 0 0}
+.ai-guide-footnote{display:flex;gap:6px;align-items:flex-start;margin:12px 0 0;font-size:12px;line-height:1.5}
+.ai-guide-footnote .icon{flex:0 0 auto;margin-top:2px}
+.ai-guide-footnote code{padding:1px 5px;border-radius:4px;background:var(--surface-3)}
+@media(max-width:720px){
+  .ai-guide summary{flex-wrap:wrap}
+  .ai-guide-note{margin-left:28px;text-align:left;width:100%}
+  .ai-guide-body{padding-left:14px}
+}
 .mcp-url-row{display:flex;gap:8px;align-items:center;margin:10px 0 14px}
 .mcp-url-row code{flex:1;min-width:0;padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface-3);font-size:13px;overflow-wrap:anywhere}
 .mcp-connections{display:flex;flex-direction:column;border:1px solid var(--line-soft);border-radius:var(--radius)}
@@ -141,8 +170,8 @@ function renderProfileMenu(){
     '</div>'+
     '<div class="profile-menu-list">'+
       item('user','Профиль',"openProfile('')")+
-      item('bell','Уведомления',"openProfile('notifications')")+
-      item('history','Журнал уведомлений',"openProfile('log')",unread?'<span class="notify-badge menu-badge" style="position:static;box-shadow:none">'+(unread>99?'99+':unread)+'</span>':'')+
+      item('bell','Уведомления',"openProfile('log')",unread?'<span class="notify-badge menu-badge" style="position:static;box-shadow:none">'+(unread>99?'99+':unread)+'</span>':'')+
+      item('sparkles','ИИ-ассистенты',"openProfile('ai')")+
       '<div class="profile-menu-sep"></div>'+
       '<div class="profile-menu-theme">'+icon('sun')+'<span>Тема</span>'+themeSwitchHtml()+'</div>'+
       '<div class="profile-menu-sep"></div>'+
@@ -180,21 +209,32 @@ window.addEventListener('hashchange',()=>{if(profileMenuOpen)toggleProfileMenu(f
 
 // ---------- Страница профиля ----------
 
+// Вкладки профиля. Журнал и настройки уведомлений — одна вкладка: #/profile/log открывает её
+// на журнале, #/profile/notifications — на настройках.
 const PROFILE_TABS={
   '':{title:'Профиль'},
-  notifications:{title:'Уведомления'},
-  log:{title:'Журнал уведомлений'}
+  notifications:{title:'Уведомления',pane:'notifications',anchor:'notifyTabSettings'},
+  log:{title:'Уведомления',pane:'notifications'},
+  ai:{title:'ИИ-ассистенты'}
 };
 
 function showProfile(tab){
   tab=PROFILE_TABS[tab]?tab:'';
-  document.querySelectorAll('input[name="profileTab"]').forEach(input=>input.checked=input.value===tab);
-  el('profileTabMain').hidden=tab!=='';
-  el('notifyTabSettings').hidden=tab!=='notifications';
-  el('notifyTabLog').hidden=tab!=='log';
-  if(tab==='')renderProfileMain();
-  if(tab==='notifications')loadNotificationSettings();
-  if(tab==='log')loadServerTable('notificationLog');
+  const pane=PROFILE_TABS[tab].pane||tab;
+  document.querySelectorAll('input[name="profileTab"]').forEach(input=>input.checked=input.value===pane);
+  el('profileTabMain').hidden=pane!=='';
+  el('profileTabNotify').hidden=pane!=='notifications';
+  el('profileTabAi').hidden=pane!=='ai';
+  if(pane==='')renderProfileMain();
+  if(pane==='notifications'){
+    loadServerTable('notificationLog');
+    // К настройкам прокручиваем, когда они отрисованы: иначе фокус на заголовке раздела вернёт страницу наверх.
+    const anchor=PROFILE_TABS[tab].anchor;
+    loadNotificationSettings().then(()=>{
+      if(anchor&&getRoute().tab===tab)el(anchor).scrollIntoView({block:'start',behavior:'smooth'});
+    });
+  }
+  if(pane==='ai')renderProfileAi();
 }
 
 function renderProfileTheme(){
@@ -248,15 +288,16 @@ function renderMcpConnections(connections,tokens){
         escapeHtml(item.clientName),
         'Подключено '+escapeHtml(fmtDate(item.createdAt))+(item.lastUsedAt?' · последнее использование '+escapeHtml(fmtDate(item.lastUsedAt)):''),
         '<button type="button" class="text-btn" onclick="revokeMcpConnection(\''+escapeHtml(item.id)+'\')">Отключить</button>')).join('')+'</div>'
-    :'<div class="empty-state compact">Нет подключений через «Connect».</div>';
+    :'<div class="empty-state compact">Подключённых приложений нет.</div>';
 
   el('profileMcp').innerHTML=
-    '<div class="muted">Claude (Claude Code, Claude Desktop) работает с ATS от вашего имени через MCP-сервер: с вашими правами, все изменения пишутся в журнал под вашим именем.</div>'+
+    '<div class="muted">ИИ-ассистенты (Claude, ChatGPT, Cursor, VS Code и любые клиенты с поддержкой MCP — Model Context Protocol) '+
+      'работают с ATS от вашего имени: с вашими правами, все изменения пишутся в журнал под вашим именем. Адрес MCP-сервера:</div>'+
     '<div class="mcp-url-row"><code>'+escapeHtml(mcpServerUrl())+'</code>'+
       '<button type="button" class="text-btn" onclick="copyMcpUrl()">'+icon('copy','icon-sm')+' Копировать</button></div>'+
 
     '<h4 class="mcp-section-title">Личные токены</h4>'+
-    '<div class="muted">Токен для плагина Claude Code «recruiting-ats» или любого MCP-клиента. Никому не передавайте его: с ним можно работать в ATS от вашего имени.</div>'+
+    '<div class="muted">Для клиентов, где можно указать заголовок запроса: Claude Code, Cursor, VS Code, свои агенты. Никому не передавайте токен: с ним можно работать в ATS от вашего имени.</div>'+
     (mcpNewToken?mcpNewTokenHtml(mcpNewToken):'')+
     '<form class="mcp-token-form" onsubmit="createMcpToken(event)">'+
       '<input id="mcpTokenName" maxlength="80" placeholder="Название, например «Claude Code, ноутбук»" aria-label="Название токена">'+
@@ -267,8 +308,54 @@ function renderMcpConnections(connections,tokens){
     '</form>'+
     tokenList+
 
-    '<h4 class="mcp-section-title">Подключения через «Connect»</h4>'+
+    '<h4 class="mcp-section-title">Приложения, подключённые через вход в ATS</h4>'+
+    '<div class="muted">Claude, ChatGPT и другие клиенты, которым вы разрешили доступ, войдя в ATS (OAuth).</div>'+
     connectionList;
+}
+
+// ---------- Инструкции по подключению ИИ-ассистентов ----------
+
+function aiGuideStep(text){return '<li>'+text+'</li>'}
+
+function aiGuideBlock(id,iconName,title,note,steps,extra){
+  return '<details class="ai-guide" id="aiGuide-'+id+'">'+
+    '<summary>'+icon(iconName)+'<span class="ai-guide-title">'+title+'</span><span class="muted ai-guide-note">'+note+'</span>'+icon('chevron-down','icon-sm ai-guide-chevron')+'</summary>'+
+    '<div class="ai-guide-body"><ol>'+steps.map(aiGuideStep).join('')+'</ol>'+(extra||'')+'</div>'+
+  '</details>';
+}
+
+function renderProfileAi(){
+  loadMcpConnections();
+  const url=escapeHtml(mcpServerUrl());
+  const code=text=>'<code>'+text+'</code>';
+  const token='&lt;личный токен&gt;';
+  const genericConfig=escapeHtml('{\n  "mcpServers": {\n    "recruiting-ats": {\n      "type": "http",\n      "url": "'+mcpServerUrl()+'",\n      "headers": { "Authorization": "Bearer <личный токен>" }\n    }\n  }\n}');
+
+  el('profileAiGuide').innerHTML=
+    aiGuideBlock('claude','sparkles','Claude — claude.ai и Claude Desktop','Pro, Max, Team, Enterprise',[
+      'В Claude откройте <b>Customize → Connectors</b> (в Team и Enterprise коннектор добавляет владелец: <b>Organization settings → Connectors</b>).',
+      'Нажмите <b>«+» → Add custom connector</b>, введите название «Recruiting ATS» и адрес '+code(url)+'. <b>Advanced settings</b> (OAuth Client ID и Secret) оставьте пустыми, нажмите <b>Add</b>.',
+      'Нажмите <b>Connect</b> — откроется ATS: войдите и нажмите <b>«Разрешить»</b>. Коннектор появится и в Claude Desktop с тем же аккаунтом.',
+      'В чате включите коннектор в меню инструментов и попросите, например: «Покажи мою очередь в ATS».'
+    ])+
+    aiGuideBlock('claude-code','code','Claude Code — терминал и IDE','Плагин с готовыми командами',[
+      'Создайте личный токен выше и скопируйте его.',
+      'Добавьте в '+code('~/.claude/settings.json')+': '+code('"env": { "ATS_MCP_TOKEN": "'+token+'" }')+'.',
+      'Установите плагин: '+code('/plugin marketplace add totKtoXam/recruting_ats')+', затем '+code('/plugin install recruiting-ats@recruiting-ats')+' и откройте новую сессию.',
+      'Без плагина — одной командой: '+code('claude mcp add --transport http recruiting-ats '+url+' --header "X-ATS-Token: '+token+'"')+'.'
+    ],'<p class="muted">Плагин добавляет команды '+code('/recruiting-ats:today')+', '+code('/recruiting-ats:resume')+', '+code('/recruiting-ats:report')+' и другие.</p>')+
+    aiGuideBlock('chatgpt','message','ChatGPT','Plus, Pro, Business, Enterprise, Edu',[
+      'В ChatGPT откройте <b>Settings → Security and login</b> и включите <b>Developer mode</b> (в Business и Enterprise его должен разрешить администратор рабочей области).',
+      'Перейдите в <b>Plugins</b> (chatgpt.com/plugins), нажмите <b>«+»</b> и создайте приложение: название «Recruiting ATS», адрес '+code(url)+', аутентификация <b>OAuth</b>.',
+      'Нажмите <b>Connect</b> — откроется ATS: войдите и нажмите <b>«Разрешить»</b>.',
+      'В новом чате включите приложение в меню <b>«+» → Developer mode</b> и задайте вопрос. Перед изменением данных ChatGPT попросит подтверждение.'
+    ],'<p class="muted">ChatGPT не умеет передавать личный токен — подключение только через вход в ATS.</p>')+
+    aiGuideBlock('other','link','Другие клиенты — Cursor, VS Code, Windsurf, свои агенты','Любой клиент с MCP по HTTP',[
+      'Транспорт — <b>Streamable HTTP</b>, адрес '+code(url)+'.',
+      'Если клиент умеет входить через OAuth — просто укажите адрес и войдите в ATS.',
+      'Иначе создайте личный токен и передайте его в заголовке '+code('Authorization: Bearer '+token)+' (или '+code('X-ATS-Token')+').'
+    ],'<pre>'+genericConfig+'</pre>')+
+    '<p class="muted ai-guide-footnote">'+icon('info','icon-sm')+'<span>Если при подключении появляется ошибка регистрации клиента или 404, прокси перед ATS не пропускает адреса '+code('/.well-known/…')+' — сообщите администратору (настройка описана в README). Личный токен работает и без этого.</span></p>';
 }
 
 // Токен показывается один раз, сразу после создания.
@@ -353,14 +440,12 @@ async function revokeMcpConnection(id){
 // (renderCurrentUser вызывает renderProfileMain повторно).
 function renderProfileMain(){
   renderProfileTheme();
-  loadMcpConnections();
   const user=state.currentUser;
   if(!user){el('profileAccount').innerHTML='<div class="skeleton" style="height:120px"></div>';return}
   const facts=[
     ['Email',escapeHtml(user.Email||'')],
     ['Роль',userRoleChips(user)||'Пользователь'],
-    ['Этапы',(user.stages||[]).length?'<div class="chip-wrap">'+user.stages.map(stage=>statusChip(stage,true)).join('')+'</div>':'<span class="muted">Не ответственный</span>'],
-    ['Telegram',user.telegram?escapeHtml(user.telegram)+(user.telegramVerified?' <span class="state-badge state-ok">Подтверждён</span>':' <span class="state-badge state-archived">Не подтверждён</span>'):'<span class="muted">Не привязан</span>']
+    ['Этапы',(user.stages||[]).length?'<div class="chip-wrap">'+user.stages.map(stage=>statusChip(stage,true)).join('')+'</div>':'<span class="muted">Не ответственный</span>']
   ];
   if(user['Последний вход'])facts.push(['Последний вход',escapeHtml(fmtDate(user['Последний вход']))]);
 
@@ -370,6 +455,44 @@ function renderProfileMain(){
       '<div class="muted">ФИО и этапы меняет администратор в «Настройки → Пользователи».</div></div>'+
     '</div>'+
     '<dl class="profile-facts">'+facts.map(([label,value])=>'<dt>'+label+'</dt><dd>'+value+'</dd>').join('')+'</dl>'+
-    '<div class="channel-card-actions"><button type="button" class="text-btn" onclick="navigateTo(\'profile/notifications\')">'+icon('send','icon-sm')+' Уведомления и Telegram</button></div>';
+    '<div id="profileTelegram" class="profile-telegram">'+(notify.settings?profileTelegramHtml(notify.settings.telegram):'<div class="skeleton" style="height:64px"></div>')+'</div>';
+  loadProfileTelegram();
+}
+
+// Telegram привязывается и подтверждается только здесь; вкладка «Уведомления» ссылается сюда.
+async function loadProfileTelegram(){
+  try{
+    notify.settings=await rpc('getNotificationSettings');
+    const box=el('profileTelegram');
+    if(box)box.innerHTML=profileTelegramHtml(notify.settings.telegram);
+  }catch(error){
+    const box=el('profileTelegram');
+    if(box)box.innerHTML='<div class="empty-state compact">'+escapeHtml(error.message||String(error))+'</div>';
+  }
+}
+
+function profileTelegramHtml(telegram){
+  let badge,text,actions='';
+  if(!telegram.botConfigured){
+    badge='<span class="state-badge">Недоступно</span>';
+    text='Telegram-бот не настроен. Администратору: создать бота в @BotFather и указать токен в «Настройки → Интеграции».';
+  }else if(telegram.linked){
+    badge='<span class="state-badge state-ok">Подтверждён</span>';
+    text='Привязан'+(telegram.username?' аккаунт @'+telegram.username:'')+(telegram.verifiedAt?' · '+notifyFullTime(telegram.verifiedAt):'')+'. Отключить можно и в самом боте командой /stop.';
+    actions='<button type="button" class="text-btn" onclick="unlinkTelegram(this)">Отвязать</button>';
+  }else{
+    badge='<span class="state-badge state-archived">Не привязан</span>';
+    text='Привяжите свой Telegram: откроется бот'+(telegram.botUsername?' @'+telegram.botUsername:'')+', нажмите «Старт» — аккаунт подтвердится автоматически.';
+    actions='<button type="button" class="text-btn text-btn-primary" onclick="linkTelegram(this)">'+icon('send','icon-sm')+' Привязать Telegram</button>';
+  }
+  return '<div class="channel-card">'+icon('send')+
+    '<div class="channel-card-body">'+
+      '<div class="channel-card-title">Telegram '+badge+'</div>'+
+      '<div class="channel-card-text">'+escapeHtml(text)+'</div>'+
+      '<div class="channel-card-actions">'+actions+
+        '<button type="button" class="text-btn" onclick="navigateTo(\'profile/notifications\')">'+icon('bell','icon-sm')+' Что присылать</button></div>'+
+      '<div id="tgLinkBox"></div>'+
+    '</div>'+
+  '</div>';
 }
 </script>

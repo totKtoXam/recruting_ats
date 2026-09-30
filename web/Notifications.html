@@ -114,6 +114,13 @@
 .channel-card-title{font-size:14px;font-weight:600;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .channel-card-text{font-size:12px;color:var(--text-2);margin-top:2px;overflow-wrap:anywhere}
 .channel-card-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.channel-card>.switch{flex:0 0 auto;margin-top:1px}
+/* Выключенный канал или вид: карточка и строка приглушены, отметки матрицы видны, но не действуют. */
+.channel-card.is-muted>.icon,.channel-card.is-muted .channel-card-body{opacity:.55}
+.notify-matrix tr.is-muted .matrix-kind,.notify-matrix tr.is-muted .matrix-desc{opacity:.55}
+.notify-matrix td .switch:has(input:disabled){opacity:.4}
+.matrix-kind-row{display:flex;gap:10px;align-items:flex-start}
+.matrix-kind-row>.switch{flex:0 0 auto;margin-top:1px}
 .tg-link-box{margin-top:8px;padding:8px;border-radius:var(--radius);background:var(--surface);border:1px dashed var(--line);font-size:12px;color:var(--text-2)}
 .state-badge.state-ok{background:var(--success-tint);color:var(--success)}
 .nowrap{white-space:nowrap}
@@ -519,68 +526,67 @@ async function loadNotificationSettings(){
   }
 }
 
+function notifySwitchHtml(checked,label,onchange,extra=''){
+  return '<label class="switch"'+extra+'><input type="checkbox"'+(checked?' checked':'')+' aria-label="'+escapeHtml(label)+'" onchange="'+onchange+'"><span class="switch-track"></span></label>';
+}
+
 function renderNotificationSettings(){
   const settings=notify.settings;
   if(!settings)return;
   const channel=key=>settings.channels.find(item=>item.key===key)||{};
+  const mutedChannels=settings.mutedChannels||[];
+  const mutedKinds=settings.mutedKinds||[];
   const email=channel('email');
   const telegram=settings.telegram;
 
-  const emailCard=
-    '<div class="channel-card">'+icon('mail')+
+  // Карточка канала: состояние и общий выключатель «присылать в этот канал».
+  const channelCard=(key,iconName,title,badge,text,actions)=>{
+    const on=!mutedChannels.includes(key);
+    return '<div class="channel-card'+(on?'':' is-muted')+'">'+icon(iconName)+
       '<div class="channel-card-body">'+
-        '<div class="channel-card-title">Эл. почта '+(email.available?'<span class="state-badge state-ok">Работает</span>':'<span class="state-badge state-archived">Недоступно</span>')+'</div>'+
-        '<div class="channel-card-text">'+escapeHtml(email.available?'Письма приходят на '+settings.email:email.reason)+'</div>'+
+        '<div class="channel-card-title">'+title+' '+badge+'</div>'+
+        '<div class="channel-card-text">'+text+'</div>'+
+        (actions?'<div class="channel-card-actions">'+actions+'</div>':'')+
       '</div>'+
+      notifySwitchHtml(on,title+': присылать уведомления',"setNotificationSwitch('channel','"+key+"',this)",' data-tip="'+(on?'Выключить канал':'Включить канал')+'"')+
     '</div>';
+  };
 
-  let tgText,tgActions='';
-  if(!telegram.botConfigured){
-    tgText='Telegram-бот не настроен. Администратору: создать бота в @BotFather и указать токен в «Настройки → Интеграции».';
-  }else if(telegram.linked){
-    tgText='Привязан'+(telegram.username?' аккаунт @'+telegram.username:'')+(telegram.verifiedAt?' · '+notifyFullTime(telegram.verifiedAt):'')+'. Отключить можно и в самом боте командой /stop.';
-    tgActions='<button type="button" class="text-btn" onclick="unlinkTelegram(this)">Отвязать</button>';
-  }else{
-    tgText='Привяжите свой Telegram: откроется бот'+(telegram.botUsername?' @'+telegram.botUsername:'')+', нажмите «Старт» — аккаунт подтвердится автоматически.';
-    tgActions='<button type="button" class="text-btn text-btn-primary" onclick="linkTelegram(this)">'+icon('send','icon-sm')+' Привязать Telegram</button>';
-  }
-
-  const tgCard=
-    '<div class="channel-card">'+icon('send')+
-      '<div class="channel-card-body">'+
-        '<div class="channel-card-title">Telegram '+
-          (telegram.linked?'<span class="state-badge state-ok">Подтверждён</span>':telegram.botConfigured?'<span class="state-badge state-archived">Не привязан</span>':'<span class="state-badge">Недоступно</span>')+
-        '</div>'+
-        '<div class="channel-card-text">'+escapeHtml(tgText)+'</div>'+
-        (tgActions?'<div class="channel-card-actions">'+tgActions+'</div>':'')+
-        '<div id="tgLinkBox"></div>'+
-      '</div>'+
-    '</div>';
-
-  const appCard=
-    '<div class="channel-card">'+icon('bell')+
-      '<div class="channel-card-body">'+
-        '<div class="channel-card-title">В приложении <span class="state-badge state-ok">Работает</span></div>'+
-        '<div class="channel-card-text">Колокольчик в шапке ATS.</div>'+
-      '</div>'+
-    '</div>';
+  const appCard=channelCard('app','bell','В приложении','<span class="state-badge state-ok">Работает</span>',
+    'Колокольчик в шапке ATS.');
+  const emailCard=channelCard('email','mail','Эл. почта',
+    email.available?'<span class="state-badge state-ok">Работает</span>':'<span class="state-badge state-archived">Недоступно</span>',
+    escapeHtml(email.available?'Письма приходят на '+settings.email:email.reason));
+  // Telegram привязывается и подтверждается в «Профиль → Аккаунт»; здесь — состояние и ссылка.
+  const tgCard=channelCard('telegram','send','Telegram',
+    telegram.linked?'<span class="state-badge state-ok">Подтверждён</span>':telegram.botConfigured?'<span class="state-badge state-archived">Не привязан</span>':'<span class="state-badge">Недоступно</span>',
+    escapeHtml(telegram.linked?'Сообщения приходят'+(telegram.username?' в @'+telegram.username:'')+'.':telegram.botConfigured?'Чтобы получать уведомления, привяжите Telegram в аккаунте.':'Telegram-бот не настроен администратором.'),
+    '<button type="button" class="text-btn" onclick="openProfileTelegram()">'+icon('user','icon-sm')+(telegram.linked?' Telegram в аккаунте':' Привязать в аккаунте')+'</button>');
 
   el('notifyChannels').innerHTML=appCard+emailCard+tgCard;
 
-  const header='<tr><th>Вид уведомления</th>'+settings.channels.map(item=>
-    '<th class="'+(item.available?'':'unavailable')+'"'+(item.reason?' data-tip="'+escapeHtml(item.reason)+'"':'')+'>'+icon(NOTIFY_CHANNEL_ICONS[item.key])+'<span>'+escapeHtml(item.label)+'</span>'+(item.available?'':'<span class="matrix-off">недоступно</span>')+'</th>'
-  ).join('')+'</tr>';
+  const header='<tr><th>Вид уведомления</th>'+settings.channels.map(item=>{
+    const muted=mutedChannels.includes(item.key);
+    const tip=muted?'Канал выключен':item.reason;
+    return '<th class="'+(item.available&&!muted?'':'unavailable')+'"'+(tip?' data-tip="'+escapeHtml(tip)+'"':'')+'>'+icon(NOTIFY_CHANNEL_ICONS[item.key])+'<span>'+escapeHtml(item.label)+'</span>'+
+      (muted?'<span class="matrix-off">выключен</span>':item.available?'':'<span class="matrix-off">недоступно</span>')+'</th>';
+  }).join('')+'</tr>';
 
-  const rows=settings.kinds.map(kind=>
-    '<tr><td><div class="matrix-kind">'+escapeHtml(kind.label)+'</div><div class="matrix-desc">'+escapeHtml(kind.description)+'</div></td>'+
+  const rows=settings.kinds.map(kind=>{
+    const kindOn=!mutedKinds.includes(kind.key);
+    return '<tr class="'+(kindOn?'':'is-muted')+'"><td><div class="matrix-kind-row">'+
+        notifySwitchHtml(kindOn,kind.label+': присылать этот вид',"setNotificationSwitch('kind','"+kind.key+"',this)",' data-tip="'+(kindOn?'Выключить вид целиком':'Включить вид')+'"')+
+        '<div><div class="matrix-kind">'+escapeHtml(kind.label)+'</div><div class="matrix-desc">'+escapeHtml(kind.description)+'</div></div>'+
+      '</div></td>'+
       settings.channels.map(item=>{
         const checked=settings.preferences[kind.key]&&settings.preferences[kind.key][item.key];
-        return '<td class="'+(item.available?'':'unavailable')+'" data-channel="'+escapeHtml(item.label)+'"><label class="switch" data-tip="'+escapeHtml(kind.label+' · '+item.label+(item.available?'':' (канал недоступен)'))+'">'+
-          '<input type="checkbox"'+(checked?' checked':'')+' aria-label="'+escapeHtml(kind.label+': '+item.label)+'" onchange="setNotificationPreference(\''+kind.key+'\',\''+item.key+'\',this)">'+
+        const off=!kindOn?'вид выключен':mutedChannels.includes(item.key)?'канал выключен':'';
+        return '<td class="'+(item.available&&!off?'':'unavailable')+'" data-channel="'+escapeHtml(item.label)+'"><label class="switch" data-tip="'+escapeHtml(kind.label+' · '+item.label+(off?' ('+off+')':item.available?'':' (канал недоступен)'))+'">'+
+          '<input type="checkbox"'+(checked?' checked':'')+(off?' disabled':'')+' aria-label="'+escapeHtml(kind.label+': '+item.label)+'" onchange="setNotificationPreference(\''+kind.key+'\',\''+item.key+'\',this)">'+
           '<span class="switch-track"></span></label></td>';
       }).join('')+
-    '</tr>'
-  ).join('');
+    '</tr>';
+  }).join('');
 
   const footnote=settings.channels.some(item=>!item.available)
     ?'<p class="muted notify-hint matrix-footnote">'+icon('info','icon-sm')+'Недоступные каналы можно настроить заранее — выбор начнёт работать, когда администратор подключит канал.</p>':'';
@@ -602,7 +608,28 @@ async function setNotificationPreference(kind,channel,input){
   }
 }
 
-// Привязка Telegram: ссылка на бота с одноразовым кодом; статус проверяем, пока код действует.
+// Общий выключатель канала или вида: отметки матрицы сохраняются, выключенное не доставляется.
+async function setNotificationSwitch(scope,key,input){
+  const enabled=input.checked;
+  input.disabled=true;
+  try{
+    const result=await rpc('setNotificationSwitch',{scope,key,enabled});
+    notify.settings.mutedChannels=result.mutedChannels;
+    notify.settings.mutedKinds=result.mutedKinds;
+    renderNotificationSettings();
+  }catch(error){
+    input.checked=!enabled;
+    input.disabled=false;
+    showToast(error.message||String(error),'error');
+  }
+}
+
+function openProfileTelegram(){
+  navigateTo('profile');
+  requestAnimationFrame(()=>{const box=el('profileTelegram');if(box)box.scrollIntoView({block:'center'})});
+}
+
+// Привязка Telegram (Профиль → Аккаунт): ссылка на бота с одноразовым кодом; статус проверяем, пока код действует.
 async function linkTelegram(button){
   try{
     button.disabled=true;
@@ -620,7 +647,7 @@ async function linkTelegram(button){
 function watchTelegramLink(until){
   clearInterval(notify.tgPoll);
   notify.tgPoll=setInterval(async()=>{
-    if(Date.now()>until||el('notifyTabSettings').hidden||el('viewProfile').hidden){
+    if(Date.now()>until||el('profileTabMain').hidden||el('viewProfile').hidden){
       clearInterval(notify.tgPoll);
       return;
     }
@@ -629,7 +656,7 @@ function watchTelegramLink(until){
       if(settings.telegram.linked){
         clearInterval(notify.tgPoll);
         notify.settings=settings;
-        renderNotificationSettings();
+        if(el('profileTelegram'))el('profileTelegram').innerHTML=profileTelegramHtml(settings.telegram);
         showToast('Telegram привязан'+(settings.telegram.username?': @'+settings.telegram.username:'')+'.');
       }
     }catch(error){}
@@ -641,7 +668,7 @@ async function unlinkTelegram(button){
   try{
     button.disabled=true;
     await rpc('unlinkTelegram');
-    await loadNotificationSettings();
+    await loadProfileTelegram();
     showToast('Telegram отвязан.');
   }catch(error){
     showToast(error.message||String(error),'error');
