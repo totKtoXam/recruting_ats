@@ -1653,6 +1653,18 @@ input[type=radio]:focus-visible{outline:2px solid var(--primary-ring);outline-of
 .admin-page-section{display:none}
 .admin-page-section.active{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;padding:16px var(--page-pad) var(--page-pad)}
 
+/* «Настройки → Для разработчиков»: карточки-ссылки. */
+.dev-links{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(320px,100%),1fr));gap:12px;max-width:880px}
+.dev-link{display:flex;align-items:flex-start;gap:12px;padding:16px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);color:var(--text);text-decoration:none;transition:border-color 120ms,background-color 120ms}
+.dev-link:hover{border-color:var(--primary);background:var(--surface-hover)}
+.dev-link:focus-visible{outline:none;box-shadow:0 0 0 3px var(--primary-tint);border-color:var(--primary)}
+.dev-link-icon{flex:0 0 36px;width:36px;height:36px;display:grid;place-items:center;border-radius:var(--radius);background:var(--primary-tint);color:var(--primary)}
+.dev-link-body{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1 1 auto}
+.dev-link-body strong{font-size:14px;font-weight:600}
+.dev-link-body span{font-size:13px;line-height:1.5;color:var(--text-2)}
+.dev-link-external{flex:0 0 auto;margin-top:2px;color:var(--muted)}
+@media (prefers-reduced-motion:reduce){.dev-link{transition:none}}
+
 .directory-layout{
   flex:1 1 auto;
   min-height:0;

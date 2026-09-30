@@ -556,7 +556,8 @@ async function refreshAdminPage(button){
 const SETTINGS_TABS=[
   {key:'sources',label:'Источники вакансий',icon:'list',route:'settings/sources'},
   {key:'users',label:'Пользователи',icon:'users',route:'settings/users',adminOnly:true},
-  {key:'integrations',label:'Интеграции',icon:'link',route:'settings/integrations/auth',adminOnly:true}
+  {key:'integrations',label:'Интеграции',icon:'link',route:'settings/integrations/auth',adminOnly:true},
+  {key:'developers',label:'Для разработчиков',icon:'code',route:'settings/developers'}
 ];
 
 function renderSettingsTabs(route){

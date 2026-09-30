@@ -499,7 +499,8 @@ const ADMIN_ROUTES={
   'settings/users':{section:'users',tab:'users',title:'Настройки',description:'Войти может любой Google Account, работать в ATS — только тот, кому открыт доступ.',adminOnly:true},
   'settings/integrations/auth':{section:'integrations',tab:'integrations',group:'auth',title:'Настройки',description:'Вход через Google, отправка почты и Telegram-бот. Значения здесь важнее .env и применяются без перезапуска.',adminOnly:true},
   'settings/integrations/smtp':{section:'integrations',tab:'integrations',group:'smtp',title:'Настройки',description:'Вход через Google, отправка почты и Telegram-бот. Значения здесь важнее .env и применяются без перезапуска.',adminOnly:true},
-  'settings/integrations/telegram':{section:'integrations',tab:'integrations',group:'telegram',title:'Настройки',description:'Вход через Google, отправка почты и Telegram-бот. Значения здесь важнее .env и применяются без перезапуска.',adminOnly:true}
+  'settings/integrations/telegram':{section:'integrations',tab:'integrations',group:'telegram',title:'Настройки',description:'Вход через Google, отправка почты и Telegram-бот. Значения здесь важнее .env и применяются без перезапуска.',adminOnly:true},
+  'settings/developers':{section:'developers',tab:'developers',title:'Настройки',description:'Документация API и исходный код ATS.'}
 };
 
 function isAdminUser(){return !!(state.currentUser&&state.currentUser.isAdmin)}

@@ -34,6 +34,7 @@
 - Архивирование сохраняет текущий статус кандидата и проставляет `archived_at`; кандидата можно вернуть из архива.
 - Resume Intake API для AI-интеграций: создание предзаполненных черновиков кандидатов (см. [`docs/API.md`](docs/API.md)).
 - MCP-сервер и плагин Claude Code: Claude работает с ATS от имени пользователя — вход кнопкой «Connect» (OAuth через вход в ATS), превью и подтверждение перед каждым изменением (см. [MCP-сервер и плагин Claude](#mcp-сервер-и-плагин-claude)).
+- Swagger UI всего API: `/api/docs`, ссылка — в «Настройки → Для разработчиков» вместе с репозиторием (только после входа; спецификация OpenAPI 3.1 — `/api/openapi.json`, см. [`docs/API.md`](docs/API.md#swagger-ui)).
 - Автоматические миграции схемы БД при старте.
 - CI в GitHub Actions: тесты, проверка миграций на чистом PostgreSQL, сборка Docker-образа.
 
@@ -700,9 +701,11 @@ server/
                       text-distance.js (расстояние Дамерау — Левенштейна)
   routes/
     auth.js           вход через Google / dev, выход, проверка сессии
+    docs.js           Swagger UI (/api/docs) и /api/openapi.json
     files.js          /files/:id и /candidates/:id/files
     intake.js         Resume Intake API (/intake)
     html.js           экранирование HTML/JS
+  openapi/            спецификация OpenAPI: index.js (сборка, не-RPC эндпоинты), rpc/*.js (описания RPC-методов)
   services/           бизнес-логика: кандидаты, интервью, справочники, черновики, файлы,
                       пользователи (users.js), серверные таблицы (lists.js),
                       архив/корзина (lifecycle.js), комментарии (comments.js),
