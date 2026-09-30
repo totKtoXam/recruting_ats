@@ -558,6 +558,10 @@ function getRoute(){
   if(raw===''||raw==='home'){
     return {page:'home',path:'home',candidateId:''};
   }
+  // Аналитика: показатели найма за период (#/analytics).
+  if(raw==='analytics'){
+    return {page:'analytics',path:'analytics',candidateId:''};
+  }
   if(raw==='profile'||raw.startsWith('profile/')){
     return {page:'profile',path:raw,tab:raw.split('/')[1]||'',candidateId:''};
   }
@@ -585,14 +589,16 @@ function applyRoute(){
   const route=getRoute();
   const adminRoute=ADMIN_ROUTES[route.path]||{};
   const tabLabel=adminRoute.tab&&typeof SETTINGS_TABS!=='undefined'?(SETTINGS_TABS.find(tab=>tab.key===adminRoute.tab)||{}).label:'';
-  const pageTitle=route.page==='home'?'Главная':route.page==='profile'?'Профиль':route.page==='admin'?[tabLabel,adminRoute.title].filter(Boolean).join(' · '):'Кандидаты';
+  const pageTitle=route.page==='home'?'Главная':route.page==='analytics'?'Аналитика':route.page==='profile'?'Профиль':route.page==='admin'?[tabLabel,adminRoute.title].filter(Boolean).join(' · '):'Кандидаты';
   document.title=(pageTitle?pageTitle+' · ':'')+'Recruiting ATS';
   el('viewCandidates').hidden=route.page!=='candidates';
   el('viewAdmin').hidden=route.page!=='admin';
   el('viewProfile').hidden=route.page!=='profile';
   if(el('viewHome'))el('viewHome').hidden=route.page!=='home';
+  if(el('viewAnalytics'))el('viewAnalytics').hidden=route.page!=='analytics';
   if(route.page==='profile'&&typeof showProfile==='function')showProfile(route.tab);
   if(route.page==='home'&&typeof showHome==='function')showHome();
+  if(route.page==='analytics'&&typeof showAnalytics==='function')showAnalytics();
   document.querySelectorAll('.sidebar-link').forEach(link=>{
     const active=link.dataset.route===route.path||route.path.startsWith(link.dataset.route+'/');
     link.classList.toggle('active',active);
@@ -766,7 +772,7 @@ function applyBootstrapData(data){
   if(typeof renderAdminAll==='function'){
     renderAdminAll();
   }
-  // Главная: быстрые действия и приветствие зависят от текущего пользователя.
+  // Главная: приветствие зависит от текущего пользователя.
   if(typeof homeVisible==='function'&&homeVisible())renderHome();
 
   updateSyncStatus();

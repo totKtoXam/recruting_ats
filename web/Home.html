@@ -1,7 +1,7 @@
 <style>
-/* ---------- Главная: быстрые действия и дашборды ---------- */
+/* ---------- Главная «Мой день» и общие блоки сводок (их же использует «Аналитика») ---------- */
 .home-page{display:flex;flex-direction:column;gap:16px;padding:16px var(--page-pad) var(--page-pad);max-width:1600px}
-.home-page.is-loading .home-card:not(.home-actions-card),.home-page.is-loading .home-kpis{opacity:.55;pointer-events:none}
+.home-page.is-loading .home-card{opacity:.55;pointer-events:none}
 .home-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:16px}
 .home-card{
   grid-column:span 12;min-width:0;display:flex;flex-direction:column;
@@ -18,96 +18,49 @@
 .home-card-body.flush{padding:0}
 .home-card-body .empty-state{margin:0}
 .home-card-body.flush .empty-state{margin:12px 16px 16px;width:auto}
-.home-greeting{font-weight:500}
+.home-card.skeleton{border:0;box-shadow:none;background:var(--surface-3)}
 
-/* Быстрые действия */
-.home-actions{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;padding:12px 16px 16px}
-.home-action{
-  position:relative;display:flex;align-items:center;gap:10px;min-height:56px;padding:8px 12px;
-  border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface);
-  color:var(--text);font:inherit;text-align:left;cursor:pointer;
-  transition:border-color var(--dur-fast),background-color var(--dur-fast),box-shadow var(--dur-fast)
-}
-.home-action:hover{border-color:var(--primary-border);background:var(--primary-tint)}
-.home-action:focus-visible{outline:none;box-shadow:var(--focus-ring)}
-.home-action-icon{
-  flex:0 0 36px;width:36px;height:36px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;
-  background:var(--primary-soft);color:var(--primary)
-}
-.home-action-text{display:flex;flex-direction:column;min-width:0;line-height:1.3}
-.home-action-text strong{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.home-action-text small{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.home-action.is-primary{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
-.home-action.is-primary:hover{background:var(--primary-strong);border-color:var(--primary-strong)}
-.home-action.is-primary .home-action-icon{background:color-mix(in srgb,var(--on-primary) 18%,transparent);color:var(--on-primary)}
-.home-action.is-primary .home-action-text small{color:var(--on-primary);opacity:.8}
-.home-action-badge{
-  margin-left:auto;min-width:20px;height:20px;padding:0 6px;border-radius:999px;
-  background:var(--danger);color:var(--on-danger);font-size:12px;font-weight:700;line-height:20px;text-align:center
-}
+/* Шапка: приветствие и сводка «что требует внимания» */
+.home-summary{display:inline-flex;flex-wrap:wrap;align-items:baseline;gap:2px 6px}
+.home-summary-link{padding:0;border:0;background:none;color:var(--text);font:inherit;font-weight:600;cursor:pointer;text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:3px}
+.home-summary-link:hover{color:var(--primary);text-decoration-color:currentColor}
+.home-summary-link:focus-visible{outline:none;box-shadow:var(--focus-ring);border-radius:4px}
+.home-summary-link.is-warning{color:var(--warning)}
+#viewHome .page-actions{flex-wrap:nowrap}
+.home-summary-sep{color:var(--text-3)}
 
-/* Ключевые показатели */
-.home-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
-.home-tile{
-  display:flex;flex-direction:column;gap:2px;min-width:0;padding:12px 14px;
-  border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface);box-shadow:var(--shadow);
-  color:var(--text);font:inherit;text-align:left
-}
-button.home-tile{cursor:pointer;transition:border-color var(--dur-fast),background-color var(--dur-fast)}
-button.home-tile:hover{border-color:var(--primary-border);background:var(--surface-hover)}
-button.home-tile:focus-visible{outline:none;box-shadow:var(--focus-ring)}
-.home-tile-label{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.home-tile-value{font-size:26px;font-weight:600;line-height:1.15;letter-spacing:-.01em}
-.home-tile-foot{font-size:12px;color:var(--text-3);min-height:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.home-delta{display:inline-flex;align-items:center;gap:2px;font-weight:600}
-.home-delta .icon{width:12px;height:12px}
-.home-delta.is-good{color:var(--success)}
-.home-delta.is-bad{color:var(--danger)}
-.home-delta.is-flat{color:var(--muted);font-weight:500}
-.home-tile.skeleton{min-height:88px;border:0}
+/* Раскладка: основной список и боковая колонка — без растягивания по высоте соседа */
+.home-main{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px;align-items:start}
+.home-main>.home-card{grid-column:auto}
+.home-side{display:flex;flex-direction:column;gap:16px;min-width:0}
 
-/* Горизонтальные столбики: воронка, источники, причины, нагрузка */
-.home-bars{display:flex;flex-direction:column;gap:6px}
-.home-bar-row{display:grid;grid-template-columns:minmax(120px,40%) minmax(0,1fr) auto;gap:10px;align-items:center;min-height:24px}
-.home-bar-row.is-divider{margin-top:6px;padding-top:8px;border-top:1px solid var(--line-soft)}
+/* Горизонтальные столбики: источники, причины, нагрузка, конверсия */
+.home-bars{display:flex;flex-direction:column;gap:2px}
+.home-bar-row{
+  display:grid;grid-template-columns:minmax(120px,40%) minmax(0,1fr) auto;gap:10px;align-items:center;min-height:28px;
+  margin:0 -6px;padding:2px 6px;border:0;border-radius:var(--radius);background:transparent;color:inherit;font:inherit;text-align:left;width:calc(100% + 12px)
+}
+button.home-bar-row{cursor:pointer}
+button.home-bar-row:hover{background:var(--hover)}
+button.home-bar-row:focus-visible{outline:none;box-shadow:var(--focus-ring)}
 .home-bar-label{display:flex;align-items:center;gap:6px;min-width:0;font-size:13px;color:var(--text-2)}
 .home-bar-label>span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .home-bar-label .brand-icon{width:18px;height:18px;flex-basis:18px;font-size:9px}
 .home-bar-track{height:10px;border-radius:3px;background:var(--surface-3);overflow:hidden}
-.home-bar-fill{height:100%;border-radius:0 3px 3px 0;background:var(--primary);transition:width var(--dur) var(--ease-out)}
-.home-bar-row.is-muted .home-bar-fill,.home-bar-row.is-other .home-bar-fill{background:var(--status-neutral)}
-.home-bar-value{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;min-width:24px;text-align:right}
+.home-bar-fill{display:block;height:100%;border-radius:0 3px 3px 0;background:var(--primary);transition:width var(--dur) var(--ease-out)}
+.home-bar-row.is-other .home-bar-fill{background:var(--status-neutral)}
+.home-bar-value{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;min-width:24px;text-align:right;white-space:nowrap}
+.home-bar-value small{margin-left:4px;font-size:12px;font-weight:500;color:var(--muted)}
 .home-foot{margin-top:10px;font-size:12px;color:var(--muted)}
-
-/* График новых кандидатов */
-.home-chart{position:relative;min-height:200px}
-.home-chart-svg{display:block;width:100%;height:auto;overflow:visible}
-.home-grid-line{stroke:var(--line-soft);stroke-width:1}
-.home-axis{fill:var(--muted);font-size:11px;font-family:inherit}
-.home-col-fill{fill:var(--primary);transition:fill var(--dur-fast)}
-.home-col:hover .home-col-fill,.home-col:focus .home-col-fill{fill:var(--primary-strong)}
-.home-col{outline:none;cursor:default}
-.home-col:focus-visible .home-hit{stroke:var(--primary-ring);stroke-width:2;rx:3}
-.home-hit{fill:transparent}
-.home-chart-tip{
-  position:absolute;z-index:5;padding:6px 8px;border-radius:var(--radius);pointer-events:none;
-  background:var(--tooltip-bg);color:var(--tooltip-fg);font-size:12px;line-height:1.4;white-space:nowrap;
-  box-shadow:var(--shadow-pop);transform:translate(-50%,calc(-100% - 6px))
-}
-.home-chart-tip b{font-weight:700}
 
 /* Таблицы и списки */
 .home-table{width:100%;border-collapse:collapse;font-size:13px}
 .home-table th{padding:6px 8px;text-align:left;font-size:12px;font-weight:600;color:var(--muted);border-bottom:1px solid var(--line);white-space:nowrap}
 .home-table td{padding:7px 8px;border-bottom:1px solid var(--line-soft);vertical-align:middle}
 .home-table tbody tr:last-child td{border-bottom:0}
-.home-table tbody tr[tabindex]{cursor:pointer}
-.home-table tbody tr[tabindex]:hover{background:var(--hover)}
-.home-table tbody tr[tabindex]:focus-visible{outline:none;background:var(--primary-tint)}
 .home-table .num{text-align:right;font-variant-numeric:tabular-nums;width:1%;white-space:nowrap}
 .home-table th:first-child,.home-table td:first-child{padding-left:16px}
 .home-table th:last-child,.home-table td:last-child{padding-right:16px}
-.home-table .home-cell-main{display:block;min-width:0;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
 
 .home-list{display:flex;flex-direction:column}
 .home-row{
@@ -124,6 +77,23 @@ button.home-tile:focus-visible{outline:none;box-shadow:var(--focus-ring)}
 .home-days{min-width:46px;text-align:right;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 .home-days.is-stale{color:var(--warning);font-weight:600}
 .home-more{padding:8px 16px;border-top:1px solid var(--line-soft)}
+.home-done{display:flex;align-items:center;gap:8px;padding:16px;color:var(--muted);font-size:13px}
+.home-done .icon{color:var(--success)}
+
+/* Вакансии: кандидаты по этапам, ячейка открывает доску */
+.home-vacancy-name{display:flex;align-items:center;gap:8px;min-width:0}
+.home-vacancy-name button{min-width:0;max-width:320px;padding:0;border:0;background:none;color:var(--text);font:inherit;font-weight:600;text-align:left;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home-vacancy-name button:hover{color:var(--primary)}
+.home-vacancy-name button:focus-visible{outline:none;box-shadow:var(--focus-ring);border-radius:4px}
+.home-stage-cell{
+  min-width:32px;height:26px;padding:0 6px;border:0;border-radius:var(--radius);background:transparent;
+  color:var(--text);font:inherit;font-weight:600;font-variant-numeric:tabular-nums;cursor:pointer
+}
+.home-stage-cell:hover{background:var(--primary-tint);color:var(--primary)}
+.home-stage-cell:focus-visible{outline:none;box-shadow:var(--focus-ring)}
+.home-stage-cell.is-zero{color:var(--text-3);font-weight:400}
+.home-table td.num:has(>.home-stage-cell){padding:3px 2px}
+.home-fresh{color:var(--success);font-weight:600}
 
 /* Лента событий */
 .home-event{
@@ -151,50 +121,64 @@ button.home-event:focus-visible{outline:none;background:var(--primary-tint)}
 .home-notify .notify-kind{flex:0 0 28px}
 .home-row-main .notify-link{margin-top:2px}
 
+/* Колонка доски, открытая с главной или из аналитики, коротко подсвечивается */
+@keyframes home-column-flash{from{box-shadow:0 0 0 2px var(--primary-ring)}to{box-shadow:0 0 0 2px transparent}}
+.column.is-flash{animation:home-column-flash 1.6s var(--ease-out)}
+
 @media(max-width:1200px){
   .home-card.span-4{grid-column:span 6}
   .home-card.span-8{grid-column:span 12}
 }
 @media(max-width:900px){
+  .home-main{grid-template-columns:minmax(0,1fr)}
   .home-card.span-6,.home-card.span-4{grid-column:span 12}
-  .home-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .home-actions{grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}
 }
+/* Ссылка на «Аналитику» внизу главной — только на телефоне, где её нет в нижней панели. */
+.home-mobile-link{display:none}
+.home-meta-status{display:none}
+
 @media(max-width:720px){
   .home-page{gap:12px;padding-top:12px}
-  .home-grid{gap:12px}
-  .home-tile-value{font-size:22px}
+  .home-grid,.home-main,.home-side{gap:12px}
   .home-bar-row{grid-template-columns:minmax(96px,44%) minmax(0,1fr) auto}
+  /* Сводка — столбиком, без разделителей; этап в строке очереди — в подписи вместо чипа. */
+  .home-summary{flex-direction:column;align-items:flex-start;gap:2px}
+  .home-summary-sep{display:none}
+  .home-summary-link{text-align:left}
+  .home-row-side .status-chip{display:none}
+  .home-meta-status{display:inline}
+  .home-mobile-link{
+    display:flex;align-items:center;gap:10px;width:100%;min-height:48px;padding:10px 16px;
+    border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface);color:var(--text);font:inherit;font-weight:600;text-align:left;cursor:pointer
+  }
+  .home-mobile-link .icon:last-child{margin-left:auto;color:var(--muted)}
 }
+@media(prefers-reduced-motion:reduce){.column.is-flash{animation:none}}
 </style>
 
 <script>
-// ---------- Главная страница ----------
-// Быстрые действия + сводка одним RPC getDashboardData({days}). Числа за период считаются
-// относительно предыдущего периода той же длины; списки открывают карточки без смены раздела.
+// ---------- Главная «Мой день» ----------
+// Текущее состояние без периода одним RPC getHomeData: очередь «на моём этапе», зависшие,
+// вакансии по этапам, уведомления и последние события. Показатели за период — в «Аналитике».
+// Интервьюер (focus: 'personal') видит свою очередь и уведомления, остальные — ещё и командные блоки.
 
-const HOME_PERIODS=[{days:7,label:'7 дней'},{days:30,label:'30 дней'},{days:90,label:'90 дней'}];
-const HOME_PERIOD_KEY='ats:home-period';
 const HOME_CACHE_MS=60000;
+const HOME_LIST_PREVIEW=8;
+const HOME_SIDE_PREVIEW=5;
 const HOME_ACTION_ICONS={create:'plus',update:'edit',status:'arrow-right',archive:'archive',unarchive:'unarchive',delete:'trash',restore:'restore',revert:'undo'};
 const HOME_ENTITY_LABELS={candidate:'кандидата',vacancy:'вакансию',source:'источник',template:'шаблон интервью',interview:'результат интервью',user:'пользователя'};
+// Короткие подписи этапов в заголовке таблицы вакансий; полное название — в подсказке.
+const HOME_STAGE_SHORT={'Новый':'Новые','HR screening':'HR','Проф. интервью':'Проф.','Финальное интервью':'Финал','Offer':'Оффер','Hired':'Наняты'};
 
 const home={
-  days:30,
   data:null,
   loadedAt:0,
   loading:false,
   error:'',
   request:0,
-  chartTable:false,
+  expanded:{queue:false,stale:false},
   notifications:null
 };
-(function(){
-  try{
-    const saved=Number(localStorage.getItem(HOME_PERIOD_KEY));
-    if(HOME_PERIODS.some(period=>period.days===saved))home.days=saved;
-  }catch(error){}
-})();
 
 function homeVisible(){
   const view=el('viewHome');
@@ -202,21 +186,19 @@ function homeVisible(){
 }
 
 function showHome(){
-  renderHomePeriod();
   renderHome();
   if(!home.data||Date.now()-home.loadedAt>HOME_CACHE_MS)loadHomeData();
 }
 
 async function loadHomeData(){
-  const days=home.days;
   const request=++home.request;
   home.loading=true;
   home.error='';
   renderHomeLoading();
   try{
     const [data,feed]=await Promise.all([
-      rpc('getDashboardData',{days}),
-      rpc('getNotificationFeed',{view:'unread',limit:5}).catch(()=>null)
+      rpc('getHomeData'),
+      rpc('getNotificationFeed',{view:'unread',limit:HOME_SIDE_PREVIEW}).catch(()=>null)
     ]);
     if(request!==home.request)return;
     home.data=data;
@@ -239,21 +221,6 @@ async function loadHomeData(){
   }
 }
 
-function setHomePeriod(days){
-  home.days=Number(days)||30;
-  try{localStorage.setItem(HOME_PERIOD_KEY,String(home.days))}catch(error){}
-  renderHomePeriod();
-  loadHomeData();
-}
-
-function renderHomePeriod(){
-  const root=el('homePeriod');
-  if(!root)return;
-  root.innerHTML=HOME_PERIODS.map(period=>
-    '<label class="segmented-option"><input type="radio" name="homePeriod" value="'+period.days+'"'+(period.days===home.days?' checked':'')+' onchange="setHomePeriod(this.value)"><span>'+period.label+'</span></label>'
-  ).join('');
-}
-
 async function refreshHomePage(button){
   await runUiTask({button,pageId:'viewHome',label:'Обновление…'},async()=>{
     await Promise.all([refreshBootstrapData(),loadHomeData()]);
@@ -271,60 +238,61 @@ function renderHome(){
   const root=el('homeRoot');
   if(!root)return;
   const data=home.data;
-  root.innerHTML=
-    homeQuickActionsHtml()+
-    (data?homeKpiHtml(data)+homeWidgetsHtml(data):home.error?homeErrorHtml():homeSkeletonHtml());
+  renderHomeHeader();
+  root.innerHTML=data?homeBodyHtml(data):home.error?homeErrorHtml():homeSkeletonHtml();
   root.classList.toggle('is-loading',home.loading&&!!data);
-  drawHomeChart();
 }
 
-window.addEventListener('resize',(()=>{
-  let timer=null;
-  return ()=>{
-    clearTimeout(timer);
-    timer=setTimeout(()=>{if(homeVisible()&&!home.chartTable)drawHomeChart()},150);
-  };
-})());
-
-// ---------- Быстрые действия ----------
+// ---------- Шапка ----------
 
 function homeGreeting(){
   const user=state.currentUser;
   const hour=new Date().getHours();
   const word=hour<5?'Доброй ночи':hour<12?'Доброе утро':hour<18?'Добрый день':'Добрый вечер';
   const name=user?(user['Имя']||user['ФИО']||''):'';
-  return '<span class="muted home-greeting">'+escapeHtml(word+(name?', '+name:''))+'</span>';
+  return word+(name?', '+name:'');
 }
 
-function homeAction(iconName,label,hint,onclick,extra={}){
-  return '<button type="button" class="home-action'+(extra.primary?' is-primary':'')+'" onclick="'+onclick+'">'+
-    '<span class="home-action-icon">'+icon(iconName)+'</span>'+
-    '<span class="home-action-text"><strong>'+escapeHtml(label)+'</strong><small>'+escapeHtml(hint)+'</small></span>'+
-    (extra.badge?'<span class="home-action-badge">'+escapeHtml(extra.badge)+'</span>':'')+
-  '</button>';
+function homePlural(count,one,few,many){
+  const n=Math.abs(count)%100;
+  const last=n%10;
+  if(n>10&&n<20)return many;
+  if(last===1)return one;
+  if(last>=2&&last<=4)return few;
+  return many;
 }
 
-function homeQuickActionsHtml(){
-  const admin=isAdminUser();
-  const unread=typeof notify!=='undefined'?notify.unread:0;
-  const actions=[
-    homeAction('plus','Новый кандидат','Карточка, резюме и назначение ответственных',"homeNewCandidate(false)",{primary:true}),
-    homeAction('sparkles','Заполнить из резюме','ФИО и контакты — из PDF, DOC или DOCX',"homeNewCandidate(true)"),
-    homeAction('briefcase','Новая вакансия','Название, публикации, шаблоны интервью',"homeOpenForm('vacancies','resetVacancyForm')"),
-    homeAction('globe','Новый источник','Откуда приходят кандидаты',"homeOpenForm('settings/sources','resetSourceForm')"),
-    admin?homeAction('user-plus','Добавить пользователя','Доступ, этапы и права',"homeOpenForm('settings/users','resetUserForm')"):'',
-    homeAction('kanban','Доска кандидатов','Воронка по этапам с фильтрами',"navigateTo('candidates')"),
-    homeAction('archive','Архив кандидатов','Завершённые и отложенные',"homeOpenArchive()"),
-    homeAction('list','Вакансии','Статусы, публикации и шаблоны',"navigateTo('vacancies')"),
-    homeAction('bell','Уведомления',unread?'Непрочитанных: '+unread:'Всё прочитано',"toggleNotifyPopover(true)",{badge:unread?(unread>99?'99+':String(unread)):''}),
-    admin?homeAction('link','Интеграции','Вход через Google, SMTP, Telegram',"navigateTo('settings/integrations/auth')"):'',
-    homeAction('user','Профиль','Подписки, Telegram и тема',"navigateTo('profile')")
-  ];
-  return '<section class="home-card home-actions-card" aria-label="Быстрые действия">'+
-    '<div class="home-card-head"><div class="home-card-title"><h3>Быстрые действия</h3></div>'+homeGreeting()+'</div>'+
-    '<div class="home-actions">'+actions.join('')+'</div>'+
-  '</section>';
+// Сводка под приветствием: каждая часть ведёт к своему списку.
+function homeSummaryHtml(data){
+  const parts=[];
+  const queue=(data.my||{}).total||0;
+  const stale=(data.stale||{}).total||0;
+  const offers=(data.totals||{}).offers||0;
+  if(queue)parts.push('<button type="button" class="home-summary-link" onclick="homeScrollTo(\'homeQueue\')">'+homeNum(queue)+' '+homePlural(queue,'кандидат ждёт','кандидата ждут','кандидатов ждут')+' вашего решения</button>');
+  if(data.focus==='team'){
+    if(stale)parts.push('<button type="button" class="home-summary-link is-warning" onclick="homeScrollTo(\'homeStale\')">'+homeNum(stale)+' без движения дольше '+data.staleDays+' дн.</button>');
+    if(offers)parts.push('<button type="button" class="home-summary-link" onclick="homeOpenBoard({status:\'Offer\'})">'+homeNum(offers)+' '+homePlural(offers,'оффер','оффера','офферов')+' в работе</button>');
+  }
+  if(!parts.length)return '<span>Срочных дел нет.</span>';
+  return parts.join('<span class="home-summary-sep" aria-hidden="true">·</span>');
 }
+
+function renderHomeHeader(){
+  const title=el('homeTitle');
+  const summary=el('homeSummary');
+  if(title)title.textContent=homeGreeting();
+  if(summary)summary.innerHTML=home.data?homeSummaryHtml(home.data):home.error?'':'Загрузка…';
+}
+
+function homeScrollTo(id){
+  const node=el(id);
+  if(!node)return;
+  node.scrollIntoView({behavior:'smooth',block:'start'});
+  const focusable=node.querySelector('button,[tabindex]');
+  if(focusable)focusable.focus({preventScroll:true});
+}
+
+// ---------- Действия ----------
 
 function homeReferencesReady(){
   if(state.loaded.references)return true;
@@ -354,16 +322,43 @@ function homeOpenForm(route,fnName){
   });
 }
 
-function homeOpenArchive(){
-  homeAfterRoute('candidates',()=>{if(typeof setBoardState==='function')setBoardState('archived')});
-}
-
 function homeOpenVacancy(id){
   if(!homeReferencesReady())return;
   homeAfterRoute('vacancies',()=>{if(typeof editVacancy==='function')editVacancy(id)});
 }
 
-// Карточка открывается поверх главной, адрес раздела не меняется.
+function homeSetSelect(id,values){
+  const select=el(id);
+  if(!select)return;
+  const wanted=new Set(values.map(String));
+  [...select.options].forEach(option=>{option.selected=wanted.has(option.value)});
+  if(window.UiSelect&&typeof UiSelect.refresh==='function')UiSelect.refresh(select);
+}
+
+// Доска «Активные» с одним фильтром (вакансия, источник или рекрутер); status — прокрутить к колонке.
+function homeOpenBoard({vacancy='',source='',responsible='',status=''}={}){
+  if(!state.loaded.candidates||!state.loaded.references){showToast('Кандидаты ещё загружаются.','error');return}
+  homeAfterRoute('candidates',async()=>{
+    if(boardState()!=='active')await setBoardState('active');
+    vacancyFilter.clear();
+    if(vacancy)vacancyFilter.add(String(vacancy));
+    homeSetSelect('filterSource',source?[source]:[]);
+    homeSetSelect('filterResponsible',responsible?[responsible]:[]);
+    if(el('filterSearch'))el('filterSearch').value='';
+    if(source||responsible)toggleCandidateFilters(true);
+    renderBoard();
+    renderVacancyStats();
+    if(!status)return;
+    const column=document.querySelector('#viewCandidates .column[data-status="'+CSS.escape(status)+'"]');
+    if(!column)return;
+    column.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
+    column.classList.remove('is-flash');
+    void column.offsetWidth;
+    column.classList.add('is-flash');
+  });
+}
+
+// Карточка открывается поверх текущего раздела, адрес не меняется.
 async function homeOpenCandidate(id){
   if(!state.loaded.candidates||!state.loaded.references){showToast('Кандидаты ещё загружаются.','error');return}
   if(!candidateById(id)){
@@ -376,71 +371,22 @@ async function homeOpenCandidate(id){
   else showToast('Кандидат недоступен.','error');
 }
 
-// ---------- Показатели ----------
+function toggleHomeList(key){
+  home.expanded[key]=!home.expanded[key];
+  renderHome();
+  const card=el(key==='queue'?'homeQueue':'homeStale');
+  const more=card&&card.querySelector('.home-more .text-btn');
+  if(more)more.focus({preventScroll:true});
+}
+
+// ---------- Общие блоки (используются и в «Аналитике») ----------
 
 function homeNum(value){
   return Number(value||0).toLocaleString('ru-RU');
 }
 
-function homeDelta(kpi,{goodUp=true,suffix=''}={}){
-  if(!kpi||kpi.value===null||kpi.value===undefined||kpi.previous===null||kpi.previous===undefined)return '';
-  const diff=Math.round((kpi.value-kpi.previous)*10)/10;
-  if(!diff)return '<span class="home-delta is-flat">без изменений</span>';
-  const good=goodUp?diff>0:diff<0;
-  return '<span class="home-delta '+(good?'is-good':'is-bad')+'" data-tip="Прошлый период: '+homeNum(kpi.previous)+escapeHtml(suffix)+'">'+
-    icon(diff>0?'chevron-up':'chevron-down')+(diff>0?'+':'−')+homeNum(Math.abs(diff))+escapeHtml(suffix)+'</span> · было '+homeNum(kpi.previous)+escapeHtml(suffix);
-}
-
-function homeTile(label,value,foot,onclick){
-  const tag=onclick?'button type="button"':'div';
-  return '<'+tag+' class="home-tile"'+(onclick?' onclick="'+onclick+'"':'')+'>'+
-    '<span class="home-tile-label">'+escapeHtml(label)+'</span>'+
-    '<span class="home-tile-value">'+value+'</span>'+
-    '<span class="home-tile-foot">'+(foot||'')+'</span>'+
-  '</'+(onclick?'button':'div')+'>';
-}
-
-function homePeriodLabel(data){
-  return 'за '+data.days+' дн.';
-}
-
-function homeKpiHtml(data){
-  const totals=data.totals||{};
-  const kpi=data.kpi||{};
-  const vacancies=(data.vacancies||{}).counts||{};
-  const my=data.my||{};
-  const period=homePeriodLabel(data);
-  const tth=kpi.timeToHireDays||{};
-  const hasTth=tth.value!==null&&tth.value!==undefined;
-  return '<section class="home-kpis" aria-label="Ключевые показатели">'+
-    homeTile('Активных кандидатов',homeNum(totals.active),'в работе '+homeNum(totals.inProgress)+' · наняты '+homeNum(totals.hired),"navigateTo('candidates')")+
-    homeTile('Новых '+period,homeNum((kpi.created||{}).value),homeDelta(kpi.created,{goodUp:true}))+
-    homeTile('Офферов '+period,homeNum((kpi.offers||{}).value),homeDelta(kpi.offers,{goodUp:true}))+
-    homeTile('Наймов '+period,homeNum((kpi.hired||{}).value),homeDelta(kpi.hired,{goodUp:true}))+
-    homeTile('Отказов '+period,homeNum((kpi.rejected||{}).value),homeDelta(kpi.rejected,{goodUp:false}))+
-    homeTile('Среднее время найма',hasTth?homeNum(tth.value)+' <span class="muted">дн.</span>':'—',hasTth?homeDelta(tth,{goodUp:false,suffix:' дн.'}):'наймов '+period+' нет')+
-    homeTile('Открытых вакансий',homeNum(vacancies.open),'на паузе '+homeNum(vacancies.paused)+' · закрытых '+homeNum(vacancies.closed),"navigateTo('vacancies')")+
-    homeTile('Мои кандидаты',homeNum(my.mine),'на моём этапе '+homeNum(my.queueTotal))+
-  '</section>';
-}
-
-function homeSkeletonHtml(){
-  return '<section class="home-kpis" aria-hidden="true">'+'<div class="home-tile skeleton"></div>'.repeat(8)+'</section>'+
-    '<div class="home-grid" aria-hidden="true">'+
-      '<div class="home-card span-6 skeleton" style="min-height:240px"></div>'.repeat(2)+
-      '<div class="home-card span-4 skeleton" style="min-height:200px"></div>'.repeat(3)+
-    '</div>'+
-    '<span class="sr-only" role="status">Сводка загружается…</span>';
-}
-
-function homeErrorHtml(){
-  return '<div class="empty-state">Не удалось загрузить сводку: '+escapeHtml(home.error)+'<br><button type="button" class="text-btn" style="margin-top:8px" onclick="loadHomeData()">'+icon('refresh','icon-sm')+' Повторить</button></div>';
-}
-
-// ---------- Виджеты ----------
-
 function homeCard(title,span,body,opts={}){
-  return '<section class="home-card '+span+'">'+
+  return '<section class="home-card '+span+'"'+(opts.id?' id="'+opts.id+'"':'')+'>'+
     '<div class="home-card-head"><div class="home-card-title"><h3>'+escapeHtml(title)+
       (opts.count!==undefined?'<span class="counter-badge">'+homeNum(opts.count)+'</span>':'')+'</h3>'+
       (opts.sub?'<p class="muted">'+escapeHtml(opts.sub)+'</p>':'')+'</div>'+
@@ -451,108 +397,115 @@ function homeCard(title,span,body,opts={}){
   '</section>';
 }
 
-function homeWidgetsHtml(data){
-  const period=homePeriodLabel(data);
-  const rejections=data.rejections||{reasons:[]};
-  const stale=data.stale||{items:[],total:0,thresholdDays:14};
-  const my=data.my||{queue:[],queueTotal:0};
-  const chartToggle='<button type="button" class="icon-btn icon-btn-sm" data-tip="'+(home.chartTable?'Показать график':'Показать таблицей')+'" aria-label="'+(home.chartTable?'Показать график':'Показать таблицей')+'" aria-pressed="'+home.chartTable+'" onclick="toggleHomeChartTable()">'+icon('list','icon-sm')+'</button>';
-  return '<div class="home-grid">'+
-    homeCard('Воронка по этапам','span-6',homeFunnelHtml(data),{sub:'Активные кандидаты на каждом этапе сейчас',link:["navigateTo('candidates')",'Доска']})+
-    homeCard('Новые кандидаты','span-6','<div id="homeChart" class="home-chart"></div>',{sub:'По '+(data.series&&data.series.unit==='week'?'неделям':'дням')+' '+period+'; наймы и отказы — в подсказке и таблице',actions:chartToggle})+
-    homeCard('На моём этапе','span-6',homeCandidateListHtml(my.queue,'Кандидатов, ждущих вашего решения, нет.',stale.thresholdDays),{count:my.queueTotal,sub:'Кандидаты, где за текущий этап отвечаете вы',flush:true})+
-    homeCard('Без движения','span-6',homeCandidateListHtml(stale.items,'Все кандидаты двигаются по воронке.',stale.thresholdDays),{count:stale.total,sub:'Дольше '+stale.thresholdDays+' дней на одном этапе',flush:true})+
-    homeCard('Вакансии','span-8',homeVacanciesHtml(data.vacancies||{items:[]},period),{link:["navigateTo('vacancies')",'Все вакансии'],flush:true})+
-    homeCard('Уведомления','span-4',homeNotificationsHtml(),{count:typeof notify!=='undefined'?notify.unread:undefined,sub:'Непрочитанные',link:["openProfile('log')",'Журнал'],flush:true})+
-    homeCard('Источники','span-4',homeBarsHtml(data.sources||[],{labelHtml:item=>(item.other?brandIconHtml('other'):sourceIconHtml(item.name))+'<span>'+escapeHtml(item.name)+'</span>',empty:'Новых кандидатов '+period+' нет.'}),{sub:'Новые кандидаты '+period})+
-    homeCard('Причины отказа','span-4',homeReasonsHtml(rejections),{sub:'Отказы '+period+(rejections.total?': кандидат — '+rejections.byCandidate+', компания — '+rejections.byCompany:'')})+
-    homeCard('Нагрузка рекрутеров','span-4',homeBarsHtml(data.workload||[],{labelHtml:item=>'<span>'+escapeHtml(item.name)+'</span>',getValue:item=>item.inProgress,tip:item=>'В работе: '+item.inProgress+(item.offers?' · офферов: '+item.offers:'')+' · всего активных: '+item.total,empty:'Активных кандидатов пока нет.'}),{sub:'Кандидаты в работе по рекрутерам'})+
-    homeCard('Недавно добавлены','span-6',homeRecentHtml(data.recent||[]),{flush:true})+
-    homeCard('Последние события','span-6',homeActivityHtml(data.activity||[]),{flush:true})+
-  '</div>';
-}
-
-// Воронка: один цвет для величин, этап опознаётся чипом с названием, а не цветом столбика.
-function homeFunnelHtml(data){
-  const rows=data.funnel||[];
-  const rejectedStatus=state.rejectedStatus||'Отказано';
-  const pipeline=rows.filter(row=>row.status!==rejectedStatus);
-  const rejected=rows.find(row=>row.status===rejectedStatus);
-  const total=pipeline.reduce((sum,row)=>sum+row.count,0);
-  if(!total&&!(rejected&&rejected.count)){
-    return '<div class="empty-state compact">Активных кандидатов пока нет. Добавьте первого — «Новый кандидат» в быстрых действиях.</div>';
-  }
-  const max=Math.max(1,...pipeline.map(row=>row.count));
-  const row=(item,cls)=>{
-    const share=total?Math.round(item.count/total*100):0;
-    return '<div class="home-bar-row'+(cls?' '+cls:'')+'" data-tip="'+escapeHtml(item.status)+': '+item.count+(total&&!cls?' · '+share+'% активных':'')+'">'+
-      '<div class="home-bar-label">'+statusChip(item.status,true)+'</div>'+
-      '<div class="home-bar-track">'+(item.count?'<div class="home-bar-fill" style="width:'+(item.count/max*100)+'%"></div>':'')+'</div>'+
-      '<b class="home-bar-value">'+item.count+'</b></div>';
-  };
-  return '<div class="home-bars">'+pipeline.map(item=>row(item,'')).join('')+
-    (rejected?row(rejected,'is-divider is-muted'):'')+'</div>'+
-    '<div class="home-foot">Всего в воронке: '+homeNum(total)+(rejected?' · отказано: '+homeNum(rejected.count):'')+'</div>';
-}
-
-function homeBarsHtml(items,{labelHtml,getValue=item=>item.count,tip,empty}){
+// Столбики; onclick(item) — строка становится кнопкой (переход на доску с фильтром).
+function homeBarsHtml(items,{labelHtml,getValue=item=>item.count,valueHtml,tip,empty,onclick}){
   if(!items.length)return '<div class="empty-state compact">'+escapeHtml(empty||'Данных нет.')+'</div>';
   const max=Math.max(1,...items.map(getValue));
   return '<div class="home-bars">'+items.map(item=>{
     const value=getValue(item);
-    return '<div class="home-bar-row'+(item.other?' is-other':'')+'"'+(tip?' data-tip="'+escapeHtml(tip(item))+'"':'')+'>'+
-      '<div class="home-bar-label">'+labelHtml(item)+'</div>'+
-      '<div class="home-bar-track">'+(value?'<div class="home-bar-fill" style="width:'+(value/max*100)+'%"></div>':'')+'</div>'+
-      '<b class="home-bar-value">'+homeNum(value)+'</b></div>';
+    const action=onclick?onclick(item):'';
+    const tag=action?'button type="button" onclick="'+action+'"':'div';
+    return '<'+tag+' class="home-bar-row'+(item.other?' is-other':'')+'"'+(tip?' data-tip="'+escapeHtml(tip(item))+'"':'')+'>'+
+      '<span class="home-bar-label">'+labelHtml(item)+'</span>'+
+      '<span class="home-bar-track">'+(value?'<span class="home-bar-fill" style="width:'+(value/max*100)+'%"></span>':'')+'</span>'+
+      '<b class="home-bar-value">'+(valueHtml?valueHtml(item):homeNum(value))+'</b></'+(action?'button':'div')+'>';
   }).join('')+'</div>';
 }
 
-function homeReasonsHtml(rejections){
-  return homeBarsHtml(rejections.reasons||[],{
-    labelHtml:item=>'<span>'+escapeHtml(item.name)+'</span>',
-    empty:'Отказов за период нет.'
-  });
-}
-
-function homeVacanciesHtml(vacancies,period){
-  const items=vacancies.items||[];
-  if(!items.length)return '<div class="empty-state compact">Вакансий пока нет. Создайте первую — «Новая вакансия» в быстрых действиях.</div>';
-  return '<div class="table-scroll"><table class="home-table"><thead><tr>'+
-    '<th>Вакансия</th><th>Статус</th><th class="num">В работе</th><th class="num">Оффер</th><th class="num">Наняты</th><th class="num">Новых '+escapeHtml(period)+'</th><th class="num">Дней открыта</th>'+
-    '</tr></thead><tbody>'+
-    items.map(item=>{
-      const open='homeOpenVacancy(\''+escJs(item.id)+'\')';
-      return '<tr tabindex="0" onclick="'+open+'" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();'+open+'}">'+
-        '<td><span class="home-cell-main">№'+escapeHtml(item.number)+' · '+escapeHtml(item.name)+'</span></td>'+
-        '<td>'+vacancyStatusChip(item.status)+'</td>'+
-        '<td class="num">'+item.inProgress+'</td><td class="num">'+item.offers+'</td><td class="num">'+item.hired+'</td><td class="num">'+item.created+'</td><td class="num">'+item.daysOpen+'</td>'+
-      '</tr>';
-    }).join('')+
-  '</tbody></table></div>';
-}
-
-function homeCandidateRow(item,side){
+// compact — для узкой боковой колонки: этап уходит в подпись, справа остаются только дни.
+function homeCandidateRow(item,side,compact=false){
+  const meta=compact
+    ?escapeHtml(item.status)+' · '+escapeHtml(item.vacancy)
+    :'<span class="home-meta-status">'+escapeHtml(item.status)+' · </span>№'+escapeHtml(item.number)+' · '+escapeHtml(item.vacancy)+(item.recruiter?' · '+escapeHtml(item.recruiter):'');
   return '<button type="button" class="home-row" onclick="homeOpenCandidate(\''+escJs(item.id)+'\')">'+
-    '<span class="home-row-main"><strong>'+escapeHtml(item.name)+'</strong><small>№'+escapeHtml(item.number)+' · '+escapeHtml(item.vacancy)+(item.recruiter?' · '+escapeHtml(item.recruiter):'')+'</small></span>'+
-    '<span class="home-row-side">'+statusChip(item.status,true)+(side||'')+'</span>'+
+    '<span class="home-row-main"><strong>'+escapeHtml(item.name)+'</strong><small>'+meta+'</small></span>'+
+    '<span class="home-row-side">'+(compact?'':statusChip(item.status,true))+(side||'')+'</span>'+
   '</button>';
 }
 
-function homeCandidateListHtml(items,empty,staleDays){
-  if(!items.length)return '<div class="empty-state compact">'+escapeHtml(empty)+'</div>';
-  return '<div class="home-list">'+items.map(item=>
-    homeCandidateRow(item,'<span class="home-days'+(item.days>=staleDays?' is-stale':'')+'" data-tip="На этапе с '+escapeHtml(fmtDate(item.stageSince))+'">'+item.days+' дн.</span>')
-  ).join('')+'</div>';
+// ---------- Тело главной ----------
+
+function homeSkeletonHtml(){
+  return '<div class="home-main" aria-hidden="true">'+
+      '<div class="home-card skeleton" style="min-height:320px"></div>'+
+      '<div class="home-side"><div class="home-card skeleton" style="min-height:150px"></div><div class="home-card skeleton" style="min-height:150px"></div></div>'+
+    '</div>'+
+    '<div class="home-card skeleton" style="min-height:200px" aria-hidden="true"></div>'+
+    '<span class="sr-only" role="status">Главная загружается…</span>';
 }
 
-function homeRecentHtml(items){
-  if(!items.length)return '<div class="empty-state compact">Кандидатов пока нет.</div>';
-  return '<div class="home-list">'+items.map(item=>
-    '<button type="button" class="home-row" onclick="homeOpenCandidate(\''+escJs(item.id)+'\')">'+
-      '<span class="home-row-main"><strong>'+escapeHtml(item.name)+'</strong><small>№'+escapeHtml(item.number)+' · '+escapeHtml(item.vacancy)+' · '+escapeHtml(fmtDate(item.createdAt))+'</small></span>'+
-      '<span class="home-row-side">'+(item.archived?'<span class="state-badge state-archived">В архиве</span>':'')+(item.source?'<span data-tip="'+escapeHtml(item.source)+'">'+sourceIconHtml(item.source)+'</span>':'')+statusChip(item.status,true)+'</span>'+
-    '</button>'
-  ).join('')+'</div>';
+function homeErrorHtml(){
+  return '<div class="empty-state">Не удалось загрузить главную: '+escapeHtml(home.error)+'<br><button type="button" class="text-btn" style="margin-top:8px" onclick="loadHomeData()">'+icon('refresh','icon-sm')+' Повторить</button></div>';
+}
+
+function homeBodyHtml(data){
+  const team=data.focus==='team';
+  const my=data.my||{items:[],total:0};
+  const stale=data.stale||{items:[],total:0};
+  const side=(team?homeCard('Без движения','',homeCandidateListHtml(stale,'stale',data.staleDays,'Все кандидаты двигаются по воронке.'),{id:'homeStale',count:stale.total,sub:'Дольше '+data.staleDays+' дней на одном этапе',flush:true}):'')+
+    homeCard('Уведомления','',homeNotificationsHtml(),{count:typeof notify!=='undefined'?notify.unread:undefined,sub:'Непрочитанные',flush:true});
+  return '<div class="home-main">'+
+      homeCard('На моём этапе','',homeCandidateListHtml(my,'queue',data.staleDays,''),{id:'homeQueue',count:my.total,sub:'Кандидаты, где за текущий этап отвечаете вы. Сверху — дольше всех ждут.',flush:true})+
+      '<div class="home-side">'+side+'</div>'+
+    '</div>'+
+    (team?homeCard('Вакансии','',homeVacanciesHtml(data),{
+      sub:'Кандидаты в работе по этапам. Нажмите на число, чтобы открыть их на доске.',
+      actions:'<button type="button" class="icon-btn icon-btn-sm" data-tip="Новая вакансия" aria-label="Новая вакансия" onclick="homeOpenForm(\'vacancies\',\'resetVacancyForm\')">'+icon('plus','icon-sm')+'</button>',
+      link:["navigateTo('vacancies')",'Все вакансии'],
+      flush:true
+    }):'')+
+    (team?homeCard('Последние события','',homeActivityHtml(data.activity||[]),{flush:true}):'')+
+    '<button type="button" class="home-mobile-link" onclick="navigateTo(\'analytics\')">'+icon('chart')+'<span>Аналитика найма</span>'+icon('chevron-right')+'</button>';
+}
+
+// Список кандидатов: первые HOME_LIST_PREVIEW (в боковой колонке — HOME_SIDE_PREVIEW), остальные по кнопке.
+function homeCandidateListHtml(list,key,staleDays,empty){
+  const items=list.items||[];
+  if(!items.length){
+    return key==='queue'
+      ?'<div class="home-done">'+icon('check-check')+'<span>Все ваши кандидаты обработаны. Новые появятся здесь, когда перейдут на ваш этап.</span></div>'
+      :'<div class="empty-state compact">'+escapeHtml(empty)+'</div>';
+  }
+  const preview=key==='queue'?HOME_LIST_PREVIEW:HOME_SIDE_PREVIEW;
+  const shown=home.expanded[key]?items:items.slice(0,preview);
+  const hidden=items.length-shown.length;
+  // Сервер отдаёт не больше 50 строк; сверх этого — ссылка на доску.
+  const beyond=list.total-items.length;
+  return '<div class="home-list">'+shown.map(item=>
+      homeCandidateRow(item,'<span class="home-days'+(item.days>=staleDays?' is-stale':'')+'" data-tip="На этапе с '+escapeHtml(fmtDate(item.stageSince))+'">'+item.days+' дн.</span>',key!=='queue')
+    ).join('')+'</div>'+
+    (hidden>0||home.expanded[key]&&items.length>preview
+      ?'<div class="home-more"><button type="button" class="text-btn" aria-expanded="'+!!home.expanded[key]+'" onclick="toggleHomeList(\''+key+'\')">'+
+        (home.expanded[key]?icon('chevron-up','icon-sm')+' Свернуть':icon('chevron-down','icon-sm')+' Показать все '+homeNum(items.length))+'</button>'+
+        (home.expanded[key]&&beyond>0?' <span class="muted">и ещё '+homeNum(beyond)+' — на доске</span>':'')+'</div>'
+      :'');
+}
+
+function homeVacanciesHtml(data){
+  const items=(data.vacancies||{}).items||[];
+  if(!items.length){
+    return '<div class="empty-state compact">Открытых вакансий нет.<br><button type="button" class="text-btn" style="margin-top:6px" onclick="homeOpenForm(\'vacancies\',\'resetVacancyForm\')">'+icon('plus','icon-sm')+' Создать вакансию</button></div>';
+  }
+  const stages=getStatuses();
+  const head=stages.map(stage=>'<th class="num" data-tip="'+escapeHtml(stage)+'">'+escapeHtml(HOME_STAGE_SHORT[stage]||stage)+'</th>').join('');
+  return '<div class="table-scroll"><table class="home-table"><thead><tr>'+
+    '<th>Вакансия</th>'+head+'<th class="num" data-tip="Новых кандидатов за '+data.freshDays+' дн.">За '+data.freshDays+' дн.</th><th class="num" data-tip="Дней с открытия вакансии">Открыта</th>'+
+    '</tr></thead><tbody>'+
+    items.map(item=>{
+      const cells=stages.map(stage=>{
+        const count=(item.stages||{})[stage]||0;
+        return '<td class="num"><button type="button" class="home-stage-cell'+(count?'':' is-zero')+'" aria-label="'+escapeHtml(stage+': '+count+' — открыть на доске')+'" '+
+          'onclick="homeOpenBoard({vacancy:\''+escJs(item.id)+'\',status:\''+escJs(stage)+'\'})">'+(count||'—')+'</button></td>';
+      }).join('');
+      return '<tr>'+
+        '<td><span class="home-vacancy-name"><button type="button" data-tip="Открыть кандидатов вакансии на доске" onclick="homeOpenBoard({vacancy:\''+escJs(item.id)+'\'})">№'+escapeHtml(item.number)+' · '+escapeHtml(item.name)+'</button>'+
+          (item.status!=='Открыта'?vacancyStatusChip(item.status):'')+'</span></td>'+
+        cells+
+        '<td class="num">'+(item.fresh?'<span class="home-fresh">+'+item.fresh+'</span>':'<span class="muted">0</span>')+'</td>'+
+        '<td class="num">'+item.daysOpen+' дн.</td>'+
+      '</tr>';
+    }).join('')+
+  '</tbody></table></div>';
 }
 
 function homeActivitySentence(event){
@@ -614,116 +567,5 @@ function homeRowKeydown(event,node){
 
 function homeOpenNotification(id){
   if(typeof openNotificationCard==='function')openNotificationCard(id);
-}
-
-// ---------- График новых кандидатов ----------
-
-function toggleHomeChartTable(){
-  home.chartTable=!home.chartTable;
-  renderHome();
-}
-
-// Чистые деления оси: 0, шаг, 2×шаг.
-function homeTicks(max){
-  let magnitude=1;
-  for(;;){
-    for(const base of [1,2,5]){
-      const step=base*magnitude;
-      if(step*2>=max)return [0,step,step*2];
-    }
-    magnitude*=10;
-  }
-}
-
-function homeBucketLabel(key,unit,long){
-  const [year,month,day]=String(key).split('-').map(Number);
-  const short=day+' '+MONTHS_SHORT[month-1];
-  const withYear=short+(year!==new Date().getFullYear()?' '+year:'');
-  if(!long)return short;
-  return unit==='week'?'Неделя с '+withYear:withYear;
-}
-
-function homeShowLabel(index,total,unit){
-  const step=unit==='week'?2:total<=7?1:total<=31?5:7;
-  return (total-1-index)%step===0;
-}
-
-function homeSeriesTableHtml(series){
-  return '<div class="table-scroll"><table class="home-table"><thead><tr><th>'+(series.unit==='week'?'Неделя':'День')+'</th><th class="num">Новых</th><th class="num">Наймов</th><th class="num">Отказов</th></tr></thead><tbody>'+
-    series.points.map(point=>'<tr><td>'+escapeHtml(homeBucketLabel(point.key,series.unit,true))+'</td><td class="num">'+point.created+'</td><td class="num">'+point.hired+'</td><td class="num">'+point.rejected+'</td></tr>').join('')+
-  '</tbody></table></div>';
-}
-
-function drawHomeChart(){
-  const host=el('homeChart');
-  if(!host||!home.data)return;
-  const series=home.data.series||{unit:'day',points:[]};
-  const points=series.points||[];
-  if(home.chartTable){host.innerHTML=homeSeriesTableHtml(series);return}
-  if(!points.some(point=>point.created)){
-    host.innerHTML='<div class="empty-state compact">Новых кандидатов за период нет.</div>';
-    return;
-  }
-  const width=Math.max(280,host.clientWidth||600);
-  const height=200;
-  const pad={top:10,right:8,bottom:24,left:30};
-  const ticks=homeTicks(Math.max(1,...points.map(point=>point.created)));
-  const top=ticks[ticks.length-1];
-  const plotW=width-pad.left-pad.right;
-  const plotH=height-pad.top-pad.bottom;
-  const slot=plotW/points.length;
-  const barW=Math.min(24,Math.max(3,slot-2));
-  const baseline=pad.top+plotH;
-  const y=value=>pad.top+plotH-(value/top)*plotH;
-
-  let svg='<svg class="home-chart-svg" width="'+width+'" height="'+height+'" viewBox="0 0 '+width+' '+height+'" role="img" aria-label="Новые кандидаты по '+(series.unit==='week'?'неделям':'дням')+'">';
-  ticks.forEach(tick=>{
-    svg+='<line class="home-grid-line" x1="'+pad.left+'" x2="'+(width-pad.right)+'" y1="'+y(tick)+'" y2="'+y(tick)+'"/>'+
-      '<text class="home-axis" x="'+(pad.left-6)+'" y="'+(y(tick)+4)+'" text-anchor="end">'+tick+'</text>';
-  });
-  points.forEach((point,index)=>{
-    const cx=pad.left+slot*index+slot/2;
-    const x=cx-barW/2;
-    const yTop=y(point.created);
-    const h=baseline-yTop;
-    const r=Math.min(4,barW/2,h);
-    // Столбик: скруглённый верх (4px), прямое основание на оси.
-    const path=h>0
-      ?'M'+x+' '+baseline+'V'+(yTop+r)+'Q'+x+' '+yTop+' '+(x+r)+' '+yTop+'H'+(x+barW-r)+'Q'+(x+barW)+' '+yTop+' '+(x+barW)+' '+(yTop+r)+'V'+baseline+'Z'
-      :'';
-    svg+='<g class="home-col" tabindex="0" aria-label="'+escapeHtml(homeBucketLabel(point.key,series.unit,true))+': новых '+point.created+', наймов '+point.hired+', отказов '+point.rejected+'" '+
-      'onpointerenter="homeChartHover('+index+',this)" onfocus="homeChartHover('+index+',this)" onpointerleave="homeChartLeave()" onblur="homeChartLeave()">'+
-      '<rect class="home-hit" x="'+(pad.left+slot*index)+'" y="'+pad.top+'" width="'+slot+'" height="'+plotH+'"/>'+
-      (path?'<path class="home-col-fill" d="'+path+'"/>':'')+
-    '</g>';
-    if(homeShowLabel(index,points.length,series.unit)){
-      svg+='<text class="home-axis" x="'+cx+'" y="'+(height-6)+'" text-anchor="middle">'+escapeHtml(homeBucketLabel(point.key,series.unit,false))+'</text>';
-    }
-  });
-  svg+='</svg><div id="homeChartTip" class="home-chart-tip" hidden></div>';
-  host.innerHTML=svg;
-}
-
-function homeChartHover(index,node){
-  const tip=el('homeChartTip');
-  const data=home.data;
-  if(!tip||!data||!data.series)return;
-  const point=data.series.points[index];
-  if(!point)return;
-  const hit=node.querySelector('.home-hit');
-  const x=Number(hit.getAttribute('x'))+Number(hit.getAttribute('width'))/2;
-  let top=Number(hit.getAttribute('y'))+Number(hit.getAttribute('height'));
-  const fill=node.querySelector('.home-col-fill');
-  if(fill){try{const box=fill.getBBox();if(box.height)top=box.y}catch(error){}}
-  tip.innerHTML='<strong>'+escapeHtml(homeBucketLabel(point.key,data.series.unit,true))+'</strong><br>'+
-    'Новых: <b>'+point.created+'</b> · Наймов: <b>'+point.hired+'</b> · Отказов: <b>'+point.rejected+'</b>';
-  tip.style.left=x+'px';
-  tip.style.top=top+'px';
-  tip.hidden=false;
-}
-
-function homeChartLeave(){
-  const tip=el('homeChartTip');
-  if(tip)tip.hidden=true;
 }
 </script>

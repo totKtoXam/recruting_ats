@@ -1,0 +1,369 @@
+<style>
+/* ---------- Аналитика: показатели найма за период ---------- */
+#viewAnalytics .page-actions,#analyticsPeriod{flex-wrap:nowrap}
+#viewAnalytics .segmented-option span{white-space:nowrap}
+.analytics-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px}
+.home-page.is-loading .analytics-kpis{opacity:.55;pointer-events:none}
+.home-tile{
+  display:flex;flex-direction:column;gap:2px;min-width:0;padding:12px 14px;
+  border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface);box-shadow:var(--shadow);
+  color:var(--text);font:inherit;text-align:left
+}
+button.home-tile{cursor:pointer;transition:border-color var(--dur-fast),background-color var(--dur-fast)}
+button.home-tile:hover{border-color:var(--primary-border);background:var(--surface-hover)}
+button.home-tile:focus-visible{outline:none;box-shadow:var(--focus-ring)}
+.home-tile-label{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.home-tile-value{font-size:26px;font-weight:600;line-height:1.15;letter-spacing:-.01em}
+.home-tile-foot{font-size:12px;color:var(--text-3);min-height:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home-tile.skeleton{min-height:88px;border:0;box-shadow:none;background:var(--surface-3)}
+.home-delta{display:inline-flex;align-items:center;gap:2px;font-weight:600}
+.home-delta .icon{width:12px;height:12px}
+.home-delta.is-good{color:var(--success)}
+.home-delta.is-bad{color:var(--danger)}
+.home-delta.is-flat{color:var(--muted);font-weight:500}
+
+/* График новых кандидатов */
+.home-chart{position:relative;min-height:200px}
+.home-chart-svg{display:block;width:100%;height:auto;overflow:visible}
+.home-grid-line{stroke:var(--line-soft);stroke-width:1}
+.home-axis{fill:var(--muted);font-size:11px;font-family:inherit}
+.home-col-fill{fill:var(--primary);transition:fill var(--dur-fast)}
+.home-col:hover .home-col-fill,.home-col:focus .home-col-fill{fill:var(--primary-strong)}
+.home-col{outline:none;cursor:default}
+.home-col:focus-visible .home-hit{stroke:var(--primary-ring);stroke-width:2;rx:3}
+.home-hit{fill:transparent}
+.home-chart-tip{
+  position:absolute;z-index:5;padding:6px 8px;border-radius:var(--radius);pointer-events:none;
+  background:var(--tooltip-bg);color:var(--tooltip-fg);font-size:12px;line-height:1.4;white-space:nowrap;
+  box-shadow:var(--shadow-pop);transform:translate(-50%,calc(-100% - 6px))
+}
+.home-chart-tip b{font-weight:700}
+
+@media(max-width:1200px){.analytics-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:720px){
+  .analytics-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .home-tile-value{font-size:22px}
+  /* В нижней панели помещаются пять подписей; на телефоне «Аналитика» открывается с главной. */
+  .sidebar-link[data-route="analytics"]{display:none}
+}
+@media(max-width:600px){
+  #viewAnalytics .page-header{flex-wrap:wrap}
+  #viewAnalytics .page-actions{width:100%;justify-content:space-between}
+}
+</style>
+
+<script>
+// ---------- Аналитика ----------
+// Показатели найма за период одним RPC getAnalyticsData({days}); сравнение — с предыдущим
+// периодом той же длины. Строки источников и нагрузки открывают доску с фильтром.
+
+const ANALYTICS_PERIODS=[{days:7,label:'7 дней'},{days:30,label:'30 дней'},{days:90,label:'90 дней'}];
+const ANALYTICS_PERIOD_KEY='ats:analytics-period';
+const ANALYTICS_CACHE_MS=60000;
+// Меньше этого числа событий сравнение с прошлым периодом — шум: показываем «было N» без стрелки и цвета.
+const ANALYTICS_MIN_SAMPLE=5;
+
+const analytics={
+  days:30,
+  data:null,
+  loadedAt:0,
+  loading:false,
+  error:'',
+  request:0,
+  chartTable:false
+};
+(function(){
+  try{
+    // Период раньше хранился на главной — берём его, пока не выбран свой.
+    const saved=Number(localStorage.getItem(ANALYTICS_PERIOD_KEY)||localStorage.getItem('ats:home-period'));
+    if(ANALYTICS_PERIODS.some(period=>period.days===saved))analytics.days=saved;
+  }catch(error){}
+})();
+
+function analyticsVisible(){
+  const view=el('viewAnalytics');
+  return !!view&&!view.hidden;
+}
+
+function showAnalytics(){
+  renderAnalyticsPeriod();
+  renderAnalytics();
+  if(!analytics.data||analytics.data.days!==analytics.days||Date.now()-analytics.loadedAt>ANALYTICS_CACHE_MS)loadAnalyticsData();
+}
+
+async function loadAnalyticsData(){
+  const request=++analytics.request;
+  analytics.loading=true;
+  analytics.error='';
+  const root=el('analyticsRoot');
+  if(root)root.classList.toggle('is-loading',!!analytics.data);
+  try{
+    const data=await rpc('getAnalyticsData',{days:analytics.days});
+    if(request!==analytics.request)return;
+    analytics.data=data;
+    analytics.loadedAt=Date.now();
+  }catch(error){
+    if(request!==analytics.request)return;
+    analytics.error=error&&error.message?error.message:String(error);
+    if(analytics.data)showToast(analytics.error,'error');
+  }finally{
+    if(request===analytics.request){
+      analytics.loading=false;
+      renderAnalytics();
+    }
+  }
+}
+
+function setAnalyticsPeriod(days){
+  analytics.days=Number(days)||30;
+  try{localStorage.setItem(ANALYTICS_PERIOD_KEY,String(analytics.days))}catch(error){}
+  renderAnalyticsPeriod();
+  loadAnalyticsData();
+}
+
+function renderAnalyticsPeriod(){
+  const root=el('analyticsPeriod');
+  if(root){
+    root.innerHTML=ANALYTICS_PERIODS.map(period=>
+      '<label class="segmented-option"><input type="radio" name="analyticsPeriod" value="'+period.days+'"'+(period.days===analytics.days?' checked':'')+' onchange="setAnalyticsPeriod(this.value)"><span>'+period.label+'</span></label>'
+    ).join('');
+  }
+  const description=el('analyticsDescription');
+  if(description)description.textContent='Последние '+analytics.days+' дней в сравнении с предыдущими '+analytics.days+'.';
+}
+
+async function refreshAnalyticsPage(button){
+  await runUiTask({button,pageId:'viewAnalytics',label:'Обновление…'},async()=>{
+    await loadAnalyticsData();
+    if(!analytics.error)showToast('Аналитика обновлена.');
+  }).catch(()=>{});
+}
+
+function renderAnalytics(){
+  const root=el('analyticsRoot');
+  if(!root)return;
+  const data=analytics.data;
+  root.innerHTML=data
+    ?analyticsKpiHtml(data)+analyticsWidgetsHtml(data)
+    :analytics.error
+      ?'<div class="empty-state">Не удалось загрузить аналитику: '+escapeHtml(analytics.error)+'<br><button type="button" class="text-btn" style="margin-top:8px" onclick="loadAnalyticsData()">'+icon('refresh','icon-sm')+' Повторить</button></div>'
+      :analyticsSkeletonHtml();
+  root.classList.toggle('is-loading',analytics.loading&&!!data);
+  drawAnalyticsChart();
+}
+
+window.addEventListener('resize',(()=>{
+  let timer=null;
+  return ()=>{
+    clearTimeout(timer);
+    timer=setTimeout(()=>{if(analyticsVisible()&&!analytics.chartTable)drawAnalyticsChart()},150);
+  };
+})());
+
+function analyticsSkeletonHtml(){
+  return '<section class="analytics-kpis" aria-hidden="true">'+'<div class="home-tile skeleton"></div>'.repeat(6)+'</section>'+
+    '<div class="home-grid" aria-hidden="true">'+
+      '<div class="home-card span-8 skeleton" style="min-height:260px"></div><div class="home-card span-4 skeleton" style="min-height:260px"></div>'+
+      '<div class="home-card span-4 skeleton" style="min-height:200px"></div>'.repeat(3)+
+    '</div>'+
+    '<span class="sr-only" role="status">Аналитика загружается…</span>';
+}
+
+// ---------- Показатели ----------
+
+// sample — сколько событий стоит за числом; на малых числах цвет и стрелка только пугают.
+function homeDelta(kpi,{goodUp=true,suffix='',sample}={}){
+  if(!kpi||kpi.value===null||kpi.value===undefined||kpi.previous===null||kpi.previous===undefined)return '';
+  const diff=Math.round((kpi.value-kpi.previous)*10)/10;
+  const size=sample!==undefined?sample:Math.max(kpi.value,kpi.previous);
+  if(size<ANALYTICS_MIN_SAMPLE)return '<span class="home-delta is-flat">было '+homeNum(kpi.previous)+escapeHtml(suffix)+'</span>';
+  if(!diff)return '<span class="home-delta is-flat">без изменений</span>';
+  const good=goodUp?diff>0:diff<0;
+  return '<span class="home-delta '+(good?'is-good':'is-bad')+'">'+
+    icon(diff>0?'chevron-up':'chevron-down')+(diff>0?'+':'−')+homeNum(Math.abs(diff))+escapeHtml(suffix)+'</span> · было '+homeNum(kpi.previous)+escapeHtml(suffix);
+}
+
+function homeTile(label,value,foot,onclick){
+  const tag=onclick?'button type="button"':'div';
+  return '<'+tag+' class="home-tile"'+(onclick?' onclick="'+onclick+'"':'')+'>'+
+    '<span class="home-tile-label">'+escapeHtml(label)+'</span>'+
+    '<span class="home-tile-value">'+value+'</span>'+
+    '<span class="home-tile-foot">'+(foot||'')+'</span>'+
+  '</'+(onclick?'button':'div')+'>';
+}
+
+function analyticsKpiHtml(data){
+  const kpi=data.kpi||{};
+  const totals=data.totals||{};
+  const hired=kpi.hired||{};
+  const tth=kpi.timeToHireDays||{};
+  const hasTth=tth.value!==null&&tth.value!==undefined;
+  return '<section class="analytics-kpis" aria-label="Ключевые показатели">'+
+    homeTile('Новые кандидаты',homeNum((kpi.created||{}).value),homeDelta(kpi.created))+
+    homeTile('Офферы',homeNum((kpi.offers||{}).value),homeDelta(kpi.offers))+
+    homeTile('Наймы',homeNum(hired.value),homeDelta(hired))+
+    homeTile('Отказы',homeNum((kpi.rejected||{}).value),homeDelta(kpi.rejected,{goodUp:false}))+
+    homeTile('Время до найма',hasTth?homeNum(tth.value)+' <span class="muted">дн.</span>':'—',
+      hasTth?homeDelta(tth,{goodUp:false,suffix:' дн.',sample:Math.max(hired.value||0,hired.previous||0)}):'наймов за период нет')+
+    homeTile('В работе сейчас',homeNum(totals.inProgress),'на оффере '+homeNum(totals.offers),"homeOpenBoard()")+
+  '</section>';
+}
+
+// ---------- Виджеты ----------
+
+function analyticsWidgetsHtml(data){
+  const rejections=data.rejections||{reasons:[]};
+  const unitLabel=data.series&&data.series.unit==='week'?'неделям':'дням';
+  const chartToggle='<button type="button" class="icon-btn icon-btn-sm" data-tip="'+(analytics.chartTable?'Показать график':'Показать таблицей')+'" aria-label="'+(analytics.chartTable?'Показать график':'Показать таблицей')+'" aria-pressed="'+analytics.chartTable+'" onclick="toggleAnalyticsChartTable()">'+icon('list','icon-sm')+'</button>';
+  return '<div class="home-grid">'+
+    homeCard('Новые кандидаты','span-8','<div id="analyticsChart" class="home-chart"></div>',{sub:'По '+unitLabel+'. В таблице — ещё наймы и отказы.',actions:chartToggle})+
+    homeCard('Конверсия','span-4',analyticsCohortHtml(data.cohort||[]),{sub:'Сколько из пришедших за период дошли до этапа'})+
+    homeCard('Источники','span-4',homeBarsHtml(data.sources||[],{
+      labelHtml:item=>(item.other?brandIconHtml('other'):sourceIconHtml(item.name))+'<span>'+escapeHtml(item.name)+'</span>',
+      valueHtml:item=>homeNum(item.count)+(item.hired?'<small>найм '+homeNum(item.hired)+'</small>':''),
+      tip:item=>'Новых: '+item.count+' · наняты: '+(item.hired||0)+(item.sourceId?' — открыть на доске':''),
+      onclick:item=>item.sourceId&&!item.other?"homeOpenBoard({source:'"+escJs(item.sourceId)+"'})":'',
+      empty:'Новых кандидатов за период нет.'
+    }),{sub:'Новые кандидаты и наймы из них'})+
+    homeCard('Причины отказа','span-4',homeBarsHtml(rejections.reasons||[],{
+      labelHtml:item=>'<span>'+escapeHtml(item.name)+'</span>',
+      tip:item=>item.name+': '+item.count,
+      empty:'Отказов за период нет.'
+    }),{sub:rejections.total?'Отказался кандидат — '+rejections.byCandidate+', отказала компания — '+rejections.byCompany:'Отказы за период'})+
+    homeCard('Нагрузка рекрутеров','span-4',homeBarsHtml(data.workload||[],{
+      labelHtml:item=>'<span>'+escapeHtml(item.name)+'</span>',
+      getValue:item=>item.inProgress,
+      tip:item=>'В работе: '+item.inProgress+(item.offers?' · офферов: '+item.offers:'')+' · всего без архива: '+item.total+' — открыть на доске',
+      onclick:item=>"homeOpenBoard({responsible:'"+escJs(item.userId)+"'})",
+      empty:'Кандидатов в работе пока нет.'
+    }),{sub:'Кандидаты в работе сейчас, без учёта периода'})+
+  '</div>';
+}
+
+// Когорта: столбик — сколько дошли до этапа, справа — доля от всех пришедших.
+function analyticsCohortHtml(cohort){
+  const first=cohort.length?cohort[0].count:0;
+  if(!first)return '<div class="empty-state compact">Новых кандидатов за период нет.</div>';
+  const percent=(part,whole)=>whole?Math.round(part/whole*100):0;
+  return homeBarsHtml(cohort,{
+    labelHtml:item=>statusChip(item.status,true),
+    valueHtml:item=>homeNum(item.count)+'<small>'+percent(item.count,first)+'%</small>',
+    tip:item=>{
+      const index=cohort.indexOf(item);
+      const prev=index>0?cohort[index-1].count:0;
+      return item.status+': '+item.count+' из '+first+(index>0?' · от предыдущего этапа '+percent(item.count,prev)+'%':'');
+    }
+  });
+}
+
+// ---------- График новых кандидатов ----------
+
+function toggleAnalyticsChartTable(){
+  analytics.chartTable=!analytics.chartTable;
+  renderAnalytics();
+}
+
+// Чистые деления оси: 0, шаг, 2×шаг.
+function homeTicks(max){
+  let magnitude=1;
+  for(;;){
+    for(const base of [1,2,5]){
+      const step=base*magnitude;
+      if(step*2>=max)return [0,step,step*2];
+    }
+    magnitude*=10;
+  }
+}
+
+function homeBucketLabel(key,unit,long){
+  const [year,month,day]=String(key).split('-').map(Number);
+  const short=day+' '+MONTHS_SHORT[month-1];
+  const withYear=short+(year!==new Date().getFullYear()?' '+year:'');
+  if(!long)return short;
+  return unit==='week'?'Неделя с '+withYear:withYear;
+}
+
+function homeShowLabel(index,total,unit){
+  const step=unit==='week'?2:total<=7?1:total<=31?5:7;
+  return (total-1-index)%step===0;
+}
+
+function homeSeriesTableHtml(series){
+  return '<div class="table-scroll"><table class="home-table"><thead><tr><th>'+(series.unit==='week'?'Неделя':'День')+'</th><th class="num">Новых</th><th class="num">Наймов</th><th class="num">Отказов</th></tr></thead><tbody>'+
+    series.points.map(point=>'<tr><td>'+escapeHtml(homeBucketLabel(point.key,series.unit,true))+'</td><td class="num">'+point.created+'</td><td class="num">'+point.hired+'</td><td class="num">'+point.rejected+'</td></tr>').join('')+
+  '</tbody></table></div>';
+}
+
+function drawAnalyticsChart(){
+  const host=el('analyticsChart');
+  if(!host||!analytics.data)return;
+  const series=analytics.data.series||{unit:'day',points:[]};
+  const points=series.points||[];
+  if(analytics.chartTable){host.innerHTML=homeSeriesTableHtml(series);return}
+  if(!points.some(point=>point.created)){
+    host.innerHTML='<div class="empty-state compact">Новых кандидатов за период нет.</div>';
+    return;
+  }
+  const width=Math.max(280,host.clientWidth||600);
+  const height=200;
+  const pad={top:10,right:8,bottom:24,left:30};
+  const ticks=homeTicks(Math.max(1,...points.map(point=>point.created)));
+  const top=ticks[ticks.length-1];
+  const plotW=width-pad.left-pad.right;
+  const plotH=height-pad.top-pad.bottom;
+  const slot=plotW/points.length;
+  const barW=Math.min(24,Math.max(3,slot-2));
+  const baseline=pad.top+plotH;
+  const y=value=>pad.top+plotH-(value/top)*plotH;
+
+  let svg='<svg class="home-chart-svg" width="'+width+'" height="'+height+'" viewBox="0 0 '+width+' '+height+'" role="img" aria-label="Новые кандидаты по '+(series.unit==='week'?'неделям':'дням')+'">';
+  ticks.forEach(tick=>{
+    svg+='<line class="home-grid-line" x1="'+pad.left+'" x2="'+(width-pad.right)+'" y1="'+y(tick)+'" y2="'+y(tick)+'"/>'+
+      '<text class="home-axis" x="'+(pad.left-6)+'" y="'+(y(tick)+4)+'" text-anchor="end">'+tick+'</text>';
+  });
+  points.forEach((point,index)=>{
+    const cx=pad.left+slot*index+slot/2;
+    const x=cx-barW/2;
+    const yTop=y(point.created);
+    const h=baseline-yTop;
+    const r=Math.min(4,barW/2,h);
+    // Столбик: скруглённый верх (4px), прямое основание на оси.
+    const path=h>0
+      ?'M'+x+' '+baseline+'V'+(yTop+r)+'Q'+x+' '+yTop+' '+(x+r)+' '+yTop+'H'+(x+barW-r)+'Q'+(x+barW)+' '+yTop+' '+(x+barW)+' '+(yTop+r)+'V'+baseline+'Z'
+      :'';
+    svg+='<g class="home-col" tabindex="0" aria-label="'+escapeHtml(homeBucketLabel(point.key,series.unit,true))+': новых '+point.created+', наймов '+point.hired+', отказов '+point.rejected+'" '+
+      'onpointerenter="analyticsChartHover('+index+',this)" onfocus="analyticsChartHover('+index+',this)" onpointerleave="analyticsChartLeave()" onblur="analyticsChartLeave()">'+
+      '<rect class="home-hit" x="'+(pad.left+slot*index)+'" y="'+pad.top+'" width="'+slot+'" height="'+plotH+'"/>'+
+      (path?'<path class="home-col-fill" d="'+path+'"/>':'')+
+    '</g>';
+    if(homeShowLabel(index,points.length,series.unit)){
+      svg+='<text class="home-axis" x="'+cx+'" y="'+(height-6)+'" text-anchor="middle">'+escapeHtml(homeBucketLabel(point.key,series.unit,false))+'</text>';
+    }
+  });
+  svg+='</svg><div id="analyticsChartTip" class="home-chart-tip" hidden></div>';
+  host.innerHTML=svg;
+}
+
+function analyticsChartHover(index,node){
+  const tip=el('analyticsChartTip');
+  const data=analytics.data;
+  if(!tip||!data||!data.series)return;
+  const point=data.series.points[index];
+  if(!point)return;
+  const hit=node.querySelector('.home-hit');
+  const x=Number(hit.getAttribute('x'))+Number(hit.getAttribute('width'))/2;
+  let top=Number(hit.getAttribute('y'))+Number(hit.getAttribute('height'));
+  const fill=node.querySelector('.home-col-fill');
+  if(fill){try{const box=fill.getBBox();if(box.height)top=box.y}catch(error){}}
+  tip.innerHTML='<strong>'+escapeHtml(homeBucketLabel(point.key,data.series.unit,true))+'</strong><br>'+
+    'Новых: <b>'+point.created+'</b> · Наймов: <b>'+point.hired+'</b> · Отказов: <b>'+point.rejected+'</b>';
+  tip.style.left=x+'px';
+  tip.style.top=top+'px';
+  tip.hidden=false;
+}
+
+function analyticsChartLeave(){
+  const tip=el('analyticsChartTip');
+  if(tip)tip.hidden=true;
+}
+</script>

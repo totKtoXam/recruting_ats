@@ -1,6 +1,7 @@
-// Главная страница: сводка за период (7 / 30 / 90 дней), воронка по этапам, вакансии,
-// очередь «на моём этапе», кандидаты без движения, нагрузка рекрутеров и последние события.
-// Всё считается одним RPC getDashboardData, чтобы числа на виджетах не расходились между собой.
+// Сводки по найму. Три RPC собираются из одних и тех же запросов, поэтому числа не расходятся:
+// - getHomeData — главная «Мой день»: текущее состояние без периода (очередь, зависшие, вакансии, события);
+// - getAnalyticsData — страница «Аналитика»: показатели за период (7 / 30 / 90 дней) и нагрузка;
+// - getDashboardData — всё сразу в прежнем формате (MCP-инструмент get_dashboard).
 import { APP_CONFIG } from '../config.js';
 import { db } from '../db/pool.js';
 import { formatDateTime } from '../lib/dates.js';
@@ -12,7 +13,14 @@ export const DASHBOARD_PERIODS = Object.freeze([7, 30, 90]);
 // Кандидат «без движения», если стоит на текущем этапе дольше этого срока.
 export const STALE_DAYS = 14;
 const LIST_LIMIT = 8;
+// На главной очередь и зависшие раскрываются целиком по кнопке «Показать все».
+const HOME_LIST_LIMIT = 50;
+const HOME_VACANCY_LIMIT = 12;
+// «Новых за неделю» в строке вакансии на главной.
+const FRESH_DAYS = 7;
 const RECENT_LIMIT = 6;
+// Последние события: на главной — короткая лента, в полной сводке (MCP) — как раньше.
+const HOME_ACTIVITY_LIMIT = 6;
 const ACTIVITY_LIMIT = 12;
 const DAY_MS = 86_400_000;
 
@@ -110,11 +118,48 @@ export function buildSeries(groups, { days, today }) {
   return { unit, points };
 }
 
-// Длинный хвост списка сворачивается в «Другие».
+// Длинный хвост списка сворачивается в «Другие» (наймы из источников — тоже суммой).
 export function foldTail(items, max = 7, otherLabel = 'Другие') {
   if (items.length <= max) return items;
-  const rest = items.slice(max - 1).reduce((sum, item) => sum + item.count, 0);
-  return [...items.slice(0, max - 1), { name: otherLabel, count: rest, other: true }];
+  const tail = items.slice(max - 1);
+  const other = { name: otherLabel, count: tail.reduce((sum, item) => sum + item.count, 0), other: true };
+  if (tail.some(item => item.hired !== undefined)) other.hired = tail.reduce((sum, item) => sum + (item.hired || 0), 0);
+  return [...items.slice(0, max - 1), other];
+}
+
+// Конверсия когорты: сколько кандидатов, пришедших за период, дошли до каждого этапа воронки.
+// Этапы проходятся по порядку (переходы только на соседний), поэтому «дошёл» = самый дальний
+// из этапов в журнале переходов, текущего статуса и этапа, с которого отказали.
+// rows: { status, rejected_from_status, reached: [to_status] } → [{ status, count }].
+export function summarizeCohort(rows, pipeline = APP_CONFIG.PIPELINE_STATUSES) {
+  const counts = pipeline.map(() => 0);
+  for (const row of rows) {
+    const stages = [row.status, row.rejected_from_status, ...(row.reached || [])];
+    const furthest = Math.max(0, ...stages.map(stage => pipeline.indexOf(stage)));
+    for (let i = 0; i <= furthest; i += 1) counts[i] += 1;
+  }
+  return pipeline.map((status, i) => ({ status, count: counts[i] }));
+}
+
+// Кандидаты вакансий по этапам: rows { vacancy_id, status, count, fresh } → Map id → { stages, inProgress, fresh }.
+export function groupVacancyStages(rows) {
+  const byVacancy = new Map();
+  for (const row of rows) {
+    const entry = byVacancy.get(row.vacancy_id) || { stages: {}, inProgress: 0, fresh: 0 };
+    entry.stages[row.status] = (entry.stages[row.status] || 0) + row.count;
+    if (!TERMINAL.includes(row.status)) entry.inProgress += row.count;
+    entry.fresh += row.fresh || 0;
+    byVacancy.set(row.vacancy_id, entry);
+  }
+  return byVacancy;
+}
+
+// Интервьюер (отвечает только за часть этапов) видит на главной свою очередь и уведомления;
+// рекрутер (все этапы), администратор и наблюдатель без этапов — ещё и командные блоки.
+export function homeFocus(user, pipeline = APP_CONFIG.PIPELINE_STATUSES) {
+  if (!user || user.is_admin) return 'team';
+  const stages = user.stages || [];
+  return !stages.length || pipeline.every(stage => stages.includes(stage)) ? 'team' : 'personal';
 }
 
 function average(values) {
@@ -218,41 +263,131 @@ const IN_PROGRESS_SELECT = `
 
 const ACTIVE = 'c.archived_at IS NULL AND c.deleted_at IS NULL';
 
-export async function getDashboardData(input = {}, user) {
-  const days = normalizePeriod(input && input.days);
-  const isAdmin = Boolean(user && user.is_admin);
-  const now = new Date();
-  const { from, prevFrom } = periodBounds(days, now);
-  const today = dayKey(now);
-  const staleBefore = new Date(now.getTime() - STALE_DAYS * DAY_MS);
+// Список кандидатов с общим числом: { total, items }.
+const candidateList = (rows, now) => ({
+  total: rows.length ? rows[0].total : 0,
+  items: rows.map(row => candidateItem(row, now))
+});
 
-  const [
-    totals,
-    funnelRows,
-    createdRows,
-    logRows,
-    sourceRows,
-    vacancyRows,
-    vacancyCountRows,
-    staleRows,
-    queueRows,
-    myCounts,
-    recentRows,
-    workloadRows,
-    activityRows,
-    notificationsUnread
-  ] = await Promise.all([
-    db.one(
-      `SELECT count(*) FILTER (WHERE ${ACTIVE})::int AS active,
-              count(*) FILTER (WHERE ${ACTIVE} AND c.status <> ALL($1::text[]))::int AS in_progress,
-              count(*) FILTER (WHERE ${ACTIVE} AND c.status = $2)::int AS hired,
-              count(*) FILTER (WHERE ${ACTIVE} AND c.status = $3)::int AS rejected,
-              count(*) FILTER (WHERE c.archived_at IS NOT NULL AND c.deleted_at IS NULL)::int AS archived,
-              count(*) FILTER (WHERE c.deleted_at IS NOT NULL)::int AS deleted
-       FROM candidates c`,
-      [TERMINAL, HIRED, REJECTED]
-    ),
-    db.many(`SELECT c.status, count(*)::int AS count FROM candidates c WHERE ${ACTIVE} GROUP BY c.status`),
+function queryTotals() {
+  return db.one(
+    `SELECT count(*) FILTER (WHERE ${ACTIVE})::int AS active,
+            count(*) FILTER (WHERE ${ACTIVE} AND c.status <> ALL($1::text[]))::int AS in_progress,
+            count(*) FILTER (WHERE ${ACTIVE} AND c.status = $2)::int AS hired,
+            count(*) FILTER (WHERE ${ACTIVE} AND c.status = $3)::int AS rejected,
+            count(*) FILTER (WHERE ${ACTIVE} AND c.status = $4)::int AS offers,
+            count(*) FILTER (WHERE c.archived_at IS NOT NULL AND c.deleted_at IS NULL)::int AS archived,
+            count(*) FILTER (WHERE c.deleted_at IS NOT NULL)::int AS deleted
+     FROM candidates c`,
+    [TERMINAL, HIRED, REJECTED, OFFER]
+  );
+}
+
+function queryStale(now, limit) {
+  return db.many(
+    `${IN_PROGRESS_SELECT} AND coalesce(lm.at, c.created_at) < $2 ORDER BY stage_since ASC LIMIT $3`,
+    [TERMINAL, new Date(now.getTime() - STALE_DAYS * DAY_MS), limit]
+  );
+}
+
+// На моём этапе: HR screening — HR, проф. интервью — проф. интервьювер, остальные этапы — рекрутер.
+function queryQueue(user, limit) {
+  return db.many(
+    `${IN_PROGRESS_SELECT}
+       AND ((c.status = $2 AND c.hr_responsible_id = $4)
+         OR (c.status = $3 AND c.tech_interviewer_id = $4)
+         OR (c.status <> $2 AND c.status <> $3 AND c.recruiter_id = $4))
+     ORDER BY stage_since ASC LIMIT $5`,
+    [TERMINAL, HR_SCREENING, PROF, user.id, limit]
+  );
+}
+
+function queryMine(user) {
+  return db.one(
+    `SELECT count(*) FILTER (WHERE c.recruiter_id = $2 OR c.hr_responsible_id = $2 OR c.tech_interviewer_id = $2)::int AS mine
+     FROM candidates c
+     WHERE ${ACTIVE} AND c.status <> ALL($1::text[])`,
+    [TERMINAL, user.id]
+  );
+}
+
+async function queryVacancyCounts() {
+  const rows = await db.many(
+    'SELECT status, count(*)::int AS count FROM vacancies WHERE archived_at IS NULL AND deleted_at IS NULL GROUP BY status'
+  );
+  const counts = Object.fromEntries(rows.map(row => [row.status, row.count]));
+  return { open: counts['Открыта'] || 0, paused: counts['На паузе'] || 0, closed: counts['Закрыта'] || 0 };
+}
+
+async function queryWorkload() {
+  const rows = await db.many(
+    `SELECT u.id, u.last_name, u.first_name, u.middle_name, u.full_name, u.email,
+            count(c.id) FILTER (WHERE c.status <> ALL($1::text[]))::int AS in_progress,
+            count(c.id) FILTER (WHERE c.status = $2)::int AS offers,
+            count(c.id)::int AS total
+     FROM candidates c
+     JOIN users u ON u.id = c.recruiter_id
+     WHERE ${ACTIVE}
+     GROUP BY u.id
+     ORDER BY in_progress DESC, u.last_name, u.first_name
+     LIMIT $3`,
+    [TERMINAL, OFFER, LIST_LIMIT]
+  );
+  return rows.map(row => ({
+    userId: row.id,
+    name: userDisplayName(row),
+    inProgress: row.in_progress,
+    offers: row.offers,
+    total: row.total
+  }));
+}
+
+// Журнал изменений пользователей видят только администраторы (как и в истории записи).
+async function queryActivity(user, limit) {
+  const rows = await db.many(
+    `SELECT a.id, a.entity_type, a.entity_id, a.action, a.field, a.field_label,
+            a.old_display, a.new_display, a.actor_name, a.created_at,
+            CASE a.entity_type
+              WHEN 'candidate' THEN (SELECT concat_ws(' ', nullif(c.last_name, ''), nullif(c.first_name, '')) FROM candidates c WHERE c.id = a.entity_id)
+              WHEN 'interview' THEN (SELECT concat_ws(' ', nullif(c.last_name, ''), nullif(c.first_name, ''))
+                                     FROM interviews i JOIN candidates c ON c.id = i.candidate_id WHERE i.id = a.entity_id)
+              WHEN 'vacancy'   THEN (SELECT v.name FROM vacancies v WHERE v.id = a.entity_id)
+              WHEN 'source'    THEN (SELECT s.name FROM sources s WHERE s.id = a.entity_id)
+              WHEN 'template'  THEN (SELECT t.name FROM interview_templates t WHERE t.id = a.entity_id)
+              WHEN 'user'      THEN (SELECT coalesce(nullif(concat_ws(' ', nullif(u.last_name, ''), nullif(u.first_name, '')), ''), u.email)
+                                     FROM users u WHERE u.id = a.entity_id)
+            END AS entity_label,
+            CASE a.entity_type
+              WHEN 'candidate' THEN a.entity_id
+              WHEN 'interview' THEN (SELECT i.candidate_id FROM interviews i WHERE i.id = a.entity_id)
+            END AS candidate_id
+     FROM audit_log a
+     WHERE $1::boolean OR a.entity_type <> 'user'
+     ORDER BY a.created_at DESC
+     LIMIT $2`,
+    [Boolean(user && user.is_admin), limit]
+  );
+  return rows.map(row => ({
+    id: row.id,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    candidateId: row.candidate_id || '',
+    action: row.action,
+    field: row.field,
+    fieldLabel: row.field_label,
+    oldDisplay: row.old_display,
+    newDisplay: row.new_display,
+    actorName: row.actor_name || 'Система',
+    entityLabel: row.entity_label || '',
+    createdAt: new Date(row.created_at).toISOString()
+  }));
+}
+
+// Показатели за период и предыдущий период той же длины: KPI, ряд по дням/неделям,
+// источники с наймами, причины отказа и конверсия новых кандидатов по этапам.
+async function queryPeriod(days, now) {
+  const { from, prevFrom } = periodBounds(days, now);
+  const [createdRows, logRows, sourceRows, cohortRows] = await Promise.all([
     db.many('SELECT created_at FROM candidates WHERE deleted_at IS NULL AND created_at >= $1', [prevFrom]),
     db.many(
       `SELECT l.to_status, l.created_at, c.created_at AS candidate_created_at,
@@ -264,14 +399,158 @@ export async function getDashboardData(input = {}, user) {
       [prevFrom]
     ),
     db.many(
-      `SELECT s.id AS source_id, coalesce(s.name, '') AS name, count(*)::int AS count
+      `SELECT s.id AS source_id, coalesce(s.name, '') AS name, count(*)::int AS count,
+              count(*) FILTER (WHERE c.status = $2)::int AS hired
        FROM candidates c
        LEFT JOIN sources s ON s.id = c.source_id
        WHERE c.deleted_at IS NULL AND c.created_at >= $1
        GROUP BY s.id, s.name
        ORDER BY count DESC, name`,
-      [from]
+      [from, HIRED]
     ),
+    db.many(
+      `SELECT c.status, c.rejected_from_status,
+              coalesce(array_agg(DISTINCT l.to_status) FILTER (WHERE l.to_status IS NOT NULL), '{}') AS reached
+       FROM candidates c
+       LEFT JOIN candidate_status_log l ON l.candidate_id = c.id
+       WHERE c.deleted_at IS NULL AND c.created_at >= $1
+       GROUP BY c.id`,
+      [from]
+    )
+  ]);
+
+  const bounds = { from, prevFrom };
+  const transitions = summarizeTransitions(logRows, bounds);
+  const series = buildSeries(
+    {
+      created: createdRows
+        .filter(row => new Date(row.created_at).getTime() >= from.getTime())
+        .map(row => dayKey(row.created_at)),
+      hired: transitions.keys.hired,
+      rejected: transitions.keys.rejected
+    },
+    { days, today: dayKey(now) }
+  );
+
+  return {
+    days,
+    from,
+    period: { days, from: formatDateTime(from), to: formatDateTime(now), staleDays: STALE_DAYS },
+    kpi: { created: countInPeriods(createdRows.map(row => row.created_at), bounds), ...transitions.kpi },
+    series,
+    cohort: summarizeCohort(cohortRows),
+    sources: foldTail(
+      sourceRows.map(row => ({
+        sourceId: row.source_id || '',
+        name: row.name || 'Не указан',
+        count: row.count,
+        hired: row.hired
+      }))
+    ),
+    rejections: { ...transitions.rejections, reasons: foldTail(transitions.rejections.reasons, 6) }
+  };
+}
+
+const publicTotals = totals => ({ inProgress: totals.in_progress, offers: totals.offers, hired: totals.hired });
+
+// ---------- RPC ----------
+
+// Главная «Мой день»: только текущее состояние, без периода.
+export async function getHomeData(_input, user) {
+  const now = new Date();
+  const freshFrom = new Date(now.getTime() - FRESH_DAYS * DAY_MS);
+  const [totals, queueRows, staleRows, myCounts, vacancyRows, stageRows, vacancyCounts, activity, notificationsUnread] =
+    await Promise.all([
+      queryTotals(),
+      queryQueue(user, HOME_LIST_LIMIT),
+      queryStale(now, HOME_LIST_LIMIT),
+      queryMine(user),
+      db.many(
+        `SELECT v.id, v.number, v.name, v.status, v.created_at
+         FROM vacancies v
+         WHERE v.archived_at IS NULL AND v.deleted_at IS NULL AND v.status <> 'Закрыта'
+         ORDER BY array_position(ARRAY['Открыта', 'На паузе'], v.status), v.number DESC
+         LIMIT $1`,
+        [HOME_VACANCY_LIMIT]
+      ),
+      db.many(
+        `SELECT c.vacancy_id, c.status, count(*)::int AS count,
+                count(*) FILTER (WHERE c.created_at >= $1)::int AS fresh
+         FROM candidates c
+         WHERE ${ACTIVE}
+         GROUP BY c.vacancy_id, c.status`,
+        [freshFrom]
+      ),
+      queryVacancyCounts(),
+      queryActivity(user, HOME_ACTIVITY_LIMIT),
+      getUnreadCount(user)
+    ]);
+
+  const stages = groupVacancyStages(stageRows);
+  return {
+    generatedAt: now.toISOString(),
+    focus: homeFocus(user),
+    staleDays: STALE_DAYS,
+    freshDays: FRESH_DAYS,
+    totals: publicTotals(totals),
+    my: { mine: myCounts.mine, ...candidateList(queueRows, now) },
+    stale: candidateList(staleRows, now),
+    vacancies: {
+      counts: vacancyCounts,
+      items: vacancyRows.map(row => {
+        const entry = stages.get(row.id) || { stages: {}, inProgress: 0, fresh: 0 };
+        return {
+          id: row.id,
+          number: row.number,
+          name: row.name,
+          status: row.status,
+          stages: entry.stages,
+          inProgress: entry.inProgress,
+          fresh: entry.fresh,
+          daysOpen: daysBetween(row.created_at, now)
+        };
+      })
+    },
+    activity,
+    notificationsUnread
+  };
+}
+
+// Страница «Аналитика»: показатели за период и нагрузка рекрутеров сейчас.
+export async function getAnalyticsData(input = {}) {
+  const days = normalizePeriod(input && input.days);
+  const now = new Date();
+  const [{ from: _from, ...period }, totals, workload] = await Promise.all([
+    queryPeriod(days, now),
+    queryTotals(),
+    queryWorkload()
+  ]);
+  return { ...period, generatedAt: now.toISOString(), totals: publicTotals(totals), workload };
+}
+
+// Всё сразу в прежнем формате — для MCP-инструмента get_dashboard.
+export async function getDashboardData(input = {}, user) {
+  const days = normalizePeriod(input && input.days);
+  const isAdmin = Boolean(user && user.is_admin);
+  const now = new Date();
+
+  const [
+    period,
+    totals,
+    funnelRows,
+    vacancyRows,
+    vacancyCounts,
+    staleRows,
+    queueRows,
+    myCounts,
+    recentRows,
+    workload,
+    activity,
+    notificationsUnread
+  ] = await Promise.all([
+    queryPeriod(days, now),
+    queryTotals(),
+    db.many(`SELECT c.status, count(*)::int AS count FROM candidates c WHERE ${ACTIVE} GROUP BY c.status`),
     db.many(
       `SELECT v.id, v.number, v.name, v.status, v.created_at,
               count(c.id) FILTER (WHERE ${ACTIVE} AND c.status <> ALL($1::text[]))::int AS in_progress,
@@ -284,30 +563,12 @@ export async function getDashboardData(input = {}, user) {
        GROUP BY v.id
        ORDER BY array_position(ARRAY['Открыта', 'На паузе', 'Закрыта'], v.status), in_progress DESC, v.number DESC
        LIMIT $5`,
-      [TERMINAL, OFFER, HIRED, from, LIST_LIMIT]
+      [TERMINAL, OFFER, HIRED, periodBounds(days, now).from, LIST_LIMIT]
     ),
-    db.many(
-      'SELECT status, count(*)::int AS count FROM vacancies WHERE archived_at IS NULL AND deleted_at IS NULL GROUP BY status'
-    ),
-    db.many(
-      `${IN_PROGRESS_SELECT} AND coalesce(lm.at, c.created_at) < $2 ORDER BY stage_since ASC LIMIT $3`,
-      [TERMINAL, staleBefore, LIST_LIMIT]
-    ),
-    // На моём этапе: HR screening — HR, проф. интервью — проф. интервьювер, остальные этапы — рекрутер.
-    db.many(
-      `${IN_PROGRESS_SELECT}
-         AND ((c.status = $2 AND c.hr_responsible_id = $4)
-           OR (c.status = $3 AND c.tech_interviewer_id = $4)
-           OR (c.status <> $2 AND c.status <> $3 AND c.recruiter_id = $4))
-       ORDER BY stage_since ASC LIMIT $5`,
-      [TERMINAL, HR_SCREENING, PROF, user.id, LIST_LIMIT]
-    ),
-    db.one(
-      `SELECT count(*) FILTER (WHERE c.recruiter_id = $2 OR c.hr_responsible_id = $2 OR c.tech_interviewer_id = $2)::int AS mine
-       FROM candidates c
-       WHERE ${ACTIVE} AND c.status <> ALL($1::text[])`,
-      [TERMINAL, user.id]
-    ),
+    queryVacancyCounts(),
+    queryStale(now, LIST_LIMIT),
+    queryQueue(user, LIST_LIMIT),
+    queryMine(user),
     db.many(
       `SELECT c.id, c.number, c.last_name, c.first_name, c.middle_name, c.status, c.created_at, c.archived_at,
               v.name AS vacancy_name, v.number AS vacancy_number, s.name AS source_name
@@ -319,43 +580,8 @@ export async function getDashboardData(input = {}, user) {
        LIMIT $1`,
       [RECENT_LIMIT]
     ),
-    db.many(
-      `SELECT u.id, u.last_name, u.first_name, u.middle_name, u.full_name, u.email,
-              count(c.id) FILTER (WHERE c.status <> ALL($1::text[]))::int AS in_progress,
-              count(c.id) FILTER (WHERE c.status = $2)::int AS offers,
-              count(c.id)::int AS total
-       FROM candidates c
-       JOIN users u ON u.id = c.recruiter_id
-       WHERE ${ACTIVE}
-       GROUP BY u.id
-       ORDER BY in_progress DESC, u.last_name, u.first_name
-       LIMIT $3`,
-      [TERMINAL, OFFER, LIST_LIMIT]
-    ),
-    // Журнал изменений пользователей видят только администраторы (как и в истории записи).
-    db.many(
-      `SELECT a.id, a.entity_type, a.entity_id, a.action, a.field, a.field_label,
-              a.old_display, a.new_display, a.actor_name, a.created_at,
-              CASE a.entity_type
-                WHEN 'candidate' THEN (SELECT concat_ws(' ', nullif(c.last_name, ''), nullif(c.first_name, '')) FROM candidates c WHERE c.id = a.entity_id)
-                WHEN 'interview' THEN (SELECT concat_ws(' ', nullif(c.last_name, ''), nullif(c.first_name, ''))
-                                       FROM interviews i JOIN candidates c ON c.id = i.candidate_id WHERE i.id = a.entity_id)
-                WHEN 'vacancy'   THEN (SELECT v.name FROM vacancies v WHERE v.id = a.entity_id)
-                WHEN 'source'    THEN (SELECT s.name FROM sources s WHERE s.id = a.entity_id)
-                WHEN 'template'  THEN (SELECT t.name FROM interview_templates t WHERE t.id = a.entity_id)
-                WHEN 'user'      THEN (SELECT coalesce(nullif(concat_ws(' ', nullif(u.last_name, ''), nullif(u.first_name, '')), ''), u.email)
-                                       FROM users u WHERE u.id = a.entity_id)
-              END AS entity_label,
-              CASE a.entity_type
-                WHEN 'candidate' THEN a.entity_id
-                WHEN 'interview' THEN (SELECT i.candidate_id FROM interviews i WHERE i.id = a.entity_id)
-              END AS candidate_id
-       FROM audit_log a
-       WHERE $1::boolean OR a.entity_type <> 'user'
-       ORDER BY a.created_at DESC
-       LIMIT $2`,
-      [isAdmin, ACTIVITY_LIMIT]
-    ),
+    queryWorkload(),
+    queryActivity(user, ACTIVITY_LIMIT),
     getUnreadCount(user)
   ]);
 
@@ -365,25 +591,11 @@ export async function getDashboardData(input = {}, user) {
   for (const row of funnelRows) {
     if (!FUNNEL_ORDER.includes(row.status)) funnel.push({ status: row.status, count: row.count });
   }
-
-  const bounds = { from, prevFrom };
-  const created = countInPeriods(createdRows.map(row => row.created_at), bounds);
-  const transitions = summarizeTransitions(logRows, bounds);
-  const series = buildSeries(
-    {
-      created: createdRows
-        .filter(row => new Date(row.created_at).getTime() >= from.getTime())
-        .map(row => dayKey(row.created_at)),
-      hired: transitions.keys.hired,
-      rejected: transitions.keys.rejected
-    },
-    { days, today }
-  );
-  const vacancyCounts = Object.fromEntries(vacancyCountRows.map(row => [row.status, row.count]));
+  const queue = candidateList(queueRows, now);
 
   return {
     days,
-    period: { days, from: formatDateTime(from), to: formatDateTime(now), staleDays: STALE_DAYS },
+    period: period.period,
     generatedAt: now.toISOString(),
     totals: {
       active: totals.active,
@@ -393,19 +605,13 @@ export async function getDashboardData(input = {}, user) {
       archived: totals.archived,
       deleted: isAdmin ? totals.deleted : null
     },
-    kpi: { created, ...transitions.kpi },
+    kpi: period.kpi,
     funnel,
-    series,
-    sources: foldTail(
-      sourceRows.map(row => ({ sourceId: row.source_id || '', name: row.name || 'Не указан', count: row.count }))
-    ),
-    rejections: { ...transitions.rejections, reasons: foldTail(transitions.rejections.reasons, 6) },
+    series: period.series,
+    sources: period.sources,
+    rejections: period.rejections,
     vacancies: {
-      counts: {
-        open: vacancyCounts['Открыта'] || 0,
-        paused: vacancyCounts['На паузе'] || 0,
-        closed: vacancyCounts['Закрыта'] || 0
-      },
+      counts: vacancyCounts,
       items: vacancyRows.map(row => ({
         id: row.id,
         number: row.number,
@@ -418,16 +624,8 @@ export async function getDashboardData(input = {}, user) {
         daysOpen: daysBetween(row.created_at, now)
       }))
     },
-    stale: {
-      thresholdDays: STALE_DAYS,
-      total: staleRows.length ? staleRows[0].total : 0,
-      items: staleRows.map(row => candidateItem(row, now))
-    },
-    my: {
-      mine: myCounts.mine,
-      queueTotal: queueRows.length ? queueRows[0].total : 0,
-      queue: queueRows.map(row => candidateItem(row, now))
-    },
+    stale: { thresholdDays: STALE_DAYS, ...candidateList(staleRows, now) },
+    my: { mine: myCounts.mine, queueTotal: queue.total, queue: queue.items },
     recent: recentRows.map(row => ({
       id: row.id,
       number: row.number,
@@ -439,27 +637,8 @@ export async function getDashboardData(input = {}, user) {
       createdAt: formatDateTime(row.created_at),
       archived: Boolean(row.archived_at)
     })),
-    workload: workloadRows.map(row => ({
-      userId: row.id,
-      name: userDisplayName(row),
-      inProgress: row.in_progress,
-      offers: row.offers,
-      total: row.total
-    })),
-    activity: activityRows.map(row => ({
-      id: row.id,
-      entityType: row.entity_type,
-      entityId: row.entity_id,
-      candidateId: row.candidate_id || '',
-      action: row.action,
-      field: row.field,
-      fieldLabel: row.field_label,
-      oldDisplay: row.old_display,
-      newDisplay: row.new_display,
-      actorName: row.actor_name || 'Система',
-      entityLabel: row.entity_label || '',
-      createdAt: new Date(row.created_at).toISOString()
-    })),
+    workload,
+    activity,
     notificationsUnread
   };
 }

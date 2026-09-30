@@ -58,6 +58,7 @@
           <a class="sidebar-link" href="#/candidates" data-route="candidates" data-short="Кандидаты"><svg class="icon"><use href="#i-users"/></svg><span>Кандидаты</span></a>
           <a class="sidebar-link" href="#/vacancies" data-route="vacancies" data-short="Вакансии"><svg class="icon"><use href="#i-briefcase"/></svg><span>Вакансии</span></a>
           <a class="sidebar-link" href="#/templates" data-route="templates" data-short="Шаблоны"><svg class="icon"><use href="#i-template"/></svg><span>Шаблоны вопросов</span></a>
+          <a class="sidebar-link" href="#/analytics" data-route="analytics" data-short="Аналитика"><svg class="icon"><use href="#i-chart"/></svg><span>Аналитика</span></a>
           </div>
         </div>
         <!-- Все настройки — одна страница с вкладками (источники, пользователи, интеграции). -->
@@ -71,17 +72,35 @@
   <main id="viewHome" class="page app-view" hidden>
     <div class="page-header">
       <div>
-        <h2>Главная</h2>
-        <p class="page-description">Быстрые действия, воронка и активность команды.</p>
+        <h2 id="homeTitle">Главная</h2>
+        <p class="page-description home-summary" id="homeSummary" aria-live="polite"></p>
       </div>
 
       <div class="page-actions">
-        <div class="segmented" id="homePeriod" role="radiogroup" aria-label="Период сводки"></div>
+        <button type="button" class="button button-secondary" data-tip="ФИО и контакты — из PDF, DOC или DOCX" onclick="homeNewCandidate(true)"><svg class="icon"><use href="#i-sparkles"/></svg><span class="btn-label">Из резюме</span></button>
+        <button type="button" class="button button-primary" onclick="homeNewCandidate(false)"><svg class="icon"><use href="#i-plus"/></svg><span class="btn-label">Новый кандидат</span></button>
         <button class="icon-btn" data-tip="Обновить" aria-label="Обновить" onclick="refreshHomePage(this)"><svg class="icon"><use href="#i-refresh"/></svg></button>
       </div>
     </div>
 
     <div id="homeRoot" class="home-page"></div>
+  </main>
+
+  <!-- Аналитика: показатели найма за период (Analytics.html). -->
+  <main id="viewAnalytics" class="page app-view" hidden>
+    <div class="page-header">
+      <div>
+        <h2>Аналитика</h2>
+        <p class="page-description" id="analyticsDescription">Показатели найма за период.</p>
+      </div>
+
+      <div class="page-actions">
+        <div class="segmented" id="analyticsPeriod" role="radiogroup" aria-label="Период"></div>
+        <button class="icon-btn" data-tip="Обновить" aria-label="Обновить" onclick="refreshAnalyticsPage(this)"><svg class="icon"><use href="#i-refresh"/></svg></button>
+      </div>
+    </div>
+
+    <div id="analyticsRoot" class="home-page"></div>
   </main>
 
   <main id="viewCandidates" class="page app-view">
@@ -581,6 +600,7 @@
   <?!= include('Integrations'); ?>
   <?!= include('Profile'); ?>
   <?!= include('Home'); ?>
+  <?!= include('Analytics'); ?>
   <?!= include('ResumeAutofill'); ?>
 </body>
 </html>

@@ -6,10 +6,13 @@ import {
   countInPeriods,
   dayKey,
   foldTail,
+  groupVacancyStages,
+  homeFocus,
   normalizePeriod,
   periodBounds,
   shiftKey,
   startOfDay,
+  summarizeCohort,
   summarizeTransitions,
   weekKey
 } from '../server/services/dashboard.js';
@@ -85,6 +88,51 @@ test('foldTail keeps the head and sums the rest into «Другие»', () => {
   assert.deepEqual(folded.map(item => item.count), [5, 4, 6]);
   assert.equal(folded[2].name, 'Другие');
   assert.equal(folded[2].other, true);
+  assert.equal('hired' in folded[2], false);
+
+  const sources = [3, 2, 1].map((count, index) => ({ name: 's' + index, count, hired: index }));
+  assert.deepEqual(foldTail(sources, 2)[1], { name: 'Другие', count: 3, other: true, hired: 3 });
+});
+
+test('summarizeCohort counts candidates by the furthest stage they reached', () => {
+  const pipeline = ['Новый', 'HR screening', 'Проф. интервью', 'Offer', 'Hired'];
+  const cohort = summarizeCohort(
+    [
+      { status: 'Новый', reached: ['Новый'] },
+      { status: 'HR screening', reached: ['Новый', 'HR screening'] },
+      // Вернули назад с проф. интервью — дошёл до него.
+      { status: 'HR screening', reached: ['Новый', 'HR screening', 'Проф. интервью'] },
+      // Отказ после оффера: этап отказа учитывается, «Отказано» вне воронки.
+      { status: 'Отказано', rejected_from_status: 'Offer', reached: ['Отказано'] },
+      { status: 'Hired', reached: [] }
+    ],
+    pipeline
+  );
+  assert.deepEqual(
+    cohort.map(stage => stage.count),
+    [5, 4, 3, 2, 1]
+  );
+  assert.equal(cohort[0].status, 'Новый');
+});
+
+test('groupVacancyStages splits candidates by stage and counts those in progress', () => {
+  const grouped = groupVacancyStages([
+    { vacancy_id: 'v1', status: 'Новый', count: 3, fresh: 2 },
+    { vacancy_id: 'v1', status: 'Hired', count: 1, fresh: 0 },
+    { vacancy_id: 'v1', status: 'Отказано', count: 4, fresh: 1 },
+    { vacancy_id: 'v2', status: 'Offer', count: 1, fresh: 0 }
+  ]);
+  assert.deepEqual(grouped.get('v1'), { stages: { 'Новый': 3, Hired: 1, 'Отказано': 4 }, inProgress: 3, fresh: 3 });
+  assert.equal(grouped.get('v2').inProgress, 1);
+  assert.equal(grouped.get('v3'), undefined);
+});
+
+test('homeFocus: interviewers see their queue, everyone else — the team', () => {
+  const pipeline = ['Новый', 'HR screening', 'Offer'];
+  assert.equal(homeFocus({ is_admin: true, stages: ['HR screening'] }, pipeline), 'team');
+  assert.equal(homeFocus({ stages: ['Новый', 'HR screening', 'Offer'] }, pipeline), 'team');
+  assert.equal(homeFocus({ stages: [] }, pipeline), 'team');
+  assert.equal(homeFocus({ stages: ['HR screening'] }, pipeline), 'personal');
 });
 
 test('summarizeTransitions counts hires, offers, rejections and time to hire per period', () => {

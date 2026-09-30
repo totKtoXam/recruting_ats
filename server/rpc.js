@@ -66,7 +66,11 @@ export const rpcHandlers = {
     deletedCandidates: await candidates.getDeletedCandidateSummaries()
   }),
   getAdminUserData: async () => ({ users: await users.getUsers() }),
-  // Главная страница: показатели за период, воронка, очередь «на моём этапе», последние события.
+  // Главная «Мой день»: очередь «на моём этапе», зависшие, вакансии по этапам, последние события.
+  getHomeData: (input, { user }) => dashboard.getHomeData(input, user),
+  // «Аналитика»: показатели за период, конверсия, источники, причины отказа, нагрузка.
+  getAnalyticsData: input => dashboard.getAnalyticsData(input),
+  // Полная сводка в прежнем формате (MCP-инструмент get_dashboard).
   getDashboardData: (input, { user }) => dashboard.getDashboardData(input, user),
 
   getCandidateDetails: id => candidates.getCandidateDetails(id),
