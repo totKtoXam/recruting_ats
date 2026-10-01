@@ -1,0 +1,27 @@
+[Unit]
+Description=Recruiting ATS Secure MCP Tunnel
+After=network-online.target hr-ats.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=recruiting-ats-tunnel
+Group=recruiting-ats-tunnel
+WorkingDirectory=/opt/recruiting-ats-tunnel
+EnvironmentFile=/etc/recruiting-ats-tunnel/credentials.env
+Environment=HOME=/var/lib/recruiting-ats-tunnel
+StateDirectory=recruiting-ats-tunnel
+ExecStart=/usr/local/bin/tunnel-client run --health.listen-addr=127.0.0.1:18080
+Restart=always
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { createInterface } from 'node:readline';
 
-const ATS_URL = 'https://portal.devexpert.kz/hr-ats/mcp';
+const ATS_URL = process.env.ATS_MCP_URL?.trim() ||
+  'https://portal.devexpert.kz/hr-ats/mcp';
 const token = process.env.ATS_MCP_TOKEN?.trim();
 
 if (!token) {

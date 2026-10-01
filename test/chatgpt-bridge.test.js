@@ -4,12 +4,13 @@ import { test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 
-test('ChatGPT bridge forwards MCP with local bearer token and no OAuth discovery', async () => {
+for (const endpoint of ['', 'http://127.0.0.1:3040/hr-ats/mcp']) {
+test(`ChatGPT bridge forwards MCP to ${endpoint || 'default ATS URL'} with bearer token`, async () => {
   const testDir = path.dirname(fileURLToPath(import.meta.url));
   const bridge = path.resolve(testDir, '../plugins/recruiting-ats-chatgpt/scripts/ats-mcp-stdio.mjs');
   const preload = pathToFileURL(path.join(testDir, 'fixtures/chatgpt-bridge-fetch.mjs')).href;
   const child = spawn(process.execPath, ['--import', preload, bridge], {
-    env: { ...process.env, ATS_MCP_TOKEN: 'test-token' }
+    env: { ...process.env, ATS_MCP_TOKEN: 'test-token', ATS_MCP_URL: endpoint }
   });
 
   let stdout = '';
@@ -34,3 +35,4 @@ test('ChatGPT bridge forwards MCP with local bearer token and no OAuth discovery
   assert.equal(messages[2].error.message, 'ATS rejected the API token');
   assert(!stdout.includes('test-token'));
 });
+}

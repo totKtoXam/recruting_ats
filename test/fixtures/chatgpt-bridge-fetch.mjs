@@ -1,5 +1,7 @@
 globalThis.fetch = async (url, init) => {
-  if (url !== 'https://portal.devexpert.kz/hr-ats/mcp' ||
+  const expectedUrl = process.env.ATS_MCP_URL ||
+    'https://portal.devexpert.kz/hr-ats/mcp';
+  if (url !== expectedUrl ||
       init.method !== 'POST' ||
       init.headers.Authorization !== 'Bearer test-token' ||
       init.headers['Content-Type'] !== 'application/json') {
