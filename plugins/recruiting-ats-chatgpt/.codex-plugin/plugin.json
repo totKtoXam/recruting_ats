@@ -1,0 +1,21 @@
+{
+  "interface": {
+    "displayName": "Recruiting ATS",
+    "shortDescription": "Работа с кандидатами и наймом",
+    "longDescription": "Поиск и ведение кандидатов, разбор резюме, переходы по этапам, отчёты и подготовка собеседований через MCP-сервер Recruiting ATS. Перед изменениями показывает данные и запрашивает подтверждение.",
+    "developerName": "DevExpert",
+    "category": "Productivity",
+    "defaultPrompt": "Покажи мою очередь кандидатов в Recruiting ATS.",
+    "capabilities": []
+  },
+  "name": "recruiting-ats",
+  "version": "0.2.0",
+  "description": "Работа с Recruiting ATS через существующий MCP-сервер: кандидаты, резюме, этапы найма, комментарии, справочники и собеседования.",
+  "author": {
+    "name": "DevExpert"
+  },
+  "keywords": [],
+  "homepage": "https://github.com/totKtoXam/recruting_ats",
+  "skills": "./skills",
+  "mcpServers": "./.mcp.json"
+}

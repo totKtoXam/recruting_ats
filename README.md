@@ -33,7 +33,7 @@
 - История результатов интервью доступна для просмотра и редактирования; у каждого результата своя лента комментариев.
 - Архивирование сохраняет текущий статус кандидата и проставляет `archived_at`; кандидата можно вернуть из архива.
 - Resume Intake API для AI-интеграций: создание предзаполненных черновиков кандидатов (см. [`docs/API.md`](docs/API.md)).
-- MCP-сервер и плагин Claude Code: Claude работает с ATS от имени пользователя — вход кнопкой «Connect» (OAuth через вход в ATS), превью и подтверждение перед каждым изменением (см. [MCP-сервер и плагин Claude](#mcp-сервер-и-плагин-claude)).
+- MCP-сервер и плагины [Claude Code](plugins/recruiting-ats) и [ChatGPT/Codex](plugins/recruiting-ats-chatgpt): работа с ATS от имени пользователя, превью и подтверждение перед изменениями (см. [MCP-сервер и плагин Claude](#mcp-сервер-и-плагин-claude)).
 - Swagger UI всего API: `/api/docs` (только после входа; методы записи на production — с подтверждением; спецификация OpenAPI 3.1 — `/api/openapi.json`, см. [`docs/API.md`](docs/API.md#swagger-ui)).
 - «Настройки → Для разработчиков»: ссылки на Swagger и репозиторий, версия сборки (коммит), подключение Claude и Intake API, администраторам — состояние интеграций (PostgreSQL, Google Drive, Telegram, SMTP).
 - Автоматические миграции схемы БД при старте.
@@ -684,6 +684,10 @@ npm run cleanup-drafts
 ```
 
 Адрес по умолчанию — `https://portal.devexpert.kz/hr-ats/mcp`; другой — переменная окружения `ATS_MCP_URL`. Протокол, инструменты и загрузка резюме описаны в [`docs/API.md`](docs/API.md#mcp-сервер-для-claude).
+
+## Плагин ChatGPT
+
+Пакет Agent Plugins 1.0 для ChatGPT и Codex находится в [`plugins/recruiting-ats-chatgpt`](plugins/recruiting-ats-chatgpt). Он переносит пять навыков Claude и использует личный MCP-токен ATS через локальный stdio-мост. Для приватного ChatGPT-подключения мост запускается через OpenAI Secure MCP Tunnel; сервер ATS и его хостинг не меняются, `/.well-known/*` не требуется. Порядок установки и текущее состояние привязки приложения описаны в [README плагина](plugins/recruiting-ats-chatgpt/README.md).
 
 ## Структура проекта
 

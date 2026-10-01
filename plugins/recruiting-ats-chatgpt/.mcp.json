@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "recruiting-ats": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${PLUGIN_ROOT}/scripts/ats-mcp-stdio.mjs"]
+    }
+  }
+}

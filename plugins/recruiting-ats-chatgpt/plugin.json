@@ -1,0 +1,22 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "recruiting-ats",
+  "version": "0.2.0",
+  "description": "Работа с Recruiting ATS через существующий MCP-сервер: кандидаты, резюме, этапы найма, комментарии, справочники и собеседования.",
+  "author": {
+    "name": "DevExpert"
+  },
+  "homepage": "https://github.com/totKtoXam/recruting_ats",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Recruiting ATS",
+        "shortDescription": "Работа с кандидатами и наймом",
+        "longDescription": "Поиск и ведение кандидатов, разбор резюме, переходы по этапам, отчёты и подготовка собеседований через MCP-сервер Recruiting ATS. Перед изменениями показывает данные и запрашивает подтверждение.",
+        "developerName": "DevExpert",
+        "category": "Productivity",
+        "defaultPrompt": "Покажи мою очередь кандидатов в Recruiting ATS."
+      }
+    }
+  }
+}
