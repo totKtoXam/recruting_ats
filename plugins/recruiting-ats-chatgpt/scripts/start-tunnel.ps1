@@ -20,15 +20,17 @@ if ([string]::IsNullOrWhiteSpace($env:ATS_MCP_TOKEN)) {
   $env:ATS_MCP_TOKEN = ConvertFrom-SecureString $secret -AsPlainText
 }
 
-$bridge = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot 'ats-mcp-stdio.mjs')).Path
-$node = (Get-Command node -ErrorAction Stop).Source
 $tunnel = (Get-Command $TunnelClient -ErrorAction Stop).Source
 
-# The stdio target performs no OAuth discovery. The ATS token remains local
-# and is sent only to the existing ATS MCP URL in Authorization.
-$nodeArg = $node.Replace('\', '/')
-$bridgeArg = $bridge.Replace('\', '/')
-$env:MCP_COMMAND = '"' + $nodeArg + '" "' + $bridgeArg + '"'
+# HTTP forwarding accepts tool calls without a process-wide stdio handshake.
+# The static Authorization header is resolved by tunnel-client only for ATS.
+if ([string]::IsNullOrWhiteSpace($env:ATS_MCP_URL)) {
+  $env:ATS_MCP_URL = 'https://portal.devexpert.kz/hr-ats/mcp'
+}
+$env:MCP_SERVER_URL = $env:ATS_MCP_URL
+$env:ATS_AUTHORIZATION = 'Bearer ' + $env:ATS_MCP_TOKEN
+$env:MCP_EXTRA_HEADERS = 'Authorization: env:ATS_AUTHORIZATION'
+Remove-Item Env:MCP_COMMAND -ErrorAction SilentlyContinue
 
 & $tunnel doctor --explain
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
