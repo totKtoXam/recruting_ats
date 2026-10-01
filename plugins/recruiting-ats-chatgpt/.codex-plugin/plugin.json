@@ -9,7 +9,7 @@
     "capabilities": []
   },
   "name": "recruiting-ats",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Работа с Recruiting ATS через существующий MCP-сервер: кандидаты, резюме, этапы найма, комментарии, справочники и собеседования.",
   "author": {
     "name": "DevExpert"
@@ -17,5 +17,6 @@
   "keywords": [],
   "homepage": "https://github.com/totKtoXam/recruting_ats",
   "skills": "./skills",
-  "mcpServers": "./.mcp.json"
+  "mcpServers": "./.mcp.json",
+  "apps": "./.app.json"
 }
