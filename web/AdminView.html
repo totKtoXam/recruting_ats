@@ -96,7 +96,7 @@
   </div>
 
   <!-- Боковая панель (Drawer); переносится в <body> при инициализации. -->
-  <div id="templateDrawer" class="drawer drawer-lg" aria-hidden="true">
+  <div id="templateDrawer" class="drawer drawer-xl" aria-hidden="true">
     <aside id="templateForm" class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="templateFormTitle" tabindex="-1">
       <header class="drawer-header">
         <div class="drawer-title">
@@ -131,7 +131,7 @@
 
         <section class="drawer-section">
           <div class="drawer-section-head">
-            <h4>Вопросы *</h4>
+            <h4>Вопросы * <span id="templateQuestionCount" class="counter-badge" data-tip="Вопросов в шаблоне">0</span></h4>
             <div class="header-actions">
               <button id="templateQuestionAdd" class="button button-secondary button-small" type="button" onclick="addTemplateQuestion()"><svg class="icon"><use href="#i-plus"/></svg><span>Вопрос</span></button>
             </div>

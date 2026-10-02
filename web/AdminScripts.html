@@ -881,61 +881,77 @@ function collectVacancyTemplates(){
   })).filter(binding=>binding.templateId||binding.required);
 }
 
-function answerChip(answer){
-  return '<span class="answer-chip" data-value="'+escapeHtml(answer)+'">'+
-    '<span>'+escapeHtml(answer)+'</span>'+
-    '<button class="icon-btn icon-btn-sm" type="button" data-tip="Убрать ответ" aria-label="Убрать ответ" onclick="this.parentElement.remove();Drawer.markDirty(\'templateDrawer\')">'+icon('close','icon-sm')+'</button>'+
-  '</span>';
+// Вероятный ответ — строка списка под вопросом, текст переносится целиком.
+function answerItem(answer,readOnly){
+  return '<li class="answer-item" data-value="'+escapeHtml(answer)+'">'+
+    '<span class="answer-text">'+escapeHtml(answer)+'</span>'+
+    (readOnly?'':'<button class="icon-btn icon-btn-sm" type="button" data-tip="Убрать ответ" aria-label="Убрать ответ" onclick="this.parentElement.remove();Drawer.markDirty(\'templateDrawer\')">'+icon('close','icon-sm')+'</button>')+
+  '</li>';
 }
 
-function questionBlock(question){
+function questionBlock(question,readOnly){
   const item=typeof question==='string'?{text:question,answers:[]}:(question||{text:'',answers:[]});
   return '<div class="question-block">'+
     '<div class="question-editor-row">'+
       '<span class="question-number"></span>'+
-      '<input class="template-question" placeholder="Текст вопроса" value="'+escapeHtml(item.text||'')+'">'+
-      '<button class="icon-btn icon-btn-sm icon-btn-danger" type="button" data-tip="Удалить вопрос" aria-label="Удалить вопрос" onclick="this.closest(\'.question-block\').remove();renumberTemplateQuestions();Drawer.markDirty(\'templateDrawer\')">'+icon('trash','icon-sm')+'</button>'+
+      // textarea растёт по тексту; Enter не переносит строку, а ведёт к вводу ответа.
+      '<textarea class="template-question" rows="1" placeholder="Текст вопроса" aria-label="Текст вопроса"'+(readOnly?' readonly':'')+' oninput="fitQuestionText(this)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();const next=this.closest(\'.question-block\').querySelector(\'.answer-add-input\');if(next)next.focus()}">'+escapeHtml(item.text||'')+'</textarea>'+
+      (readOnly?'':'<button class="icon-btn icon-btn-sm icon-btn-danger" type="button" data-tip="Удалить вопрос" aria-label="Удалить вопрос" onclick="this.closest(\'.question-block\').remove();renumberTemplateQuestions();Drawer.markDirty(\'templateDrawer\')">'+icon('trash','icon-sm')+'</button>')+
     '</div>'+
     '<div class="answer-editor">'+
-      '<div class="answer-chips">'+(item.answers||[]).map(answerChip).join('')+'</div>'+
-      '<div class="answer-add">'+
-        '<input class="answer-add-input" placeholder="Вероятный ответ — Enter, чтобы добавить" onkeydown="if(event.key===\'Enter\'){event.preventDefault();addAnswerChip(this)}">'+
-        '<button class="icon-btn icon-btn-sm" type="button" data-tip="Добавить вероятный ответ" aria-label="Добавить вероятный ответ" onclick="addAnswerChip(this.previousElementSibling)">'+icon('plus','icon-sm')+'</button>'+
-      '</div>'+
+      '<ul class="answer-list" aria-label="Вероятные ответы">'+(item.answers||[]).map(answer=>answerItem(answer,readOnly)).join('')+'</ul>'+
+      (readOnly?'':'<div class="answer-add">'+
+        '<input class="answer-add-input" placeholder="Вероятный ответ — Enter, чтобы добавить" aria-label="Вероятный ответ" onkeydown="if(event.key===\'Enter\'){event.preventDefault();addAnswerItem(this)}">'+
+        '<button class="icon-btn icon-btn-sm" type="button" data-tip="Добавить вероятный ответ" aria-label="Добавить вероятный ответ" onclick="addAnswerItem(this.previousElementSibling)">'+icon('plus','icon-sm')+'</button>'+
+      '</div>')+
     '</div>'+
   '</div>';
 }
 
-function addAnswerChip(input){
+// Высота поля вопроса — по тексту. Там, где CSS field-sizing:content работает, JS не нужен.
+const QUESTION_FIELD_SIZING=typeof CSS!=='undefined'&&CSS.supports&&CSS.supports('field-sizing','content');
+function fitQuestionText(textarea){
+  if(QUESTION_FIELD_SIZING)return;
+  textarea.style.height='auto';
+  textarea.style.height=(textarea.scrollHeight+textarea.offsetHeight-textarea.clientHeight)+'px';
+}
+
+function addAnswerItem(input){
   const answer=input.value.trim();
   if(!answer)return;
-  const chips=input.closest('.answer-editor').querySelector('.answer-chips');
-  const exists=[...chips.querySelectorAll('.answer-chip')].some(chip=>chip.dataset.value.toLowerCase()===answer.toLowerCase());
-  if(!exists){chips.insertAdjacentHTML('beforeend',answerChip(answer));Drawer.markDirty('templateDrawer')}
+  const list=input.closest('.answer-editor').querySelector('.answer-list');
+  const exists=[...list.querySelectorAll('.answer-item')].some(item=>item.dataset.value.toLowerCase()===answer.toLowerCase());
+  if(!exists){list.insertAdjacentHTML('beforeend',answerItem(answer));Drawer.markDirty('templateDrawer')}
   input.value='';
   input.focus();
 }
 
-function addTemplateQuestion(question){
-  el('templateQuestionsList').insertAdjacentHTML('beforeend',questionBlock(question||{text:'',answers:[]}));
+function addTemplateQuestion(question,readOnly){
+  el('templateQuestionsList').insertAdjacentHTML('beforeend',questionBlock(question||{text:'',answers:[]},readOnly));
+  const inputs=el('templateQuestionsList').querySelectorAll('.template-question');
+  const input=inputs[inputs.length-1];
+  fitQuestionText(input);
   renumberTemplateQuestions();
   if(!question){
-    const inputs=el('templateQuestionsList').querySelectorAll('.template-question');
-    inputs[inputs.length-1].focus();
+    input.focus();
+    input.scrollIntoView({block:'nearest'});
   }
 }
 
 function renumberTemplateQuestions(){
-  el('templateQuestionsList').querySelectorAll('.question-block').forEach((block,index)=>{
-    block.querySelector('.question-number').textContent=(index+1)+'.';
+  const blocks=el('templateQuestionsList').querySelectorAll('.question-block');
+  blocks.forEach((block,index)=>{
+    block.querySelector('.question-number').textContent=index+1;
   });
+  el('templateQuestionCount').textContent=blocks.length;
 }
 
 function collectTemplateQuestions(){
   return [...el('templateQuestionsList').querySelectorAll('.question-block')].map(block=>{
     // Невнесённый в список ответ из поля ввода тоже сохраняется.
-    const pending=block.querySelector('.answer-add-input').value.trim();
-    const answers=[...block.querySelectorAll('.answer-chip')].map(chip=>chip.dataset.value);
+    const add=block.querySelector('.answer-add-input');
+    const pending=add?add.value.trim():'';
+    const answers=[...block.querySelectorAll('.answer-item')].map(item=>item.dataset.value);
     if(pending&&!answers.includes(pending))answers.push(pending);
     return {text:block.querySelector('.template-question').value.trim(),answers};
   }).filter(question=>question.text);
@@ -1066,8 +1082,8 @@ function fillTemplateForm(template){
 
   el('templateQuestionsList').innerHTML='';
   const questions=template?template.questions||[]:[];
-  if(questions.length)questions.forEach(question=>addTemplateQuestion(question));
-  else addTemplateQuestion({text:'',answers:[]});
+  if(questions.length)questions.forEach(question=>addTemplateQuestion(question,readOnly));
+  else addTemplateQuestion({text:'',answers:[]},readOnly);
   el('templateQuestionAdd').hidden=readOnly;
 
   rerenderServerTable('templates');

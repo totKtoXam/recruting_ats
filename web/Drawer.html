@@ -2,7 +2,7 @@
 /* =====================================================================
    Drawer (side sheet) — правая выезжающая панель для форм.
    Разметка:
-     <div id="xDrawer" class="drawer [drawer-lg]">
+     <div id="xDrawer" class="drawer [drawer-lg|drawer-xl]">
        <aside class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="xTitle" tabindex="-1">
          <header class="drawer-header">
            <div class="drawer-title"><div class="eyebrow">…</div><h3 id="xTitle">…</h3></div>
@@ -49,6 +49,7 @@
   outline:none
 }
 .drawer-lg .drawer-panel{width:min(640px,100%)}
+.drawer-xl .drawer-panel{width:min(760px,100%)}
 .drawer.open .drawer-panel{transform:none}
 
 .drawer-header{
@@ -102,7 +103,7 @@
 body.drawer-open{overflow:hidden}
 
 @media(max-width:560px){
-  .drawer-panel,.drawer-lg .drawer-panel{width:100%;border-left:0}
+  .drawer-panel,.drawer-lg .drawer-panel,.drawer-xl .drawer-panel{width:100%;border-left:0}
   .drawer-header{padding-left:14px}
   .drawer-body{padding:14px 14px 20px}
 }

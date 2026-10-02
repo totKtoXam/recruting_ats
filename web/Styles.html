@@ -1797,59 +1797,58 @@ input[type=radio]:focus-visible{outline:2px solid var(--primary-ring);outline-of
 .template-row-main small{color:var(--faint);font-size:12px}
 .template-row .button{height:24px;padding:0 6px;font-size:12px}
 
-/* Question editor */
-.question-list{display:flex;flex-direction:column;gap:4px}
-.question-editor-row{
-  display:grid;
-  grid-template-columns:22px minmax(0,1fr) auto;
-  gap:6px;
-  align-items:center
-}
-.question-drag,
-.question-editor-row>.question-number{
-  width:22px;height:22px;display:grid;place-items:center;
-  color:var(--faint);font-size:12px;font-weight:700
-}
-.question-editor-row>.question-number{background:transparent;color:var(--muted)}
-.question-editor-row .button{height:26px;padding:0 8px}
-
+/* Question editor (шаблон вопросов): каждый вопрос — карточка; текст вопроса
+   и вероятные ответы переносятся целиком, без обрезки. */
+.question-list{display:flex;flex-direction:column;gap:8px}
 .question-block{
   display:flex;
   flex-direction:column;
-  gap:2px;
-  padding:4px 0 6px;
-  border-bottom:1px dashed var(--line)
-}
-.question-block:last-child{border-bottom:0}
-.question-list:has(.question-block){gap:0}
-.answer-editor{
-  display:flex;
-  flex-wrap:wrap;
-  align-items:center;
-  gap:4px 8px;
-  margin:0 0 0 28px;
-  padding:2px 0 0
-}
-.question-list>.answer-editor{margin-bottom:4px;padding-bottom:6px;border-bottom:1px dashed var(--line)}
-.answer-chips{display:flex;flex-wrap:wrap;gap:4px;min-width:0}
-.answer-chips:empty{display:none}
-.answer-chip{
-  display:inline-flex;align-items:center;gap:2px;
-  height:22px;
-  max-width:260px;
-  padding:0 1px 0 8px;
+  gap:4px;
+  padding:10px 8px 10px 10px;
   border:1px solid var(--line);
-  border-radius:999px;
-  background:var(--surface-3);
-  color:var(--text-2);
-  font-size:12px
+  border-radius:var(--radius);
+  background:var(--surface);
+  transition:border-color .12s
 }
-.answer-chip>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.answer-chip .icon-btn,
-.answer-chip .icon-btn-sm{width:18px;height:18px;border-radius:50%}
-.answer-chip .icon-btn .icon{width:12px;height:12px}
-.answer-add{display:inline-flex;align-items:center;gap:2px;flex:1 1 180px;min-width:160px;max-width:320px}
-.answer-add input{min-height:24px;height:24px;padding:2px 2px;font-size:12px}
+.question-block:focus-within{border-color:var(--line-strong)}
+.question-editor-row{
+  display:grid;
+  grid-template-columns:22px minmax(0,1fr) auto;
+  gap:8px;
+  align-items:start
+}
+.question-editor-row>.question-number{margin-top:2px}
+/* :where — чтобы базовые :hover/:focus/[readonly] полей оставались в силе. */
+:where(.question-editor-row>.template-question){
+  min-height:0;
+  padding:2px 2px 3px;
+  border-bottom-color:transparent;
+  border-radius:0;
+  background-color:transparent;
+  font-size:14px;font-weight:600;line-height:1.45;
+  resize:none;
+  overflow:hidden;
+  field-sizing:content
+}
+
+.answer-editor{display:flex;flex-direction:column;gap:2px;margin:0 0 0 30px}
+.answer-list{display:flex;flex-direction:column;gap:2px;margin:0;padding:0;list-style:none}
+.answer-list:empty{display:none}
+.answer-item{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  align-items:start;
+  gap:6px;
+  padding:1px 0 1px 10px;
+  border-left:2px solid var(--line-strong);
+  color:var(--text-2);
+  font-size:13px;line-height:1.45
+}
+.answer-text{padding-top:3px;overflow-wrap:anywhere}
+.answer-item .icon-btn{color:var(--faint)}
+.answer-item .icon-btn:hover{color:var(--text)}
+.answer-add{display:flex;align-items:center;gap:2px;max-width:440px;padding-left:12px}
+.answer-add input{min-height:26px;height:26px;padding:2px 2px;font-size:13px}
 
 /* Stage multiselect */
 .stage-multiselect{display:flex;flex-wrap:wrap;gap:4px}
@@ -2501,8 +2500,7 @@ button,a,summary,label,[role="button"],.candidate-card{touch-action:manipulation
 
 /* Small interactive targets meet 24px (WCAG 2.2 target size). */
 .toast-close{width:24px;height:24px}
-.answer-chip{height:26px}
-.answer-chip .icon-btn,.answer-chip .icon-btn-sm{width:24px;height:24px}
+.answer-item .icon-btn,.answer-item .icon-btn-sm{width:24px;height:24px}
 
 /* Mobile filters: search stays, the rest folds behind the "Фильтры" button. */
 .filters-toggle{display:none}
@@ -2520,7 +2518,7 @@ button,a,summary,label,[role="button"],.candidate-card{touch-action:manipulation
 @media(pointer:coarse){
   :root{--control-h:44px}
   .icon-btn{width:44px;height:44px}
-  .icon-btn-sm,.admin-table td .icon-btn,.data-table td .icon-btn,.answer-chip .icon-btn{width:36px;height:36px}
+  .icon-btn-sm,.admin-table td .icon-btn,.data-table td .icon-btn,.answer-item .icon-btn{width:36px;height:36px}
   .button-small{height:36px}
   .nav-button,.sidebar-link,.tab{min-height:44px;height:auto}
   .transition-pill,.suggestion-chip,.vacancy-stat-chip,.status-action,.stage-check{min-height:36px}
