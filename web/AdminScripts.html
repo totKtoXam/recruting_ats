@@ -1141,16 +1141,21 @@ function renderStageEditor(listId,bindings,readOnly,requiredStages=[]){
     const dis=readOnly?' disabled':'';
     return '<div class="stage-row" data-stage="'+escapeHtml(stage)+'" style="--st:var(--status-'+statusKey(stage)+')">'+
       '<span class="stage-row-name">'+statusChip(stage,true)+'</span>'+
-      '<select class="stage-template" aria-label="Шаблон вопросов этапа «'+escapeHtml(stage)+'»"'+dis+' onchange="syncStageRow(this,true)">'+
-        option('','Без шаблона')+
-        templates.map(t=>option(t['Template ID'],'№'+(t['№']||'—')+' · '+t['Название']+' · '+(t.questions||[]).length+' вопр.',String(t['Template ID'])===String(templateId))).join('')+
-        (templateId&&!known?option(templateId,'№'+(binding.number||'—')+' · '+(binding.name||'Шаблон')+' (в архиве)',true):'')+
-      '</select>'+
+      '<span class="stage-template-cell">'+
+        '<select class="stage-template" aria-label="Шаблон вопросов этапа «'+escapeHtml(stage)+'»"'+dis+' onchange="syncStageRow(this,true)">'+
+          option('','Без шаблона')+
+          templates.map(t=>option(t['Template ID'],'№'+(t['№']||'—')+' · '+t['Название']+' · '+(t.questions||[]).length+' вопр.',String(t['Template ID'])===String(templateId))).join('')+
+          (templateId&&!known?option(templateId,'№'+(binding.number||'—')+' · '+(binding.name||'Шаблон')+' (в архиве)',true):'')+
+        '</select>'+
+        // Просмотр вопросов доступен и в форме только для чтения.
+        '<button type="button" class="icon-btn icon-btn-sm stage-questions-toggle" data-tip="Вопросы шаблона" aria-label="Показать вопросы шаблона этапа «'+escapeHtml(stage)+'»" aria-expanded="false" onclick="toggleStageQuestions(this)">'+icon('eye','icon-sm')+'</button>'+
+      '</span>'+
       '<span class="stage-required-cell">'+
         '<label class="checkbox-line stage-required" data-tip="Итог при переводе на этап обязателен; с шаблоном — ещё и ответы"><input type="checkbox" class="stage-required-input"'+(required?' checked':'')+dis+' onchange="syncStageRow(this,true)"><span>Обязательный</span></label>'+
         '<span class="stage-required-warn" role="img" aria-label="'+escapeHtml(STAGE_REQUIRED_NO_TEMPLATE)+'" data-tip="'+escapeHtml(STAGE_REQUIRED_NO_TEMPLATE)+'" hidden>'+icon('alert','icon-sm')+'</span>'+
       '</span>'+
       '<small class="stage-row-note" hidden>'+escapeHtml(STAGE_REQUIRED_NO_TEMPLATE)+'</small>'+
+      '<div class="stage-row-questions" hidden></div>'+
     '</div>';
   }).join('');
   el(listId).querySelectorAll('.stage-row').forEach(row=>syncStageRow(row));
@@ -1169,9 +1174,72 @@ function syncStageRow(node,userChange){
   const warn=!row.querySelector('.stage-template').value&&row.querySelector('.stage-required-input').checked;
   row.querySelector('.stage-required-warn').hidden=!warn;
   row.querySelector('.stage-row-note').hidden=!warn;
+  syncStageQuestions(row);
   updateStageCount(row.closest('.stage-list').id);
   const drawer=userChange&&row.closest('.drawer');
   if(drawer)Drawer.markDirty(drawer.id);
+}
+
+// ---------- Вопросы шаблона на этапе (просмотр) ----------
+// «Глаз» у выбора шаблона раскрывает под строкой вопросы с предпочтительными ответами.
+
+function stageQuestionsHtml(template){
+  const questions=template.questions||[];
+  const archived=template.state&&template.state!=='active'
+    ?'<div class="stage-questions-note">'+icon('archive','icon-sm')+'<span>Шаблон в архиве — при переводе на этап эти вопросы не задаются.</span></div>'
+    :'';
+  if(!questions.length)return archived+'<span class="muted">В шаблоне нет вопросов.</span>';
+  return archived+'<ol class="stage-questions">'+questions.map(question=>
+    '<li><span class="stage-question-text">'+escapeHtml(question.text)+'</span>'+
+      ((question.answers||[]).length
+        ?'<span class="stage-question-answers">'+question.answers.map(answer=>'<span>'+escapeHtml(answer)+'</span>').join('')+'</span>'
+        :'')+
+    '</li>'
+  ).join('')+'</ol>';
+}
+
+// Активные шаблоны — из справочника; привязанный архивный ищется в таблице шаблонов.
+async function stageTemplateById(id){
+  return (state.templates||[]).find(t=>String(t['Template ID'])===String(id))||
+    await findInTable('templates','Template ID',id);
+}
+
+async function renderStageQuestions(row){
+  const box=row.querySelector('.stage-row-questions');
+  const id=row.querySelector('.stage-template').value;
+  box.dataset.templateId=id;
+  box.innerHTML='<span class="muted">Загрузка вопросов…</span>';
+  const template=await stageTemplateById(id).catch(()=>null);
+  // Пока шаблон загружался, на этапе могли выбрать другой.
+  if(box.dataset.templateId!==id)return;
+  box.innerHTML=template?stageQuestionsHtml(template):'<span class="muted">Шаблон не найден.</span>';
+}
+
+function setStageQuestionsOpen(row,open){
+  const button=row.querySelector('.stage-questions-toggle');
+  const box=row.querySelector('.stage-row-questions');
+  button.setAttribute('aria-expanded',String(open));
+  button.setAttribute('aria-label',(open?'Скрыть':'Показать')+' вопросы шаблона этапа «'+row.dataset.stage+'»');
+  box.hidden=!open;
+  if(open)renderStageQuestions(row);
+}
+
+function toggleStageQuestions(button){
+  const row=button.closest('.stage-row');
+  setStageQuestionsOpen(row,row.querySelector('.stage-row-questions').hidden);
+}
+
+// Без шаблона смотреть нечего; при смене шаблона открытый список перерисовывается.
+function syncStageQuestions(row){
+  const id=row.querySelector('.stage-template').value;
+  const button=row.querySelector('.stage-questions-toggle');
+  const box=row.querySelector('.stage-row-questions');
+  button.disabled=!id;
+  if(!id){
+    if(!box.hidden)setStageQuestionsOpen(row,false);
+    return;
+  }
+  if(!box.hidden&&box.dataset.templateId!==id)renderStageQuestions(row);
 }
 
 function updateStageCount(listId){
