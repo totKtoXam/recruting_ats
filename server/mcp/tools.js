@@ -22,7 +22,7 @@ export const MCP_INSTRUCTIONS = `Recruiting ATS — система подбор�
 Все действия выполняются от имени пользователя, подключившего сервер, с его правами, и пишутся в журнал изменений ATS.
 
 Правила:
-1. Перед любым инструментом, который изменяет данные (у него нет readOnlyHint), покажи пользователю, что именно будет записано, и дождись явного подтверждения. Простые действия (комментарий, реакция, архив/восстановление, статус вакансии, подписка, отметка уведомлений, откат поля) — кратко в чате. Сложные формы (карточка кандидата, перевод по этапу с ответами на вопросы и отказ, вакансия с шаблонами, шаблон интервью, пользователь) — превью формы: визуальный виджет или артефакт, если клиент их поддерживает, иначе аккуратная таблица «поле — значение». Пользователь может переключить режим («покажи в чате» / «покажи превью») — соблюдай выбор до конца разговора.
+1. Перед любым инструментом, который изменяет данные (у него нет readOnlyHint), покажи пользователю, что именно будет записано, и дождись явного подтверждения. Простые действия (комментарий, реакция, архив/восстановление, статус вакансии, подписка, отметка уведомлений, откат поля) — кратко в чате. Сложные формы (карточка кандидата, перевод по этапу с ответами на вопросы и отказ, вакансия с шаблонами, шаблон вакансии, шаблон интервью, пользователь) — превью формы: визуальный виджет или артефакт, если клиент их поддерживает, иначе аккуратная таблица «поле — значение». Пользователь может переключить режим («покажи в чате» / «покажи превью») — соблюдай выбор до конца разговора.
 2. Идентификаторы бери из get_references и search_candidates, не придумывай.
 3. Нового кандидата из резюме по умолчанию создавай черновиком (create_candidate_draft): пользователь проверит форму в ATS и сохранит сам. save_candidate без id сразу создаёт кандидата — только по явной просьбе.
 4. Перед transition_candidate вызови get_interview_context: на обязательном этапе (resultRequired) нужен итог (result), а при обязательном шаблоне — ещё ответы на все вопросы (или skipped: true). На необязательном этапе итог можно не указывать.
@@ -178,6 +178,31 @@ function templateOut(t) {
     name: t['Название'],
     tags: (t.tags || []).map(tag => tag.name),
     questions: t.questions || []
+  };
+}
+
+// Шаблон вакансии: этапы в формате save_vacancy.templates (с названием шаблона интервью).
+function presetOut(p) {
+  const byStage = new Map((p.templates || []).map(t => [t.stage, t]));
+  const required = p.requiredStages || [];
+
+  return {
+    id: p['Preset ID'],
+    number: p['№'],
+    name: p['Название'],
+    stages: PIPELINE.flatMap(stage => {
+      const template = byStage.get(stage);
+      const isRequired = required.includes(stage) || Boolean(template && template.required);
+      if (!template && !isRequired) return [];
+      return [{
+        stage,
+        templateId: template ? template.id : '',
+        templateName: template ? template.name : '',
+        templateArchived: Boolean(template && template.archived),
+        required: isRequired
+      }];
+    }),
+    vacancyCount: p.vacancyCount
   };
 }
 
@@ -341,6 +366,7 @@ async function getReferences(_args, { user }) {
       hasAccess: u.hasAccess
     })),
     templates: r.templates.map(templateOut),
+    vacancyPresets: r.vacancyPresets.map(presetOut),
     templateBindings: r.interviewTemplates.map(t => ({
       vacancyId: t['Vacancy ID'],
       stage: t['Этап'],
@@ -393,7 +419,19 @@ async function saveCandidate(args, { user }) {
   return { ok: true, created: !args.id, candidate: candidateFull(result.candidate) };
 }
 
-const LIST_METHODS = { vacancies: 'listVacancies', sources: 'listSources', templates: 'listTemplates', users: 'listUsers' };
+const LIST_METHODS = {
+  vacancies: 'listVacancies',
+  vacancy_presets: 'listVacancyPresets',
+  sources: 'listSources',
+  templates: 'listTemplates',
+  users: 'listUsers'
+};
+// Этап вакансии или шаблона вакансии: шаблон вопросов и/или обязательность.
+const STAGE_SCHEMA = obj(
+  { stage: str('Этап', { enum: PIPELINE }), templateId: str('Шаблон (uuid или пусто — этап без шаблона)'), required: bool('Обязательный этап') },
+  ['stage']
+);
+
 const STATE_METHODS = { archive: 'archiveEntity', unarchive: 'unarchiveEntity', delete: 'deleteEntity', restore: 'restoreEntity' };
 
 // ---------- Реестр ----------
@@ -404,7 +442,7 @@ export const mcpTools = [
     name: 'get_references',
     title: 'Справочники ATS',
     description:
-      'Текущий пользователь, этапы и допустимые переходы, активные вакансии, источники, ответственные (с этапами), шаблоны интервью и их привязки к вакансиям, причины отказа. Вызывай первым, чтобы получить ID.',
+      'Текущий пользователь, этапы и допустимые переходы, активные вакансии, источники, ответственные (с этапами), шаблоны интервью и их привязки к вакансиям, шаблоны вакансий (vacancyPresets — готовые этапы для новой вакансии), причины отказа. Вызывай первым, чтобы получить ID.',
     inputSchema: obj({}),
     annotations: READ,
     handler: getReferences
@@ -521,7 +559,7 @@ export const mcpTools = [
     description: 'История изменений записи: кто, когда, какое поле, было → стало (для кандидата — вместе с переходами по этапам). id записи журнала нужен для revert_change.',
     inputSchema: obj(
       {
-        entityType: str('Тип записи', { enum: ['candidate', 'vacancy', 'source', 'template', 'interview', 'user'] }),
+        entityType: str('Тип записи', { enum: ['candidate', 'vacancy', 'source', 'template', 'vacancy_preset', 'interview', 'user'] }),
         entityId: id('ID записи')
       },
       ['entityType', 'entityId']
@@ -542,7 +580,7 @@ export const mcpTools = [
     name: 'list_records',
     title: 'Таблицы справочников',
     description:
-      'Постраничные таблицы вакансий, источников, шаблонов интервью и пользователей (users — только админ) с фильтрами и сортировкой, включая архив и корзину.',
+      'Постраничные таблицы вакансий, шаблонов вакансий, источников, шаблонов интервью и пользователей (users — только админ) с фильтрами и сортировкой, включая архив и корзину.',
     inputSchema: obj(
       {
         kind: str('Таблица', { enum: Object.keys(LIST_METHODS) }),
@@ -552,7 +590,7 @@ export const mcpTools = [
         filters: {
           type: 'object',
           description:
-            'state: active|archived|deleted|all; vacancies: number, name, status; sources: number, name; templates: number, name, tag; users: email, name, stage, responsible (yes|no), status (active|pending|disabled), admin (yes|no)'
+            'state: active|archived|deleted|all; vacancies: number, name, status; vacancy_presets: number, name; sources: number, name; templates: number, name, tag; users: email, name, stage, responsible (yes|no), status (active|pending|disabled), admin (yes|no)'
         }
       },
       ['kind']
@@ -716,7 +754,7 @@ export const mcpTools = [
     inputSchema: obj(
       {
         action: str('Действие', { enum: Object.keys(STATE_METHODS) }),
-        type: str('Тип записи', { enum: ['candidate', 'vacancy', 'source', 'template', 'interview', 'user'] }),
+        type: str('Тип записи', { enum: ['candidate', 'vacancy', 'source', 'template', 'vacancy_preset', 'interview', 'user'] }),
         id: id('ID записи')
       },
       ['action', 'type', 'id']
@@ -801,17 +839,15 @@ export const mcpTools = [
     name: 'save_vacancy',
     title: 'Сохранить вакансию',
     description:
-      'Создаёт (без id, статус «Открыта») или изменяет вакансию. links и templates, если переданы, заменяют весь список; templates — этапы вакансии: шаблон вопросов (не больше одного на этап) и обязательность. Обязательный этап (required) требует итог при переходе, а с шаблоном — ещё ответы; обязательным может быть и этап без шаблона (templateId пустой).' +
+      'Создаёт (без id, статус «Открыта») или изменяет вакансию. links и templates, если переданы, заменяют весь список; templates — этапы вакансии: шаблон вопросов (не больше одного на этап) и обязательность. Обязательный этап (required) требует итог при переходе, а с шаблоном — ещё ответы; обязательным может быть и этап без шаблона (templateId пустой). presetId — шаблон вакансии (get_references.vacancyPresets): без templates этапы копируются из него один раз; этапы, где шаблон вопросов в архиве, копируются без шаблона и возвращаются в skippedStages.' +
       CONFIRM,
     inputSchema: obj(
       {
         id: id('ID вакансии для изменения'),
         name: str('Название (уникальное)'),
         links: arr(obj({ url: str('Ссылка'), name: str('Подпись') }, ['url']), 'Ссылки (до 20)'),
-        templates: arr(
-          obj({ stage: str('Этап', { enum: PIPELINE }), templateId: str('Шаблон (uuid или пусто — этап без шаблона)'), required: bool('Обязательный этап') }, ['stage']),
-          'Этапы: шаблоны вопросов и обязательность'
-        )
+        templates: arr(STAGE_SCHEMA, 'Этапы: шаблоны вопросов и обязательность'),
+        presetId: id('Шаблон вакансии: этапы из него, если templates не передан')
       },
       ['name']
     ),
@@ -851,6 +887,24 @@ export const mcpTools = [
     ),
     annotations: WRITE,
     handler: (args, context) => rpcHandlers.saveInterviewTemplate(args, context)
+  },
+  {
+    name: 'save_vacancy_preset',
+    title: 'Сохранить шаблон вакансии',
+    description:
+      'Создаёт (без id) или изменяет шаблон вакансии — готовый набор этапов для новых вакансий: шаблон вопросов (не больше одного на этап) и обязательность. templates, если передан, заменяет все этапы (формат как у save_vacancy). fromVacancyId без templates — взять этапы из вакансии. Новая вакансия из шаблона — save_vacancy с presetId.' +
+      CONFIRM,
+    inputSchema: obj(
+      {
+        id: id('ID шаблона вакансии для изменения'),
+        name: str('Название (уникальное)'),
+        templates: arr(STAGE_SCHEMA, 'Этапы: шаблоны вопросов и обязательность'),
+        fromVacancyId: id('Вакансия, из которой взять этапы (если templates не передан)')
+      },
+      ['name']
+    ),
+    annotations: WRITE,
+    handler: (args, context) => rpcHandlers.saveVacancyPreset(args, context)
   },
 
   // ----- Пользователи (только администраторы) -----

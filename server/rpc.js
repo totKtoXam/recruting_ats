@@ -93,7 +93,7 @@ export const rpcHandlers = {
   transitionCandidate: (input, { user }) => interviews.transitionCandidate(input, user),
   updateInterview: (input, { user }) => interviews.updateInterview(input, user),
 
-  // Жизненный цикл любой записи: { type: candidate|vacancy|source|template|interview|user, id }.
+  // Жизненный цикл любой записи: { type: candidate|vacancy|source|template|vacancy_preset|interview|user, id }.
   archiveEntity: (input, { user }) => lifecycle.archive(input, user),
   unarchiveEntity: (input, { user }) => lifecycle.unarchive(input, user),
   deleteEntity: (input, { user }) => lifecycle.moveToTrash(input, user),
@@ -141,6 +141,7 @@ export const rpcHandlers = {
   listVacancies: (input, { user }) => lists.listVacancies(input, user),
   listSources: (input, { user }) => lists.listSources(input, user),
   listTemplates: (input, { user }) => lists.listTemplates(input, user),
+  listVacancyPresets: (input, { user }) => lists.listVacancyPresets(input, user),
   listUsers: adminOnly((input, { user }) => lists.listUsers(input, user)),
 
   // Журнал изменений любой записи и откат значения поля.
@@ -160,7 +161,9 @@ export const rpcHandlers = {
   saveVacancy: (input, { user }) => references.saveVacancy(input, user),
   setVacancyStatus: (input, { user }) => references.setVacancyStatus(input, user),
   saveSource: (input, { user }) => references.saveSource(input, user),
-  saveInterviewTemplate: (input, { user }) => references.saveInterviewTemplate(input, user)
+  saveInterviewTemplate: (input, { user }) => references.saveInterviewTemplate(input, user),
+  // Шаблон вакансии: готовые этапы для новых вакансий (saveVacancy с presetId).
+  saveVacancyPreset: (input, { user }) => references.saveVacancyPreset(input, user)
 };
 
 // Вызов метода по имени (POST /api/rpc/:name). "args": null означает «аргумент не передан»:

@@ -40,6 +40,23 @@ export function toVacancy(row) {
     links: Array.isArray(row.links) ? row.links : [],
     // Этапы, на которых при переходе нужен итог (и ответы, если привязан шаблон).
     requiredStages: row.required_stages || [],
+    // Шаблон вакансии, из которого она создана (только для справки).
+    presetId: row.preset_id || '',
+    ...softDeleteFields(row)
+  };
+}
+
+// Шаблон вакансии: templates — шаблоны вопросов по этапам в том же виде, что у таблицы
+// вакансий ({ id, number, name, stage, required, archived }); vacancyCount — сколько вакансий
+// из него создано.
+export function toVacancyPreset(row) {
+  return {
+    'Preset ID': row.id,
+    '№': row.number,
+    'Название': row.name,
+    requiredStages: row.required_stages || [],
+    templates: row.templates || [],
+    vacancyCount: row.vacancy_count === undefined ? undefined : Number(row.vacancy_count),
     ...softDeleteFields(row)
   };
 }
@@ -126,6 +143,8 @@ export function toTemplate(row) {
     tags: normalizeTemplateTags(row.tags),
     // Сколько вакансий используют шаблон (для списка шаблонов).
     usage: row.usage === undefined ? undefined : Number(row.usage),
+    // Сколько шаблонов вакансий используют шаблон.
+    presetUsage: row.preset_usage === undefined ? undefined : Number(row.preset_usage),
     // Привязка к вакансии и этапу — только когда шаблон выбран для конкретной вакансии.
     ...(row.stage === undefined
       ? {}

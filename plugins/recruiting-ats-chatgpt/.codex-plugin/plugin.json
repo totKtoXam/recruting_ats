@@ -9,7 +9,7 @@
     "capabilities": []
   },
   "name": "recruiting-ats",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Работа с Recruiting ATS через существующий MCP-сервер: кандидаты, резюме, этапы найма, комментарии, справочники и собеседования.",
   "author": {
     "name": "DevExpert"

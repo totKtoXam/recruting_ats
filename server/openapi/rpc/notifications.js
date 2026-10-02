@@ -56,7 +56,7 @@ const activityItem = {
     id: { type: 'string', format: 'uuid' },
     entityType: {
       type: 'string',
-      enum: ['candidate', 'interview', 'vacancy', 'source', 'template', 'user'],
+      enum: ['candidate', 'interview', 'vacancy', 'source', 'template', 'vacancy_preset', 'user'],
       description: 'Тип записи (user — только для администраторов)'
     },
     entityId: { type: 'string', format: 'uuid' },

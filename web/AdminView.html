@@ -9,8 +9,8 @@
   </div>
 </div>
 
-<!-- Вкладки страницы «Настройки» (рисует renderSettingsTabs). -->
-<nav id="settingsTabs" class="tabs settings-tabs" aria-label="Разделы настроек" hidden></nav>
+<!-- Вкладки страниц «Вакансии» и «Настройки» (рисует renderPageTabs). -->
+<nav id="settingsTabs" class="tabs settings-tabs" aria-label="Разделы" hidden></nav>
 
 <!-- ===================== Вакансии ===================== -->
 <section id="admin-vacancies" class="admin-page-section active">
@@ -66,14 +66,72 @@
         <section class="drawer-section">
           <div class="drawer-section-head">
             <h4>Этапы <span id="vacancyTemplateCount" class="counter-badge" data-tip="Этапов с шаблоном вопросов">0</span></h4>
+            <!-- «Из шаблона…» и «В шаблон» (рисует renderVacancyStageTools). -->
+            <div class="header-actions" id="vacancyStageTools"></div>
           </div>
           <small class="field-hint">Вопросы шаблона задают при переводе кандидата на этап. На обязательном этапе нужно указать итог, а если выбран шаблон — ещё ответить на вопросы. На необязательном этапе итог и вопросы можно пропустить.</small>
-          <div id="vacancyStageList" class="stage-list"></div>
+          <div id="vacancyPresetNote"></div>
+          <div id="vacancyStageList" class="stage-list" data-count="vacancyTemplateCount"></div>
         </section>
 
         <!-- Заголовок «Комментарии» рисует сама лента (Comments.html). -->
         <section class="drawer-section" data-drawer-ignore>
           <div id="vacancyComments" class="comments-host"></div>
+        </section>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- ===================== Шаблоны вакансий ===================== -->
+<section id="admin-vacancy-presets" class="admin-page-section">
+  <div class="directory-layout directory-single">
+    <div class="admin-list-card directory-table-card">
+      <div class="section-title-row table-toolbar">
+        <h3>Шаблоны вакансий</h3>
+        <div class="header-actions">
+          <div class="segmented state-switch" data-table="vacancyPresets"></div>
+          <button type="button" class="button button-primary" onclick="resetVacancyPresetForm()"><svg class="icon"><use href="#i-plus"/></svg><span class="btn-label">Новый шаблон</span></button>
+        </div>
+      </div>
+      <div id="vacancyPresetTable"></div>
+    </div>
+  </div>
+
+  <!-- Боковая панель (Drawer); переносится в <body> при инициализации. Открывается и поверх
+       формы вакансии («В шаблон»). -->
+  <div id="vacancyPresetDrawer" class="drawer drawer-lg" aria-hidden="true">
+    <aside id="vacancyPresetForm" class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="vacancyPresetFormTitle" tabindex="-1">
+      <header class="drawer-header">
+        <div class="drawer-title">
+          <div class="eyebrow">Шаблон вакансии</div>
+          <h3 id="vacancyPresetFormTitle">Новый шаблон вакансии</h3>
+        </div>
+        <div class="header-actions" id="vacancyPresetFormActions"></div>
+        <span class="toolbar-divider" aria-hidden="true"></span>
+        <button type="button" class="icon-btn" data-drawer-close data-tip="Закрыть (Esc)" aria-label="Закрыть"><svg class="icon"><use href="#i-close"/></svg></button>
+      </header>
+
+      <div class="drawer-body">
+        <section class="drawer-section">
+          <input id="vacancyPresetId" type="hidden">
+          <div id="vacancyPresetLifecycleNote"></div>
+
+          <div class="field">
+            <label for="vacancyPresetName">Название *</label>
+            <input id="vacancyPresetName" placeholder="Например, .NET разработчик">
+          </div>
+          <small class="field-hint">Новая вакансия из шаблона получает копию его этапов. Изменения шаблона на уже созданные вакансии не влияют.</small>
+          <div id="vacancyPresetUsage" class="field-hint"></div>
+        </section>
+
+        <section class="drawer-section">
+          <div class="drawer-section-head">
+            <h4>Этапы <span id="vacancyPresetStageCount" class="counter-badge" data-tip="Этапов с шаблоном вопросов">0</span></h4>
+          </div>
+          <small class="field-hint">Как в вакансии: на обязательном этапе при переводе нужен итог, а если выбран шаблон вопросов — ещё ответы на вопросы.</small>
+          <div id="vacancyPresetNoteForm"></div>
+          <div id="vacancyPresetStageList" class="stage-list" data-count="vacancyPresetStageCount"></div>
         </section>
       </div>
     </aside>

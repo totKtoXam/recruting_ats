@@ -148,6 +148,7 @@ const referenceDataProps = {
         'Статус': { type: 'string', enum: ['Открыта', 'На паузе', 'Закрыта'] },
         links: { type: 'array', items: linkItem, description: 'Ссылки на публикации вакансии.' },
         requiredStages: stringList('Этапы, на которых при переходе обязателен итог.'),
+        presetId: { type: 'string', description: 'ID шаблона вакансии, из которого вакансия создана; пустая строка — не из шаблона.' },
         'Дата создания': dateTime('Дата создания.'),
         'Дата изменения': dateTime('Дата изменения.'),
         ...lifecycleProps
@@ -197,7 +198,12 @@ const referenceDataProps = {
   },
   templates: {
     type: 'array',
-    description: 'Активные шаблоны интервью: «Template ID», «№», «Название», questions [{ text, answers[] }], tags [{ name, color }], usage (число вакансий) и поля состояния.',
+    description: 'Активные шаблоны интервью: «Template ID», «№», «Название», questions [{ text, answers[] }], tags [{ name, color }], usage (число вакансий), presetUsage (число шаблонов вакансий) и поля состояния.',
+    items: { type: 'object', additionalProperties: true }
+  },
+  vacancyPresets: {
+    type: 'array',
+    description: 'Активные шаблоны вакансий: «Preset ID», «№», «Название», requiredStages, templates [{ id, number, name, stage, required, archived }], vacancyCount и поля состояния.',
     items: { type: 'object', additionalProperties: true }
   },
   templateTagColors: {
@@ -290,7 +296,7 @@ export default {
     tag: 'Старт и справочники',
     summary: 'Справочники: вакансии, источники, ответственные, шаблоны, константы',
     description:
-      'Возвращает активные (не в архиве и не в корзине) вакансии, источники, ответственных и шаблоны интервью, ' +
+      'Возвращает активные (не в архиве и не в корзине) вакансии, источники, ответственных, шаблоны интервью и шаблоны вакансий, ' +
       'справочники, а также константы воронки. Только чтение, доступно любому авторизованному пользователю.',
     args: null,
     result: referenceData

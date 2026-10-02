@@ -9,6 +9,7 @@ let state={
   currentUser:null,
   interviewTemplates:[],
   templates:[],
+  vacancyPresets:[],
   dictionaries:{},
   transitions:{},
   pipelineStatuses:[],
@@ -52,10 +53,11 @@ function escJs(v){return String(v??'').replaceAll('\\','\\\\').replaceAll("'","\
 function icon(name,extra){return '<svg class="icon'+(extra?' '+extra:'')+'" aria-hidden="true" focusable="false"><use href="#i-'+name+'"/></svg>'}
 // Кнопка с подписью — для главного действия экрана/формы (Сохранить, Отказать…):
 // иконка без текста для основного действия плохо считывается.
-function textBtn(name,label,onclick,variant='button-primary'){return '<button type="button" class="button '+variant+'" onclick="'+onclick+'">'+icon(name)+'<span>'+escapeHtml(label)+'</span></button>'}
+// onclick экранируется для атрибута: браузер вернёт исходный JS, а кавычки из названий записей не вырвутся из атрибута.
+function textBtn(name,label,onclick,variant='button-primary'){return '<button type="button" class="button '+variant+'" onclick="'+escapeHtml(onclick)+'">'+icon(name)+'<span>'+escapeHtml(label)+'</span></button>'}
 // Иконка «откроется в новой вкладке» + пояснение для скринридера.
 function externalMark(){return icon('external','icon-sm external-mark')+'<span class="sr-only"> (откроется в новой вкладке)</span>'}
-function iconBtn(name,tip,onclick,variant){return '<button type="button" class="icon-btn'+(variant?' '+variant:'')+'" data-tip="'+escapeHtml(tip)+'" aria-label="'+escapeHtml(tip)+'" onclick="'+onclick+'">'+icon(name,variant&&variant.includes('icon-btn-sm')?'icon-sm':'')+'</button>'}
+function iconBtn(name,tip,onclick,variant){return '<button type="button" class="icon-btn'+(variant?' '+variant:'')+'" data-tip="'+escapeHtml(tip)+'" aria-label="'+escapeHtml(tip)+'" onclick="'+escapeHtml(onclick)+'">'+icon(name,variant&&variant.includes('icon-btn-sm')?'icon-sm':'')+'</button>'}
 // Текст без разметки. DOMParser создаёт инертный документ — скрипты и картинки из HTML не выполняются.
 function richText(html){return new DOMParser().parseFromString(String(html||''),'text/html').body.textContent.trim()}
 // HTML из БД уже очищен сервером (белый список тегов).
@@ -334,8 +336,14 @@ async function afterHistoryRevert(type,id){
   }
   if(type==='template'){
     await refreshReferences();
-    await Promise.all([loadServerTable('templates'),loadServerTable('vacancies')]);
+    await Promise.all([loadServerTable('templates'),loadServerTable('vacancies'),loadServerTable('vacancyPresets')]);
     if(Drawer.isOpen('templateDrawer')&&String(value('templateId'))===String(id))await reopenTemplate(id);
+    return;
+  }
+  if(type==='vacancy_preset'){
+    await refreshReferences();
+    await loadServerTable('vacancyPresets');
+    if(Drawer.isOpen('vacancyPresetDrawer')&&String(value('vacancyPresetId'))===String(id))await reopenVacancyPreset(id);
   }
 }
 
@@ -492,15 +500,17 @@ function applySidebarState(collapsed){
 // #/candidates, #/candidate/<id> — доска; остальные пункты меню — разделы админки.
 
 const ADMIN_ROUTES={
-  'vacancies':{section:'vacancies',title:'Вакансии',description:'Вакансии, публикации и шаблоны вопросов по этапам.'},
+  // «Вакансии» — вкладки «Вакансии» и «Шаблоны вакансий» (tabs — группа вкладок, tab — ключ вкладки).
+  'vacancies':{section:'vacancies',tabs:'vacancies',tab:'vacancies',title:'Вакансии',description:'Вакансии, публикации и шаблоны вопросов по этапам.'},
+  'vacancies/presets':{section:'vacancy-presets',tabs:'vacancies',tab:'presets',title:'Вакансии',description:'Шаблоны вакансий — готовые этапы: шаблон вопросов и обязательность на каждом этапе. Новая вакансия получает их копию.'},
   'templates':{section:'templates',title:'Шаблоны вопросов',description:'Наборы вопросов для интервью. К вакансии шаблон привязывается на нужном этапе.'},
   // «Настройки» — одна страница с вкладками; у каждой вкладки свой адрес (tab — ключ вкладки).
-  'settings/sources':{section:'sources',tab:'sources',title:'Настройки',description:'Источники вакансий: откуда приходят кандидаты.'},
-  'settings/users':{section:'users',tab:'users',title:'Настройки',description:'Войти может любой Google Account, работать в ATS — только тот, кому открыт доступ.',adminOnly:true},
-  'settings/integrations/auth':{section:'integrations',tab:'integrations',group:'auth',title:'Настройки',description:'Вход через Google, отправка почты и Telegram-бот. Значения здесь важнее .env и применяются без перезапуска.',adminOnly:true},
-  'settings/integrations/smtp':{section:'integrations',tab:'integrations',group:'smtp',title:'Настройки',description:'Вход через Google, отправка почты и Telegram-бот. Значения здесь важнее .env и применяются без перезапуска.',adminOnly:true},
-  'settings/integrations/telegram':{section:'integrations',tab:'integrations',group:'telegram',title:'Настройки',description:'Вход через Google, отправка почты и Telegram-бот. Значения здесь важнее .env и применяются без перезапуска.',adminOnly:true},
-  'settings/developers':{section:'developers',tab:'developers',title:'Настройки',description:'Документация API и исходный код ATS.'}
+  'settings/sources':{section:'sources',tabs:'settings',tab:'sources',title:'Настройки',description:'Источники вакансий: откуда приходят кандидаты.'},
+  'settings/users':{section:'users',tabs:'settings',tab:'users',title:'Настройки',description:'Войти может любой Google Account, работать в ATS — только тот, кому открыт доступ.',adminOnly:true},
+  'settings/integrations/auth':{section:'integrations',tabs:'settings',tab:'integrations',group:'auth',title:'Настройки',description:'Вход через Google, отправка почты и Telegram-бот. Значения здесь важнее .env и применяются без перезапуска.',adminOnly:true},
+  'settings/integrations/smtp':{section:'integrations',tabs:'settings',tab:'integrations',group:'smtp',title:'Настройки',description:'Вход через Google, отправка почты и Telegram-бот. Значения здесь важнее .env и применяются без перезапуска.',adminOnly:true},
+  'settings/integrations/telegram':{section:'integrations',tabs:'settings',tab:'integrations',group:'telegram',title:'Настройки',description:'Вход через Google, отправка почты и Telegram-бот. Значения здесь важнее .env и применяются без перезапуска.',adminOnly:true},
+  'settings/developers':{section:'developers',tabs:'settings',tab:'developers',title:'Настройки',description:'Документация API и исходный код ATS.'}
 };
 
 function isAdminUser(){return !!(state.currentUser&&state.currentUser.isAdmin)}
@@ -560,7 +570,7 @@ let routeApplied=false;
 function applyRoute(){
   const route=getRoute();
   const adminRoute=ADMIN_ROUTES[route.path]||{};
-  const tabLabel=adminRoute.tab&&typeof SETTINGS_TABS!=='undefined'?(SETTINGS_TABS.find(tab=>tab.key===adminRoute.tab)||{}).label:'';
+  const tabLabel=adminRoute.tab&&typeof adminTabLabel==='function'?adminTabLabel(adminRoute):'';
   const pageTitle=route.page==='home'?'Главная':route.page==='analytics'?'Аналитика':route.page==='profile'?'Профиль':route.page==='admin'?[tabLabel,adminRoute.title].filter(Boolean).join(' · '):'Кандидаты';
   document.title=(pageTitle?pageTitle+' · ':'')+'Recruiting ATS';
   el('viewCandidates').hidden=route.page!=='candidates';
@@ -661,7 +671,7 @@ function renderCurrentUser(){
   document.querySelectorAll('[data-admin-only]').forEach(link=>link.hidden=!isAdminUser());
   // Вкладки «Пользователи» и «Интеграции» появляются, когда стало известно, что это администратор.
   const adminRoute=ADMIN_ROUTES[getRoute().path];
-  if(adminRoute&&typeof renderSettingsTabs==='function')renderSettingsTabs(adminRoute);
+  if(adminRoute&&typeof renderPageTabs==='function')renderPageTabs(adminRoute);
   if(state.currentUser&&!isAdminUser()&&location.hash==='#/settings/users'){
     history.replaceState(null,'','#/candidates');
     applyRoute();
@@ -721,6 +731,7 @@ function applyBootstrapData(data){
     currentUser:data.currentUser||null,
     interviewTemplates:data.interviewTemplates||[],
     templates:data.templates||[],
+    vacancyPresets:data.vacancyPresets||[],
     templateTagColors:data.templateTagColors||[],
     dictionaries:data.dictionaries||{},
     transitions:data.transitions||{},
@@ -1090,6 +1101,7 @@ async function refreshReferences(){
   state.responsibles=data.responsibles||[];
   state.interviewTemplates=data.interviewTemplates||[];
   state.templates=data.templates||[];
+  state.vacancyPresets=data.vacancyPresets||[];
   state.templateTagColors=data.templateTagColors||[];
   state.dictionaries=data.dictionaries||{};
   state.transitions=data.transitions||{};

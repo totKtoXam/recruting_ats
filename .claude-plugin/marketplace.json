@@ -11,7 +11,7 @@
       "name": "recruiting-ats",
       "source": "./plugins/recruiting-ats",
       "description": "Работа с Recruiting ATS из Claude: кандидаты, резюме, этапы найма, комментарии, вакансии и аналитика через MCP-сервер ATS; проектирование собеседований, HR-скрининг, техническое интервью .NET и оформление результатов",
-      "version": "1.2.2",
+      "version": "1.3.0",
       "category": "productivity"
     }
   ]

@@ -354,6 +354,7 @@ async function queryActivity(user, limit) {
               WHEN 'vacancy'   THEN (SELECT v.name FROM vacancies v WHERE v.id = a.entity_id)
               WHEN 'source'    THEN (SELECT s.name FROM sources s WHERE s.id = a.entity_id)
               WHEN 'template'  THEN (SELECT t.name FROM interview_templates t WHERE t.id = a.entity_id)
+              WHEN 'vacancy_preset' THEN (SELECT p.name FROM vacancy_presets p WHERE p.id = a.entity_id)
               WHEN 'user'      THEN (SELECT coalesce(nullif(concat_ws(' ', nullif(u.last_name, ''), nullif(u.first_name, '')), ''), u.email)
                                      FROM users u WHERE u.id = a.entity_id)
             END AS entity_label,

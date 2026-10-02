@@ -50,4 +50,5 @@
 
 - Вакансия: `save_vacancy` (без `id` — новая «Открыта»); статус — только `set_vacancy_status` по допустимым переходам.
 - Шаблон: `save_interview_template` (вопросы/теги целиком); привязать к вакансии и этапу — `save_vacancy { id, name, templates: [...полный список...] }`.
+- Шаблон вакансии (готовые этапы): `save_vacancy_preset { name, templates: [...] }`, из этапов существующей вакансии — `save_vacancy_preset { name, fromVacancyId }`. Новая вакансия по шаблону — `save_vacancy { name, presetId }` (ID — из `get_references.vacancyPresets`): этапы копируются один раз; `skippedStages` — этапы, где шаблон вопросов в архиве, они скопированы без вопросов.
 - Архив/корзина: `set_record_state`; удалить можно только архивную запись и только админу; вакансию с кандидатами и пользователя-ответственного удалить нельзя.

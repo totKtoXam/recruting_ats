@@ -2831,6 +2831,19 @@ th.sortable:focus-visible{outline:2px solid var(--primary-ring);outline-offset:-
   .stage-row select{grid-column:1/-1;grid-row:2}
 }
 
+/* Шаблоны вакансий: «Из шаблона…» в заголовке этапов и пометка, откуда взяты этапы. */
+.stage-preset-pick{display:inline-flex;width:190px;min-width:0}
+.stage-preset-pick button.ui-select,.stage-preset-pick select{min-height:28px;padding-top:2px;padding-bottom:2px;font-size:13px}
+.drawer-section-head:has(.stage-preset-pick){flex-wrap:wrap}
+.preset-note{
+  display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border-radius:var(--radius);
+  background:var(--surface-3);color:var(--text-2);font-size:12px;line-height:1.45
+}
+.preset-note .icon{flex:none;margin-top:1px}
+.preset-usage{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:6px;font-size:12px}
+/* На телефоне шапку панели теснят кнопки: подпись над заголовком — в одну строку. */
+.drawer-title>.eyebrow{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
 /* Теги шаблонов вопросов: цвет — ключ палитры (data-color). */
 .tag-chip{
   --tag:#64748b;display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 8px;border-radius:999px;

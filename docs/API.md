@@ -272,7 +272,7 @@ curl -s -X POST "$ATS_URL/intake?api=candidate-draft" \
 | Чтение | `get_references`, `search_candidates`, `get_candidate`, `get_resume_text`, `find_similar_candidates`, `parse_resume`, `get_interview_context`, `list_comments`, `get_history`, `get_dashboard`, `list_records`, `get_notifications`, `create_upload_link` |
 | Кандидаты | `create_candidate_draft`, `save_candidate` (создание; изменение — только переданные поля), `transition_candidate`, `update_interview`, `set_record_state`, `set_candidate_watch`, `mark_notifications_read` |
 | Комментарии и журнал | `add_comment`, `edit_comment`, `delete_comment`, `toggle_reaction`, `revert_change` |
-| Справочники | `save_vacancy`, `set_vacancy_status`, `save_source`, `save_interview_template` |
+| Справочники | `save_vacancy` (`presetId` — этапы из шаблона вакансии), `set_vacancy_status`, `save_vacancy_preset` (шаблон вакансии; `fromVacancyId` — этапы из вакансии), `save_source`, `save_interview_template` |
 | Пользователи (админ) | `save_user`, `set_user_access` |
 
 Ошибки бизнес-правил возвращаются результатом инструмента с `isError: true` и текстом, как в интерфейсе. Относительные ссылки ATS (`/files/…`, `/candidates/…`) в ответах превращаются в абсолютные.
@@ -356,7 +356,7 @@ Cookie: ats.sid=...
 |---|---|---|
 | `getBootstrapData` | — | Стартовые данные: пользователь, справочники, активные кандидаты, статистика. Заодно запускает в фоне очистку черновиков и окончательное удаление из корзины (каждое не чаще раза в 12 часов) |
 | `getInitialData` | — | Алиас `getBootstrapData` |
-| `getReferenceData` | — | Активные вакансии, источники, ответственные (пользователи с этапами), шаблоны, справочники, переходы статусов вакансии (`vacancyStatusTransitions`), срок хранения в корзине (`trashRetentionDays`) |
+| `getReferenceData` | — | Активные вакансии, источники, ответственные (пользователи с этапами), шаблоны вопросов, шаблоны вакансий (`vacancyPresets`), справочники, переходы статусов вакансии (`vacancyStatusTransitions`), срок хранения в корзине (`trashRetentionDays`) |
 | `getCandidateData` | — | Активные кандидаты и статистика |
 | `getArchivedCandidateData` | — | Архивные кандидаты (`{ archivedCandidates }`) |
 | `getDeletedCandidateData` | — | Кандидаты в корзине (`{ deletedCandidates }`) |
@@ -385,7 +385,7 @@ Cookie: ats.sid=...
 | `transitionCandidate` | объект | Переход статуса: `{ candidateId, toStatus, interview }` — результат этапа, на который переводят; `{ candidateId, toStatus: 'Отказано', rejection: { byType: 'candidate' \| 'responsible', responsibleId, reason, comment } }` — отказ; `{ candidateId, toStatus, comment }` — возврат из «Отказано» на этап отказа |
 | `updateInterview` | объект | Редактирование результата интервью (ответы и результат — HTML, санитизируется на сервере). Ответ — `{ question, answer, skipped }`; `skipped: true` — вопрос не задавался (допускается и в обязательном шаблоне) |
 
-**Архив и корзина** (для `type`: `candidate`, `vacancy`, `source`, `template`, `interview`, `user`)
+**Архив и корзина** (для `type`: `candidate`, `vacancy`, `vacancy_preset`, `source`, `template`, `interview`, `user`)
 
 | Метод | Аргумент | Назначение |
 |---|---|---|
@@ -435,10 +435,10 @@ Cookie: ats.sid=...
 
 | Метод | Аргумент | Назначение |
 |---|---|---|
-| `listVacancies` / `listSources` / `listUsers` | `{ page, pageSize, sort: { key, dir }, filters }` | Страница таблицы: фильтры, сортировка и пагинация выполняются в БД. `filters.state`: `active` / `archived` / `deleted`. Ответ `{ items, total, page, pageSize, sort }`; `pageSize` до 100. `listUsers` — **только администраторы** |
-| `saveVacancy` | `{ id?, name }` | Вакансия (название уникально без учёта регистра, иначе `409`); новая создаётся со статусом «Открыта» |
+| `listVacancies` / `listVacancyPresets` / `listTemplates` / `listSources` / `listUsers` | `{ page, pageSize, sort: { key, dir }, filters }` | Страница таблицы: фильтры, сортировка и пагинация выполняются в БД. `filters.state`: `active` / `archived` / `deleted`. Ответ `{ items, total, page, pageSize, sort }`; `pageSize` до 100. `listUsers` — **только администраторы** |
+| `saveVacancy` | `{ id?, name, links?, templates?, presetId? }` | Вакансия (название уникально без учёта регистра, иначе `409`); новая создаётся со статусом «Открыта». `templates` — все этапы `{ stage, templateId?, required }`. `presetId` — шаблон вакансии: без `templates` этапы копируются из него один раз (шаблон должен быть активным; этапы с шаблоном вопросов в архиве — без шаблона, в `skippedStages`); с `templates` — только ссылка. Новая вакансия запоминает шаблон в `presetId` |
 | `setVacancyStatus` | `{ id, status }` | Переход статуса вакансии; допустимые переходы — `vacancyStatusTransitions` в `getReferenceData` |
-| `listVacancyTemplates` | id вакансии | Все шаблоны вакансии, включая архивные |
+| `saveVacancyPreset` | `{ id?, name, templates?, fromVacancyId? }` | Шаблон вакансии — готовые этапы (название уникально, иначе `409`). `templates` — как у `saveVacancy`; `fromVacancyId` без `templates` — взять этапы из вакансии. Шаблон в корзине не меняется |
 | `saveSource` | `{ id?, name }` | Источник |
 | `saveInterviewTemplate` | объект | Шаблон интервью; `questions` — массив `{ text, answers }` (answers — предпочтительные ответы) |
 | `saveUser` | `{ id?, email, lastName, firstName, middleName, stages, isActive, isAdmin, telegram? }` | Пользователь. Непустой `stages` делает его ответственным за этапы. `isActive` учитывается только при создании. **Только администраторы** |

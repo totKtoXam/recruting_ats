@@ -62,7 +62,9 @@ const ENTITIES = {
     }
   },
   source: { table: 'sources', label: 'Источник' },
-  template: { table: 'interview_templates', label: 'Шаблон' },
+  template: { table: 'interview_templates', label: 'Шаблон вопросов' },
+  // Вакансии хранят копию этапов, поэтому шаблон вакансии удаляется без проверок.
+  vacancy_preset: { table: 'vacancy_presets', label: 'Шаблон вакансии' },
   interview: { table: 'interviews', label: 'Результат интервью' },
   user: {
     table: 'users',
@@ -90,6 +92,9 @@ const ENTITIES = {
     }
   }
 };
+
+// Типы записей с жизненным циклом — те же ключи в журнале изменений, OpenAPI и MCP.
+export const LIFECYCLE_TYPES = Object.freeze(Object.keys(ENTITIES));
 
 function entityFor(type) {
   const entity = ENTITIES[type];
@@ -240,6 +245,7 @@ export async function purgeExpired() {
 
     counts.interviews = await purgeTable(tx, 'interview', 'interviews');
     counts.templates = await purgeTable(tx, 'template', 'interview_templates');
+    counts.vacancyPresets = await purgeTable(tx, 'vacancy_preset', 'vacancy_presets');
     // Вакансии и пользователи, на которых ещё ссылаются кандидаты, ждут их удаления.
     counts.vacancies = await purgeTable(
       tx,

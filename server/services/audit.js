@@ -104,13 +104,20 @@ export const AUDIT_ENTITIES = {
   },
   template: {
     table: 'interview_templates',
-    label: 'Шаблон',
+    label: 'Шаблон вопросов',
     touch: true,
     fields: [
       f('name', 'Название'),
       f('tags', 'Теги', 'tags'),
       f('questions', 'Вопросы', 'questions')
     ]
+  },
+  // Этапы шаблона вакансии пишутся отдельным событием «Этапы» (без отката), как у вакансии.
+  vacancy_preset: {
+    table: 'vacancy_presets',
+    label: 'Шаблон вакансии',
+    touch: true,
+    fields: [f('name', 'Название')]
   },
   interview: {
     table: 'interviews',

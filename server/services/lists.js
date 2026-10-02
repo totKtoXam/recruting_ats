@@ -5,8 +5,9 @@
 import { APP_CONFIG } from '../config.js';
 import { db } from '../db/pool.js';
 import { clean } from '../lib/validation.js';
-import { toPublicUser, toSource, toTemplate, toVacancy } from './mappers.js';
+import { toPublicUser, toSource, toTemplate, toVacancy, toVacancyPreset } from './mappers.js';
 import { NOTIFICATION_LOG } from './notifications.js';
+import { PRESET_COLUMNS } from './references.js';
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
@@ -179,7 +180,13 @@ const TEMPLATES = {
     (SELECT coalesce(jsonb_agg(jsonb_build_object('id', v.id, 'number', v.number, 'name', v.name, 'stage', vt.stage, 'required', vt.required)
         ORDER BY v.number, array_position(ARRAY[${STAGES_SQL}]::text[], vt.stage)), '[]'::jsonb)
      FROM vacancy_templates vt JOIN vacancies v ON v.id = vt.vacancy_id
-     WHERE vt.template_id = t.id AND v.deleted_at IS NULL) AS vacancies`,
+     WHERE vt.template_id = t.id AND v.deleted_at IS NULL) AS vacancies,
+    (SELECT count(*)::int FROM vacancy_preset_templates pt JOIN vacancy_presets p ON p.id = pt.preset_id
+     WHERE pt.template_id = t.id AND p.deleted_at IS NULL) AS preset_usage,
+    (SELECT coalesce(jsonb_agg(jsonb_build_object('id', p.id, 'number', p.number, 'name', p.name, 'stage', pt.stage, 'required', pt.required)
+        ORDER BY p.number, array_position(ARRAY[${STAGES_SQL}]::text[], pt.stage)), '[]'::jsonb)
+     FROM vacancy_preset_templates pt JOIN vacancy_presets p ON p.id = pt.preset_id
+     WHERE pt.template_id = t.id AND p.deleted_at IS NULL) AS presets`,
   from: 'interview_templates t',
   alias: 't',
   filters: {
@@ -199,7 +206,35 @@ const TEMPLATES = {
   },
   defaultSort: { key: 'number', dir: 'DESC' },
   tieBreaker: 't.id',
-  map: row => ({ ...toTemplate(row), vacancies: row.vacancies || [] })
+  map: row => ({ ...toTemplate(row), vacancies: row.vacancies || [], presets: row.presets || [] })
+};
+
+// Шаблоны вакансий: этапы — как у таблицы вакансий, плюс сколько вакансий создано из шаблона.
+const VACANCY_PRESETS = {
+  select: PRESET_COLUMNS,
+  from: 'vacancy_presets p',
+  alias: 'p',
+  filters: {
+    number: { type: 'number', sql: 'p.number' },
+    name: { type: 'text', sql: 'p.name' }
+  },
+  sorts: {
+    number: 'p.number',
+    name: 'lower(p.name)',
+    // Настроенные этапы: с шаблоном вопросов (не в корзине) или обязательные.
+    stages: `(SELECT count(DISTINCT stage) FROM (
+        SELECT unnest(p.required_stages) AS stage
+        UNION ALL
+        SELECT pt.stage FROM vacancy_preset_templates pt JOIN interview_templates t ON t.id = pt.template_id
+        WHERE pt.preset_id = p.id AND t.deleted_at IS NULL) s)`,
+    vacancies: '(SELECT count(*) FROM vacancies v WHERE v.preset_id = p.id AND v.deleted_at IS NULL)',
+    createdAt: 'p.created_at',
+    updatedAt: 'p.updated_at',
+    deletedAt: 'p.deleted_at'
+  },
+  defaultSort: { key: 'number', dir: 'DESC' },
+  tieBreaker: 'p.id',
+  map: toVacancyPreset
 };
 
 const SOURCES = {
@@ -266,6 +301,7 @@ const USERS = {
 export const listVacancies = (input, user) => queryList(VACANCIES, input, user);
 export const listUsers = (input, user) => queryList(USERS, input, user);
 export const listTemplates = (input, user) => queryList(TEMPLATES, input, user);
+export const listVacancyPresets = (input, user) => queryList(VACANCY_PRESETS, input, user);
 export const listSources = (input, user) => queryList(SOURCES, input, user);
 
 // Журнал уведомлений: только свои.

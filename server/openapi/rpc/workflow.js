@@ -2,7 +2,7 @@
 
 const STAGES = ['Новый', 'HR screening', 'Проф. интервью', 'Финальное интервью', 'Offer', 'Hired'];
 const STATUSES = [...STAGES, 'Отказано'];
-const LIFECYCLE_TYPES = ['candidate', 'vacancy', 'source', 'template', 'interview', 'user'];
+const LIFECYCLE_TYPES = ['candidate', 'vacancy', 'source', 'template', 'vacancy_preset', 'interview', 'user'];
 const COMMENT_ENTITY_TYPES = ['candidate', 'vacancy', 'interview'];
 const REACTIONS = ['👍', '👎', '❤️', '😂', '🎉', '👀'];
 

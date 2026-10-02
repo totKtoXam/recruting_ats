@@ -1,4 +1,5 @@
-// OpenAPI-описание RPC-методов: администрирование (вакансии, источники, шаблоны интервью, пользователи, интеграции).
+// OpenAPI-описание RPC-методов: администрирование (вакансии, шаблоны вакансий, источники, шаблоны интервью,
+// пользователи, интеграции).
 
 const PIPELINE_STAGES = ['Новый', 'HR screening', 'Проф. интервью', 'Финальное интервью', 'Offer', 'Hired'];
 const VACANCY_STATUSES = ['Открыта', 'На паузе', 'Закрыта'];
@@ -56,6 +57,67 @@ const VACANCY = {
       items: { type: 'string', enum: PIPELINE_STAGES },
       description: 'Обязательные этапы: при переходе нужен итог (и ответы, если привязан шаблон)'
     },
+    presetId: { type: 'string', description: 'ID шаблона вакансии, из которого вакансия создана; пустая строка — не из шаблона' },
+    ...SOFT_DELETE_PROPS
+  }
+};
+
+// Этап во входных данных (saveVacancy.templates, saveVacancyPreset.templates).
+const STAGE_INPUT = {
+  type: 'object',
+  required: ['stage'],
+  properties: {
+    stage: { type: 'string', enum: PIPELINE_STAGES, description: 'Этап воронки' },
+    templateId: uuid('ID шаблона интервью; пусто — без шаблона'),
+    required: { type: ['boolean', 'string'], default: false, description: 'Обязательный этап: при переходе нужен итог (и ответы, если есть шаблон). Принимается true или "true"' }
+  }
+};
+
+// Шаблон интервью на этапе (в ответах таблиц вакансий и шаблонов вакансий).
+const STAGE_TEMPLATE = {
+  type: 'object',
+  properties: {
+    id: uuid('ID шаблона'),
+    number: { type: 'integer', description: 'Номер шаблона' },
+    name: { type: 'string', description: 'Название шаблона' },
+    stage: { type: 'string', enum: PIPELINE_STAGES, description: 'Этап' },
+    required: { type: 'boolean', description: 'Обязательный этап' },
+    archived: { type: 'boolean', description: 'Шаблон в архиве' }
+  }
+};
+
+// Этап шаблона вакансии, который не перенёсся: его шаблон интервью в архиве или в корзине.
+const SKIPPED_STAGES = {
+  type: 'array',
+  description: 'Этапы, на которых шаблон интервью в архиве или в корзине: этап скопирован без шаблона (обязательность сохранена)',
+  items: {
+    type: 'object',
+    properties: {
+      stage: { type: 'string', enum: PIPELINE_STAGES, description: 'Этап' },
+      number: { type: 'integer', description: 'Номер шаблона интервью' },
+      name: { type: 'string', description: 'Название шаблона интервью' }
+    }
+  }
+};
+
+const VACANCY_PRESET = {
+  type: 'object',
+  description: 'Шаблон вакансии: этапы — шаблон интервью и обязательность на каждом этапе',
+  properties: {
+    'Preset ID': uuid('ID шаблона вакансии'),
+    '№': { type: 'integer', description: 'Порядковый номер' },
+    'Название': { type: 'string', description: 'Название шаблона вакансии' },
+    requiredStages: {
+      type: 'array',
+      items: { type: 'string', enum: PIPELINE_STAGES },
+      description: 'Обязательные этапы: при переходе нужен итог (и ответы, если на этапе есть шаблон интервью)'
+    },
+    templates: {
+      type: 'array',
+      items: STAGE_TEMPLATE,
+      description: 'Шаблоны интервью на этапах (в порядке воронки), без шаблонов в корзине'
+    },
+    vacancyCount: { type: 'integer', description: 'Сколько вакансий (не в корзине) создано из шаблона' },
     ...SOFT_DELETE_PROPS
   }
 };
@@ -97,6 +159,7 @@ const TEMPLATE_PROPS = {
   questions: { type: 'array', items: TEMPLATE_QUESTION, description: 'Вопросы шаблона' },
   tags: { type: 'array', items: TEMPLATE_TAG, description: 'Теги шаблона' },
   usage: { type: 'integer', description: 'Сколько вакансий (не в корзине) используют шаблон' },
+  presetUsage: { type: 'integer', description: 'Сколько шаблонов вакансий (не в корзине) используют шаблон' },
   ...SOFT_DELETE_PROPS
 };
 
@@ -191,6 +254,7 @@ const TEXT_FILTER = 'подстрока без учёта регистра';
 const VACANCY_SORTS = ['number', 'name', 'status', 'templates', 'candidates', 'createdAt', 'updatedAt', 'deletedAt'];
 const SOURCE_SORTS = ['number', 'name', 'createdAt', 'deletedAt'];
 const TEMPLATE_SORTS = ['number', 'name', 'questions', 'usage', 'createdAt', 'updatedAt', 'deletedAt'];
+const VACANCY_PRESET_SORTS = ['number', 'name', 'stages', 'vacancies', 'createdAt', 'updatedAt', 'deletedAt'];
 const USER_SORTS = [
   'email', 'name', 'lastName', 'firstName', 'middleName', 'stages', 'deletedAt',
   'status', 'admin', 'lastLogin', 'requested', 'createdAt'
@@ -543,17 +607,7 @@ export default {
           templates: {
             type: 'array',
             description: 'Шаблоны на этапах вакансии (в порядке воронки), без шаблонов в корзине',
-            items: {
-              type: 'object',
-              properties: {
-                id: uuid('ID шаблона'),
-                number: { type: 'integer', description: 'Номер шаблона' },
-                name: { type: 'string', description: 'Название шаблона' },
-                stage: { type: 'string', enum: PIPELINE_STAGES, description: 'Этап' },
-                required: { type: 'boolean', description: 'Обязательный этап' },
-                archived: { type: 'boolean', description: 'Шаблон в архиве' }
-              }
-            }
+            items: STAGE_TEMPLATE
           },
           candidateCount: { type: 'integer', description: 'Кандидатов на вакансии (не в корзине)' }
         }
@@ -573,8 +627,13 @@ export default {
       '- `links` — до 20 ссылок, каждая http(s); дубли по URL отбрасываются; не передан — не меняется.\n' +
       '- `templates` — полный список этапов вакансии (заменяет прежний); не передан — не меняется. ' +
       'На этапе не больше одного шаблона; этап — из воронки; новые привязки — только к активным шаблонам ' +
-      '(уже привязанный архивный шаблон остаётся). Необязательный этап без шаблона не сохраняется.\n\n' +
-      'Пишет в журнал изменений: создание, изменённые поля и изменение этапов.',
+      '(уже привязанный архивный шаблон остаётся). Необязательный этап без шаблона не сохраняется.\n' +
+      '- `presetId` — шаблон вакансии. Если `templates` не передан, этапы копируются из шаблона один раз (шаблон должен быть ' +
+      'активным: в архиве — 400, не найден или в корзине — 404) — дальше вакансия и шаблон меняются независимо; этап, на котором ' +
+      'шаблон интервью в архиве или корзине, копируется без шаблона (обязательность сохраняется) и попадает в `skippedStages`. ' +
+      'С переданным `templates` `presetId` — только ссылка: проверок нет. У новой вакансии запоминается, из какого шаблона ' +
+      'она создана (`presetId` в ответе; несуществующий шаблон не запоминается).\n\n' +
+      'Пишет в журнал изменений: создание, шаблон вакансии (при создании из шаблона), изменённые поля и изменение этапов.',
     args: {
       type: 'object',
       required: ['name'],
@@ -590,16 +649,9 @@ export default {
         templates: {
           type: 'array',
           description: 'Этапы вакансии: шаблон интервью и/или обязательность',
-          items: {
-            type: 'object',
-            required: ['stage'],
-            properties: {
-              stage: { type: 'string', enum: PIPELINE_STAGES, description: 'Этап воронки' },
-              templateId: uuid('ID шаблона интервью; пусто — без шаблона'),
-              required: { type: ['boolean', 'string'], default: false, description: 'Обязательный этап: при переходе нужен итог (и ответы, если есть шаблон). Принимается true или "true"' }
-            }
-          }
-        }
+          items: STAGE_INPUT
+        },
+        presetId: uuid('ID шаблона вакансии: этапы из него, если templates не передан')
       }
     },
     example: {
@@ -616,7 +668,8 @@ export default {
       type: 'object',
       properties: {
         ok: { type: 'boolean', const: true },
-        vacancy: VACANCY
+        vacancy: VACANCY,
+        skippedStages: { ...SKIPPED_STAGES, description: `Только когда этапы скопированы из presetId. ${SKIPPED_STAGES.description}` }
       }
     }
   },
@@ -706,7 +759,7 @@ export default {
     description:
       'Серверная таблица шаблонов интервью. Доступно любому авторизованному пользователю; корзину (`state: deleted`) видят только администраторы.\n\n' +
       'Сортировка по умолчанию — `number` по убыванию; при равенстве — по ID. `questions` — по числу вопросов, ' +
-      '`usage` — по числу вакансий (не в корзине), использующих шаблон.',
+      '`usage` — по числу вакансий (не в корзине), использующих шаблон. Шаблоны вакансий, где используется шаблон, — в `presets`.',
     args: listArgs({
       sortKeys: TEMPLATE_SORTS,
       defaultSort: 'number desc',
@@ -732,6 +785,20 @@ export default {
                 id: uuid('ID вакансии'),
                 number: { type: 'integer', description: 'Номер вакансии' },
                 name: { type: 'string', description: 'Название вакансии' },
+                stage: { type: 'string', enum: PIPELINE_STAGES, description: 'Этап' },
+                required: { type: 'boolean', description: 'Обязательный этап' }
+              }
+            }
+          },
+          presets: {
+            type: 'array',
+            description: 'Шаблоны вакансий (не в корзине), где используется шаблон: шаблон вакансии + этап',
+            items: {
+              type: 'object',
+              properties: {
+                id: uuid('ID шаблона вакансии'),
+                number: { type: 'integer', description: 'Номер шаблона вакансии' },
+                name: { type: 'string', description: 'Название шаблона вакансии' },
                 stage: { type: 'string', enum: PIPELINE_STAGES, description: 'Этап' },
                 required: { type: 'boolean', description: 'Обязательный этап' }
               }
@@ -796,6 +863,74 @@ export default {
           description: 'Сохранённый шаблон',
           properties: TEMPLATE_PROPS
         }
+      }
+    }
+  },
+
+  // ---------- Шаблоны вакансий ----------
+
+  listVacancyPresets: {
+    tag: 'Шаблоны вакансий',
+    summary: 'Таблица шаблонов вакансий: фильтры, сортировка, пагинация',
+    description:
+      'Серверная таблица шаблонов вакансий. Доступно любому авторизованному пользователю; корзину (`state: deleted`) видят только администраторы.\n\n' +
+      'Сортировка по умолчанию — `number` по убыванию; при равенстве — по ID. `stages` — по числу настроенных этапов ' +
+      '(с шаблоном интервью или обязательных), `vacancies` — по числу вакансий, созданных из шаблона.',
+    args: listArgs({
+      sortKeys: VACANCY_PRESET_SORTS,
+      defaultSort: 'number desc',
+      filters: {
+        number: { type: ['integer', 'string'], description: 'Номер шаблона вакансии (точное целое; нецелое игнорируется)' },
+        name: { type: 'string', description: `Название: ${TEXT_FILTER}` }
+      }
+    }),
+    example: { page: 1, pageSize: 20, sort: { key: 'name', dir: 'asc' }, filters: { state: 'active', name: '.NET' } },
+    result: listResult(VACANCY_PRESET, VACANCY_PRESET_SORTS)
+  },
+
+  saveVacancyPreset: {
+    tag: 'Шаблоны вакансий',
+    summary: 'Создать или изменить шаблон вакансии и его этапы',
+    description:
+      'Доступно любому авторизованному пользователю. Без `id` — создаёт шаблон вакансии, с `id` — обновляет. ' +
+      'Шаблон вакансии — готовый набор этапов: новую вакансию создают из него через `saveVacancy` с `presetId`.\n\n' +
+      'Правила:\n' +
+      '- `name` обязателен и уникален среди шаблонов вакансий не в корзине, без учёта регистра (409).\n' +
+      '- `templates` — полный список этапов (заменяет прежний); не передан — не меняется. Правила те же, что у ' +
+      '`saveVacancy`: на этапе не больше одного шаблона интервью, новые привязки — только к активным шаблонам, ' +
+      'необязательный этап без шаблона не сохраняется.\n' +
+      '- `fromVacancyId` — взять этапы из вакансии (если `templates` не передан); этап, на котором шаблон интервью ' +
+      'в архиве или корзине, копируется без шаблона и попадает в `skippedStages`.\n' +
+      '- Шаблон вакансии в корзине изменить нельзя — сначала восстановите его.\n\n' +
+      'Пишет в журнал изменений: создание, изменённое название и изменение этапов.',
+    args: {
+      type: 'object',
+      required: ['name'],
+      properties: {
+        id: uuid('ID шаблона вакансии; пусто — создать новый'),
+        name: { type: 'string', description: 'Название шаблона вакансии' },
+        templates: {
+          type: 'array',
+          description: 'Этапы: шаблон интервью и/или обязательность',
+          items: STAGE_INPUT
+        },
+        fromVacancyId: uuid('ID вакансии: взять этапы из неё, если templates не передан')
+      }
+    },
+    example: {
+      name: '.NET разработчик',
+      templates: [
+        { stage: 'HR screening', templateId: '00000000-0000-4000-8000-000000000002', required: true },
+        { stage: 'Проф. интервью', templateId: '00000000-0000-4000-8000-000000000003', required: true },
+        { stage: 'Финальное интервью', required: true }
+      ]
+    },
+    result: {
+      type: 'object',
+      properties: {
+        ok: { type: 'boolean', const: true },
+        preset: VACANCY_PRESET,
+        skippedStages: { ...SKIPPED_STAGES, description: `Только при fromVacancyId. ${SKIPPED_STAGES.description}` }
       }
     }
   }
