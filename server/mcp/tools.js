@@ -69,13 +69,14 @@ const linksSchema = arr(obj({ name: str('Название'), url: str('http(s)-�
 const answersSchema = arr(
   obj(
     {
-      question: str('Текст вопроса точно как в шаблоне'),
+      question: str('Текст вопроса точно как в шаблоне (у своего вопроса — любой)'),
       answer: str('Ответ (текст или HTML)'),
-      skipped: bool('Вопрос не задавался (ответ пустой)')
+      skipped: bool('Вопрос не задавался (ответ пустой)'),
+      custom: bool('Свой вопрос интервьюера, не из шаблона')
     },
     ['question']
   ),
-  'Ответы в порядке вопросов шаблона'
+  'Ответы в порядке вопросов шаблона, затем свои вопросы (custom: true)'
 );
 
 // ---------- Преобразование ответов ----------
@@ -139,7 +140,8 @@ function interviewOut(i) {
     answers: (i.answers || []).map(answer => ({
       question: answer.question,
       answer: text(answer.answer),
-      ...(answer.skipped ? { skipped: true } : {})
+      ...(answer.skipped ? { skipped: true } : {}),
+      ...(answer.custom ? { custom: true } : {})
     })),
     state: i.state
   };

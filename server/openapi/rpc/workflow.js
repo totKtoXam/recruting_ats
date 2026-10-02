@@ -32,7 +32,8 @@ const answerItem = {
   properties: {
     question: { type: 'string', description: 'Текст вопроса.' },
     answer: { type: 'string', description: 'Ответ (HTML); пустая строка, если вопрос пропущен.' },
-    skipped: { type: 'boolean', description: 'Есть только у пропущенного вопроса (true).' }
+    skipped: { type: 'boolean', description: 'Есть только у пропущенного вопроса (true).' },
+    custom: { type: 'boolean', description: 'Есть только у своего вопроса интервьюера — не из шаблона (true).' }
   }
 };
 
@@ -236,13 +237,14 @@ export default {
             templateId: { type: 'string', format: 'uuid', description: 'ID шаблона из getInterviewContext.templates; обязателен, если у этапа есть обязательный шаблон.' },
             answers: {
               type: 'array',
-              description: 'Ответы в порядке вопросов шаблона. Элементы без question и answer отбрасываются.',
+              description: 'Ответы в порядке вопросов шаблона, затем свои вопросы интервьюера (custom: true) — их можно задать и без шаблона. Элементы без question и answer отбрасываются.',
               items: {
                 type: 'object',
                 properties: {
                   question: { type: 'string', description: 'Текст вопроса (должен совпадать с текстом в шаблоне).' },
                   answer: richText('Ответ.'),
-                  skipped: { type: 'boolean', description: 'Вопрос не задавался (учитывается, только если answer пуст).' }
+                  skipped: { type: 'boolean', description: 'Вопрос не задавался (учитывается, только если answer пуст).' },
+                  custom: { type: 'boolean', description: 'Свой вопрос интервьюера, не из шаблона.' }
                 }
               }
             },

@@ -1,7 +1,7 @@
 import { APP_CONFIG } from '../config.js';
 import { db, transaction } from '../db/pool.js';
 import { fail } from '../lib/errors.js';
-import { clean, composeFullName, isUuid, optionalUuid } from '../lib/validation.js';
+import { clean, composeFullName, isUuid, optionalUuid, toBoolean } from '../lib/validation.js';
 import { richFromInput, richToText } from '../lib/richtext.js';
 import { insertComment } from './comments.js';
 import { toInterview } from './mappers.js';
@@ -89,13 +89,20 @@ export async function isStageRequired(executor, vacancyId, stage) {
 
 // Ответ — форматированный текст (HTML после очистки). Пропущенный вопрос (skipped: true) —
 // вопрос не задавался: текста ответа нет, но обязательный шаблон это не блокирует.
+// Свой вопрос интервьюера (custom: true) — не из шаблона, идёт после вопросов шаблона.
 export function normalizeAnswers(answers) {
   return Array.isArray(answers)
     ? answers
         .map(item => {
           const answer = richFromInput(item && item.answer);
           const skipped = Boolean(item && item.skipped) && !answer;
-          return { question: clean(item && item.question), answer, ...(skipped ? { skipped: true } : {}) };
+          const custom = toBoolean(item && item.custom);
+          return {
+            question: clean(item && item.question),
+            answer,
+            ...(skipped ? { skipped: true } : {}),
+            ...(custom ? { custom: true } : {})
+          };
         })
         .filter(item => item.question || item.answer)
     : [];

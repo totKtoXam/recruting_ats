@@ -16,6 +16,19 @@ test('normalizeAnswers keeps skipped questions and drops the flag once an answer
   ]);
 });
 
+test('normalizeAnswers keeps the custom flag of interviewer questions', () => {
+  const answers = normalizeAnswers([
+    { question: 'Вопрос шаблона', answer: 'Да' },
+    // Свой вопрос интервьюера — не из шаблона.
+    { question: 'Почему уходите?', answer: 'Рост', custom: true },
+    { question: 'Флаг строкой', answer: 'Ок', custom: 'true' }
+  ]);
+
+  assert.equal(answers[0].custom, undefined);
+  assert.equal(answers[1].custom, true);
+  assert.equal(answers[2].custom, true);
+});
+
 test('normalizeAnswers tolerates missing input', () => {
   assert.deepEqual(normalizeAnswers(undefined), []);
   assert.deepEqual(normalizeAnswers([null, {}]), []);

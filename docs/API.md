@@ -382,7 +382,7 @@ Cookie: ats.sid=...
 |---|---|---|
 | `getInterviews` | id кандидата | История результатов интервью |
 | `getInterviewContext` | объект | Шаблон и контекст для перехода |
-| `transitionCandidate` | объект | Переход статуса: `{ candidateId, toStatus, interview }` — результат этапа, на который переводят; `{ candidateId, toStatus: 'Отказано', rejection: { byType: 'candidate' \| 'responsible', responsibleId, reason, comment } }` — отказ; `{ candidateId, toStatus, comment }` — возврат из «Отказано» на этап отказа |
+| `transitionCandidate` | объект | Переход статуса: `{ candidateId, toStatus, interview }` — результат этапа, на который переводят (`interview.answers` — ответы на вопросы шаблона по порядку, затем свои вопросы интервьюера с `custom: true`); `{ candidateId, toStatus: 'Отказано', rejection: { byType: 'candidate' \| 'responsible', responsibleId, reason, comment } }` — отказ; `{ candidateId, toStatus, comment }` — возврат из «Отказано» на этап отказа |
 | `updateInterview` | объект | Редактирование результата интервью (ответы и результат — HTML, санитизируется на сервере). Ответ — `{ question, answer, skipped }`; `skipped: true` — вопрос не задавался (допускается и в обязательном шаблоне) |
 
 **Архив и корзина** (для `type`: `candidate`, `vacancy`, `vacancy_preset`, `source`, `template`, `interview`, `user`)

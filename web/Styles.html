@@ -1523,6 +1523,38 @@ input[type=radio]:focus-visible{outline:2px solid var(--primary-ring);outline-of
 .history-title>div{display:flex;align-items:center;flex-wrap:wrap;gap:2px}
 .history-meta{margin-top:4px}
 
+/* Результаты в карточке кандидата — аккордеон: заголовок-кнопка раскрывает ответы и итог. */
+.history-card.is-collapsible{padding:2px 6px 2px 2px}
+/* Узко — значки действий переносятся под заголовок, а не сжимают его. */
+.history-card.is-collapsible>.history-title{align-items:flex-start;flex-wrap:wrap;row-gap:0}
+.history-card.is-collapsible>.history-title>.header-actions{flex:none;margin-left:auto;padding-top:4px}
+.history-toggle{
+  display:flex;align-items:flex-start;gap:6px;flex:1 1 230px;min-width:0;
+  padding:6px;border:0;border-radius:var(--radius-sm);background:transparent;
+  color:inherit;font:inherit;text-align:left;cursor:pointer
+}
+.history-toggle:hover{background:var(--hover)}
+.history-toggle:focus-visible{outline:2px solid var(--primary-ring);outline-offset:1px}
+.history-chevron{flex:none;margin-top:4px;color:var(--muted);transition:transform .15s}
+.history-card.is-open .history-chevron{transform:rotate(90deg)}
+.history-toggle-main{display:flex;flex-direction:column;gap:3px;min-width:0}
+.history-stages{display:flex;align-items:center;flex-wrap:wrap;gap:2px}
+.history-toggle .history-meta{margin-top:0;font-size:12px}
+.history-snippet{overflow:hidden;color:var(--text-2);font-size:12px;text-overflow:ellipsis;white-space:nowrap}
+.history-card.is-open .history-snippet{display:none}
+.history-body{padding:0 4px 8px 30px}
+.history-body[hidden]{display:none}
+
+/* Свои вопросы интервьюера: в окне перехода и в результате. */
+.custom-question-list{display:flex;flex-direction:column;gap:6px}
+.custom-question-list:empty{display:none}
+.custom-question .question-head{align-items:center}
+.custom-question-text{flex:1 1 auto;min-width:0;font-weight:600}
+.custom-question-tag{
+  display:inline-block;margin-left:4px;padding:0 6px;border-radius:999px;
+  background:var(--surface-3);color:var(--muted);font-size:11px;font-weight:500;vertical-align:1px
+}
+
 .qa{
   margin-top:6px;
   padding:6px 8px;

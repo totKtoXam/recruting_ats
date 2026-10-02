@@ -2964,6 +2964,8 @@ function startTransition(id,toStatus){
   setRich('transitionComment','');
   setRich('transitionResult','');
   renderTransitionQuestions();
+  el('transitionCustomQuestions').innerHTML='';
+  el('transitionCustomLabel').hidden=true;
   el('transitionModal').classList.add('open');
 }
 
@@ -3136,16 +3138,16 @@ function renderTransitionQuestions(){
 
 // Вопрос с полем ответа: вероятные ответы подставляются чипами, «Пропустить» помечает,
 // что вопрос не задавался — ответ не требуется даже в обязательном шаблоне.
-function answerQuestionHtml(index,text,{textareaClass,answers=[],placeholder='Ответ кандидата'}={}){
+function answerQuestionHtml(index,text,{textareaClass,answers=[],placeholder='Ответ кандидата',custom=false}={}){
   return '<div class="qa interview-question"><div class="question-number">'+(index+1)+'</div><div class="interview-question-body">'+
-    '<div class="question-head"><strong>'+escapeHtml(text)+'</strong>'+
+    '<div class="question-head"><strong>'+escapeHtml(text)+(custom?customQuestionTag():'')+'</strong>'+
       '<button type="button" class="skip-answer" data-tip="Вопрос не задавался — ответ не нужен" aria-pressed="false" onclick="toggleSkipAnswer(this)">Пропустить</button></div>'+
     (answers.length
       ? '<div class="answer-suggestions"><span class="answer-suggestions-label">Вероятные ответы:</span>'+answers.map(answer=>
           '<button type="button" class="suggestion-chip" data-tip="Подставить вероятный ответ" onclick="applySuggestedAnswer(this)" data-answer="'+escapeHtml(answer)+'">'+escapeHtml(answer)+'</button>'
         ).join('')+'</div>'
       : '')+
-    '<div class="answer-editor-host"><textarea class="'+textareaClass+'" data-rich data-question="'+escapeHtml(text)+'" placeholder="'+escapeHtml(placeholder)+'"></textarea></div>'+
+    '<div class="answer-editor-host"><textarea class="'+textareaClass+'" data-rich data-question="'+escapeHtml(text)+'"'+(custom?' data-custom="1"':'')+' placeholder="'+escapeHtml(placeholder)+'"></textarea></div>'+
     '<div class="answer-skipped" hidden>'+icon('minus','icon-sm')+'<span>Ответ пропущен — вопрос не задавался.</span></div>'+
   '</div></div>';
 }
@@ -3180,12 +3182,67 @@ function toggleSkipAnswer(button){
   }
 }
 
-// Ответы из формы: пропущенные — без текста, с признаком skipped.
+// Ответы из формы: пропущенные — без текста, с признаком skipped; свои вопросы — с признаком custom.
 function collectAnswers(selector){
   return [...document.querySelectorAll(selector)].map(textarea=>{
     const skipped=textarea.dataset.skipped==='1';
-    return {question:textarea.dataset.question,answer:skipped?'':textarea.value.trim(),skipped};
+    return {question:textarea.dataset.question,answer:skipped?'':textarea.value.trim(),skipped,...(textarea.dataset.custom==='1'?{custom:true}:{})};
   });
+}
+
+function customQuestionTag(){
+  return ' <span class="custom-question-tag" data-tip="Вопрос интервьюера, не из шаблона">свой вопрос</span>';
+}
+
+// ---------- Свои вопросы при переходе ----------
+// Интервьюер добавляет вопрос и ответ прямо в окне перехода — и с шаблоном, и без него.
+
+function customQuestionHtml(){
+  return '<div class="qa interview-question custom-question"><div class="question-number"></div><div class="interview-question-body">'+
+    '<div class="question-head">'+
+      '<input class="custom-question-text" maxlength="500" placeholder="Ваш вопрос" aria-label="Текст своего вопроса">'+
+      iconBtn('trash','Убрать вопрос','removeCustomQuestion(this)','icon-btn-sm icon-btn-danger')+
+    '</div>'+
+    '<div class="answer-editor-host"><textarea class="transition-custom-answer" data-rich placeholder="Ответ кандидата"></textarea></div>'+
+  '</div></div>';
+}
+
+function addCustomQuestion(){
+  const list=el('transitionCustomQuestions');
+  list.insertAdjacentHTML('beforeend',customQuestionHtml());
+  mountRich(list);
+  syncCustomQuestions();
+  const inputs=list.querySelectorAll('.custom-question-text');
+  inputs[inputs.length-1].focus();
+}
+
+function removeCustomQuestion(button){
+  button.closest('.custom-question').remove();
+  syncCustomQuestions();
+}
+
+// Свои вопросы нумеруются после вопросов шаблона.
+function syncCustomQuestions(){
+  const blocks=el('transitionCustomQuestions').querySelectorAll('.custom-question');
+  const offset=el('transitionQuestions').hidden?0:el('transitionQuestions').querySelectorAll('.interview-question').length;
+  blocks.forEach((block,index)=>{block.querySelector('.question-number').textContent=offset+index+1});
+  el('transitionCustomLabel').hidden=!blocks.length;
+}
+
+// null — есть ошибки (показаны у полей). Пустой блок (ни вопроса, ни ответа) не сохраняется.
+function collectCustomAnswers(){
+  const errors=[];
+  const answers=[...el('transitionCustomQuestions').querySelectorAll('.custom-question')].map(block=>{
+    const input=block.querySelector('.custom-question-text');
+    const textarea=block.querySelector('.transition-custom-answer');
+    const question=input.value.trim();
+    const answer=richText(textarea.value)?textarea.value.trim():'';
+    if(!question&&!answer)return null;
+    if(!question)errors.push({field:input,message:'Введите вопрос.'});
+    else if(!answer)errors.push({field:textarea,message:'Добавьте ответ или уберите вопрос.'});
+    return {question,answer,custom:true};
+  }).filter(Boolean);
+  return UiKit.showFieldErrors(errors)?answers:null;
 }
 
 function answerDisplayHtml(answer){
@@ -3230,6 +3287,9 @@ async function submitTransition(button){
       if(!UiKit.showFieldErrors(missingAnswers))return;
     }
 
+    const customAnswers=collectCustomAnswers();
+    if(!customAnswers)return;
+
     // Необязательный шаблон без единого ответа считается пропущенным.
     const answered=answers.some(item=>richText(item.answer));
     const useTemplate=!!template&&(template.required||answered);
@@ -3239,7 +3299,7 @@ async function submitTransition(button){
       toStatus:pendingTransition.toStatus,
       interview:{
         templateId:useTemplate?template['Template ID']:'',
-        answers:useTemplate?answers:[],
+        answers:[...(useTemplate?answers:[]),...customAnswers],
         comment:value('transitionComment'),
         result
       }
@@ -3247,7 +3307,8 @@ async function submitTransition(button){
 
     const response=await rpc('transitionCandidate',payload);
     closeTransition();
-    applyTransitionResponse(payload.candidateId,response,true);
+    // Карточка кандидата не открывается: переход идёт с доски, обновляется уже открытая карточка.
+    applyTransitionResponse(payload.candidateId,response);
     showToast('Этап кандидата обновлён.');
   }).catch(()=>{});
 }
@@ -3348,32 +3409,82 @@ function interviewLifecycleButtons(i){
   return iconBtn('archive','В архив',call('archive'),'icon-btn-sm');
 }
 
+// Результаты в карточке — аккордеон: заголовок (этапы, дата, интервьюер, шаблон, начало итога)
+// раскрывает ответы, итог и комментарии. Сначала раскрыт последний результат; новый результат
+// раскрывается сам. Раскрытые запоминаются, пока открыт тот же кандидат.
+const interviewCardsOpen={candidateId:null,newestId:null,ids:new Set()};
+
+function syncInterviewCardsOpen(){
+  const candidateId=currentCandidate?String(currentCandidate.ID):'';
+  const newest=currentInterviews.length?String(currentInterviews[currentInterviews.length-1]['Interview ID']):null;
+  if(interviewCardsOpen.candidateId!==candidateId){
+    interviewCardsOpen.candidateId=candidateId;
+    interviewCardsOpen.ids=new Set();
+    interviewCardsOpen.newestId=null;
+  }
+  if(newest&&newest!==interviewCardsOpen.newestId)interviewCardsOpen.ids.add(newest);
+  interviewCardsOpen.newestId=newest;
+}
+
+function setInterviewCardOpen(card,open){
+  card.classList.toggle('is-open',open);
+  card.querySelector('.history-toggle').setAttribute('aria-expanded',String(open));
+  card.querySelector('.history-body').hidden=!open;
+  if(open)interviewCardsOpen.ids.add(card.dataset.interviewId);
+  else interviewCardsOpen.ids.delete(card.dataset.interviewId);
+}
+
+function toggleInterviewCard(button){
+  const card=button.closest('.history-card');
+  setInterviewCardOpen(card,!card.classList.contains('is-open'));
+}
+
 function renderInterviewHistory(){
   setCandidateTabCount('interviews',currentInterviews.length);
   Object.values(interviewThreads).forEach(thread=>thread.destroy());
   Object.keys(interviewThreads).forEach(key=>delete interviewThreads[key]);
+  syncInterviewCardsOpen();
 
-  el('interviewHistory').innerHTML=currentInterviews.length?currentInterviews.map(i=>
-    '<article class="history-card'+(i.state==='archived'?' is-archived':'')+'">'+
-      '<div class="history-title"><div>'+statusChip(i['From Status']||i['Этап']||'—',true)+' <span class="transition-arrow">'+icon('arrow-right','icon-sm')+'</span> '+statusChip(i['To Status']||'—',true)+
-        (i.state==='archived'?' <span class="state-badge state-archived">В архиве</span>':'')+'</div>'+
+  el('interviewHistory').innerHTML=currentInterviews.length?currentInterviews.map(i=>{
+    const id=String(i['Interview ID']);
+    const open=interviewCardsOpen.ids.has(id);
+    const snippet=richText(i['Результат']||'');
+    const answers=i.answers||[];
+    return '<article class="history-card is-collapsible'+(open?' is-open':'')+(i.state==='archived'?' is-archived':'')+'" data-interview-id="'+escapeHtml(id)+'">'+
+      '<div class="history-title">'+
+        '<button type="button" class="history-toggle" aria-expanded="'+open+'" aria-controls="interviewBody-'+escapeHtml(id)+'" onclick="toggleInterviewCard(this)">'+
+          icon('chevron-right','icon-sm history-chevron')+
+          '<span class="history-toggle-main">'+
+            '<span class="history-stages">'+statusChip(i['From Status']||i['Этап']||'—',true)+' <span class="transition-arrow">'+icon('arrow-right','icon-sm')+'</span> '+statusChip(i['To Status']||'—',true)+
+              (i.state==='archived'?' <span class="state-badge state-archived">В архиве</span>':'')+'</span>'+
+            '<span class="muted history-meta">'+escapeHtml(fmtDate(i['Дата']))+' · '+escapeHtml(i['Интервьюер']||'—')+' · '+escapeHtml(i['Шаблон']||'Без шаблона')+
+              (answers.length?' · '+answers.length+' вопр.':'')+'</span>'+
+            (snippet?'<span class="history-snippet">'+escapeHtml(snippet.slice(0,200))+'</span>':'')+
+          '</span>'+
+        '</button>'+
         '<div class="header-actions">'+
           (i.state==='active'?iconBtn('edit','Редактировать результат','editInterview(\''+escJs(i['Interview ID'])+'\')','icon-btn-sm'):'')+
           iconBtn('message','Комментарии','toggleInterviewComments(\''+escJs(i['Interview ID'])+'\')','icon-btn-sm')+
           iconBtn('history','История изменений','openHistory(\'interview\',\''+escJs(i['Interview ID'])+'\',\''+escJs('Результат этапа «'+(i['To Status']||'')+'»')+'\')','icon-btn-sm')+
           interviewLifecycleButtons(i)+
         '</div></div>'+
-      '<div class="muted history-meta">'+escapeHtml(fmtDate(i['Дата']))+' · '+escapeHtml(i['Интервьюер']||'—')+' · '+escapeHtml(i['Шаблон']||'Без шаблона')+'</div>'+
-      (i.answers||[]).map((a,index)=>'<div class="qa"><strong>'+(index+1)+'. '+escapeHtml(a.question)+'</strong>'+answerDisplayHtml(a)+'</div>').join('')+
-      '<div class="qa"><strong>Результат</strong>'+richHtml(i['Результат'])+'</div>'+
-      '<div class="history-comments" id="interviewComments-'+escapeHtml(i['Interview ID'])+'" hidden></div>'+
-    '</article>'
-  ).join(''):'<div class="empty-state compact">Результатов интервью пока нет.</div>';
+      '<div class="history-body" id="interviewBody-'+escapeHtml(id)+'"'+(open?'':' hidden')+'>'+
+        answers.map((a,index)=>'<div class="qa"><strong>'+(index+1)+'. '+escapeHtml(a.question)+(a.custom?customQuestionTag():'')+'</strong>'+answerDisplayHtml(a)+'</div>').join('')+
+        '<div class="qa"><strong>Результат</strong>'+richHtml(i['Результат'])+'</div>'+
+        '<div class="history-comments" id="interviewComments-'+escapeHtml(id)+'" hidden></div>'+
+      '</div>'+
+    '</article>';
+  }).join(''):'<div class="empty-state compact">Результатов интервью пока нет.</div>';
 }
 
 function toggleInterviewComments(id){
   const container=el('interviewComments-'+id);
   if(!container)return;
+  const card=container.closest('.history-card');
+  if(card&&!card.classList.contains('is-open')){
+    setInterviewCardOpen(card,true);
+    container.hidden=true;
+  }
   container.hidden=!container.hidden;
   if(!container.hidden&&!interviewThreads[id]&&window.CommentThread){
     const readOnly=!!(currentCandidate&&currentCandidate.state==='deleted');
@@ -3405,7 +3516,7 @@ function editInterview(id){
     return item&&typeof item!=='string'?(item.answers||[]):[];
   };
   el('editInterviewQuestions').innerHTML=(editingInterview.answers||[]).map((a,index)=>
-    answerQuestionHtml(index,a.question,{textareaClass:'edit-answer',answers:suggestions(a.question)})
+    answerQuestionHtml(index,a.question,{textareaClass:'edit-answer',answers:a.custom?[]:suggestions(a.question),custom:!!a.custom})
   ).join('');
   mountAnswerEditors(el('editInterviewQuestions'));
   el('editInterviewQuestions').querySelectorAll('.interview-question').forEach((block,index)=>{
