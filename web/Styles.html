@@ -2950,7 +2950,11 @@ th.sortable:focus-visible{outline:2px solid var(--primary-ring);outline-offset:-
 .tag-add{display:flex;gap:6px;align-items:center;max-width:360px}
 .tag-add input{flex:1 1 auto;min-width:0}
 
-/* Статус вакансии — сегменты в шапке панели. */
+/* Статус вакансии — сегменты второй строкой шапки панели: заголовку остаётся вся ширина. */
+.drawer-header:has(>.drawer-header-row:not(:empty)){flex-wrap:wrap;row-gap:6px}
+.drawer-header-row{display:flex;flex:1 0 100%;align-items:center;gap:8px;min-width:0}
+.drawer-header-row:empty{display:none}
+.drawer-header-label{color:var(--muted);font-size:12px}
 .vacancy-status-switch{flex:0 0 auto}
 .vacancy-status-switch .segmented-option[data-state]>span{padding:0 10px 0 8px}
 .vacancy-status-switch .segmented-option:has(input:disabled:not(:checked)){cursor:not-allowed}

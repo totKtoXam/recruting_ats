@@ -721,9 +721,10 @@ function collectVacancyLinks(){
 
 function renderVacancyFormActions(vacancy){
   const readOnly=vacancy&&vacancy.state==='deleted';
+  el('vacancyStatusBar').innerHTML=vacancy
+    ?'<span class="drawer-header-label">Статус</span>'+vacancyStatusSwitch(vacancy)
+    :'';
   formActions('vacancyFormActions',[
-    vacancyStatusSwitch(vacancy),
-    vacancy?'<span class="toolbar-divider" aria-hidden="true"></span>':'',
     vacancy?historyButton('vacancy',vacancy['Vacancy ID'],'№'+(vacancy['№']||'—')+' · '+vacancy['Вакансия']):'',
     vacancy?lifecycleButtons('vacancy',vacancy['Vacancy ID'],vacancy.state):'',
     readOnly?'':textBtn('save','Сохранить','saveVacancyForm(this)')
