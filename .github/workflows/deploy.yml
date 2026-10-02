@@ -1,0 +1,51 @@
+name: Deploy (portal)
+
+# Выкладка на portal.devexpert.kz self-hosted раннером, который стоит на самом сервере.
+# Запускается после зелёного CI на main или вручную («Run workflow» на ветке main),
+# но только если push в main сделал владелец (totKtoXam): его коммиты и мёрджи PR
+# выкладываются сами, чужие — нет. Добавить ещё одного деплоера — дописать логин в условие ниже.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-portal
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to portal.devexpert.kz
+    # Раннер имеет доступ к серверу, поэтому сюда попадает только push в main этого
+    # репозитория после успешного CI, сделанный владельцем (actor — учётка GitHub,
+    # которая выполнила push или нажала «Merge»; имя автора коммита подделать можно, actor — нет).
+    # Pull request'ы (в том числе из форков) и push'и других участников деплой не запускают.
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      ((github.event_name == 'workflow_dispatch' &&
+        github.actor == 'totKtoXam') ||
+       (github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.head_repository.full_name == github.repository &&
+        github.event.workflow_run.actor.login == 'totKtoXam'))
+    runs-on: [self-hosted, linux, hr-ats-portal]
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Deploy
+        env:
+          FORCE: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
+        run: bash scripts/deploy-portal.sh "${{ github.event.workflow_run.head_sha || github.sha }}"
