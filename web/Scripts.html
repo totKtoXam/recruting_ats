@@ -1944,6 +1944,40 @@ async function writeClipboardText(text){
 }
 
 
+// Буфер с двумя форматами: вставка в Telegram/почту даёт форматирование и
+// ссылки, в простое поле — обычный текст.
+async function writeClipboardRich(html,text){
+  if(
+    navigator.clipboard &&
+    navigator.clipboard.write &&
+    window.ClipboardItem
+  ){
+    await navigator.clipboard.write([
+      new ClipboardItem({
+        'text/html':new Blob([html],{type:'text/html'}),
+        'text/plain':new Blob([text],{type:'text/plain'})
+      })
+    ]);
+    return;
+  }
+
+  const onCopy=event=>{
+    event.preventDefault();
+    event.clipboardData.setData('text/html',html);
+    event.clipboardData.setData('text/plain',text);
+  };
+
+  document.addEventListener('copy',onCopy);
+
+  try{
+    if(!document.execCommand('copy'))
+      throw new Error('copy failed');
+  }finally{
+    document.removeEventListener('copy',onCopy);
+  }
+}
+
+
 async function copyCandidatePreview(id,button){
   const candidate=
     candidateById(id);
@@ -1953,46 +1987,106 @@ async function copyCandidatePreview(id,button){
   const latest=
     (candidate.resumeVersions||[])[0];
 
-  const resumeUrl=
+  const rawResume=
     latest&&latest.url
       ? latest.url
       : candidate['Резюме']||'';
 
-  const lines=[
+  // Файлы резюме отдаются относительным путём — в мессенджере нужна полная ссылка.
+  const resumeUrl=
+    rawResume
+      ? new URL(rawResume,location.href).href
+      : '';
+
+  const telegramUrl=
+    normalizeTelegramClient(
+      candidate['Telegram']
+    );
+
+  const telegramNick=
+    telegramUrl.match(/^https?:\/\/(?:www\.)?t\.me\/([^/?#]+)/i);
+
+  const title=
     '№'+(candidate['№']||'—')+
-      ' · '+fullNameOf(candidate),
-    'Статус: '+
-      (candidate['Статус']||'—'),
-    'Телефон: '+
-      (candidate['Телефон']||'—'),
-    'Вакансия: '+
-      (candidate['Вакансия']||'—'),
-    'Рекрутер: '+
-      (candidate['Ответственный']||'—'),
-    'Ответственный HR: '+
-      (candidate['Ответственный HR']||'—'),
-    'Проф. интервьювер: '+
-      (candidate['Ответственный проф. интервьювер']||'—')
+      ' · '+fullNameOf(candidate);
+
+  const cardUrl=
+    candidateCardUrl(
+      candidate.ID
+    );
+
+  const link=(url,text)=>
+    '<a href="'+escapeHtml(url)+'">'+
+      escapeHtml(text)+
+    '</a>';
+
+  // Две версии: HTML (Telegram, почта, документы сохраняют жирный шрифт
+  // и ссылки) и простой текст — для полей без форматирования.
+  const html=[
+    '<b>'+link(cardUrl,title)+'</b>',
+    ''
   ];
 
-  if(candidate['Источник']){
-    lines.push(
-      'Источник: '+
-      candidate['Источник']
+  const text=[
+    title,
+    cardUrl,
+    ''
+  ];
+
+  const row=(emoji,label,value,valueHtml)=>{
+    html.push(
+      emoji+' <b>'+escapeHtml(label)+':</b> '+
+        (valueHtml||escapeHtml(value))
     );
+
+    text.push(
+      emoji+' '+label+': '+value
+    );
+  };
+
+  const status=
+    candidate['Статус']||'—';
+
+  row('📌','Статус',
+    status,
+    '<i>'+escapeHtml(status)+'</i>');
+
+  row('📞','Телефон',
+    candidate['Телефон']||'—');
+
+  if(telegramUrl){
+    row('✈️','Telegram',
+      telegramUrl,
+      link(
+        telegramUrl,
+        telegramNick
+          ? '@'+telegramNick[1]
+          : telegramUrl
+      ));
   }
 
-  lines.push(
-    'Резюме: '+
-      (resumeUrl||'—')
-  );
+  row('💼','Вакансия',
+    candidate['Вакансия']||'—');
 
-  lines.push(
-    'Карточка: '+
-      candidateCardUrl(
-        candidate.ID
-      )
-  );
+  row('👤','Рекрутер',
+    candidate['Ответственный']||'—');
+
+  row('🧑‍💼','Ответственный HR',
+    candidate['Ответственный HR']||'—');
+
+  row('🎓','Проф. интервьювер',
+    candidate['Ответственный проф. интервьювер']||'—');
+
+  if(candidate['Источник']){
+    row('📣','Источник',
+      candidate['Источник']);
+  }
+
+  row('📄','Резюме',
+    resumeUrl||'—',
+    resumeUrl
+      ? link(resumeUrl,'открыть')
+      : '—');
 
   setButtonLoading(
     button,
@@ -2001,8 +2095,9 @@ async function copyCandidatePreview(id,button){
   );
 
   try{
-    await writeClipboardText(
-      lines.join('\n')
+    await writeClipboardRich(
+      html.join('<br>'),
+      text.join('\n')
     );
 
     showToast(
