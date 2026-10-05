@@ -138,7 +138,7 @@ curl -s "$ATS_URL/intake?api=references" -H "X-API-Key: $ATS_API_KEY"
 | `telegram` | string | Telegram username или ссылка |
 | `github` | string | GitHub |
 | `linkedin` | string | LinkedIn |
-| `salary` | string / number | Зарплатные ожидания |
+| `salary` | string / number | Зарплатные ожидания (хранятся зашифрованными; в ATS видны только пользователям с доступом к ЗП) |
 | `vacancyId` | string | ID вакансии из `references` |
 | `sourceId` | string | ID источника из `references` |
 | `responsibleId` | string | ID ответственного (рекрутера) из `references` — это ID пользователя |

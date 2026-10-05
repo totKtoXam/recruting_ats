@@ -53,7 +53,7 @@ function assertTransitionAllowed(candidate, toStatus) {
   }
 }
 
-export async function getInterviewContext(input = {}) {
+export async function getInterviewContext(input = {}, viewer = null) {
   const candidateId = optionalUuid(input.candidateId, 'Кандидат не найден.');
   const candidate = candidateId
     ? await db.one('SELECT * FROM candidates WHERE id = $1 AND archived_at IS NULL', [candidateId])
@@ -68,7 +68,7 @@ export async function getInterviewContext(input = {}) {
 
   const regular = toStatus !== REJECTED && candidate.status !== REJECTED;
   return {
-    candidate: await loadCandidateDto(candidate.id),
+    candidate: await loadCandidateDto(candidate.id, db, viewer),
     fromStatus: candidate.status,
     toStatus,
     // Шаблон вопросов относится к этапу, НА который переводят кандидата.
@@ -379,7 +379,7 @@ export async function transitionCandidate(input, changedBy) {
 
     return {
       ok: true,
-      candidate: await loadCandidateDto(candidate.id, tx),
+      candidate: await loadCandidateDto(candidate.id, tx, changedBy),
       interview
     };
   });

@@ -142,6 +142,7 @@ function userRoleChips(user){
   const chips=[];
   if(user.isAdmin)chips.push('<span class="mini-chip">Администратор</span>');
   if((user.stages||[]).length)chips.push('<span class="mini-chip">Ответственный</span>');
+  if((user.scopes||[]).includes('salary'))chips.push('<span class="mini-chip">Доступ к ЗП</span>');
   return chips.join('');
 }
 

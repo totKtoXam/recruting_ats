@@ -361,7 +361,7 @@ const TRACKED_FIELDS = [
   [['linkedin'], 'LinkedIn'],
   [['github'], 'GitHub'],
   [['source_id'], 'Источник'],
-  [['salary_expectation'], 'ЗП ожидания'],
+  [['salary_expectation_enc'], 'ЗП ожидания'],
   [['links'], 'Иные ссылки'],
   [['recruiter_id'], 'Рекрутер'],
   [['hr_responsible_id'], 'Ответственный HR'],

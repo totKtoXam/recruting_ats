@@ -6,8 +6,12 @@ import { trashFile } from '../lib/drive.js';
 import { clean, normalizeNamePart } from '../lib/validation.js';
 import { UploadTracker, decodeResumeUpload, insertFile, uploadDraftResume } from './files.js';
 import { fileUrl } from './mappers.js';
+import { canViewSalary, decryptSalaryText, encryptSalaryText } from '../lib/salary.js';
 
+// ЗП ожидания в черновике хранится зашифрованной (salaryEnc) и отдаётся форме
+// только пользователю со scope «salary»; без него сумма подставится при сохранении на сервере.
 function draftData(input) {
+  const salary = clean(input.salary);
   return {
     lastName: normalizeNamePart(input.lastName),
     firstName: normalizeNamePart(input.firstName),
@@ -17,7 +21,7 @@ function draftData(input) {
     telegram: clean(input.telegram),
     github: clean(input.github),
     linkedin: clean(input.linkedin),
-    salary: clean(input.salary),
+    ...(salary ? { salaryEnc: encryptSalaryText(salary) } : {}),
     vacancyId: clean(input.vacancyId),
     sourceId: clean(input.sourceId),
     responsibleId: clean(input.responsibleId),
@@ -83,7 +87,13 @@ function assertActive(draft) {
   return draft;
 }
 
-export async function getCandidateDraft(token) {
+function draftDataFor(data, viewer) {
+  const { salaryEnc, ...rest } = data || {};
+  if (!salaryEnc || !canViewSalary(viewer)) return rest;
+  return { ...rest, salary: decryptSalaryText(salaryEnc) || '' };
+}
+
+export async function getCandidateDraft(token, viewer = null) {
   const cleanToken = clean(token);
 
   if (!cleanToken) {
@@ -102,7 +112,7 @@ export async function getCandidateDraft(token) {
 
   return {
     token: draft.token,
-    data: draft.data || {},
+    data: draftDataFor(draft.data, viewer),
     resume: draft.resume_file_id
       ? {
           id: draft.resume_file_id,

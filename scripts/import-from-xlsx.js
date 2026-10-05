@@ -15,6 +15,7 @@ import { pool, transaction } from '../server/db/pool.js';
 import { isUuid, splitFullName } from '../server/lib/validation.js';
 import { normalizeTemplateQuestions } from '../server/services/mappers.js';
 import { textToRich } from '../server/lib/richtext.js';
+import { encryptSalary } from '../server/lib/salary.js';
 
 const SHEETS = {
   users: 'Пользователи',
@@ -402,7 +403,7 @@ async function main() {
       await tx.query(
         `INSERT INTO candidates
            (id, number, last_name, first_name, middle_name, vacancy_id, status, phone, email,
-            telegram, telegram_url, linkedin, github, source_id, salary_expectation,
+            telegram, telegram_url, linkedin, github, source_id, salary_expectation_enc,
             recruiter_id, hr_responsible_id, tech_interviewer_id, drive_folder_id,
             links, rejection_reason, created_at, updated_at, archived_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
@@ -413,7 +414,7 @@ async function main() {
           stage(row['Статус']) || 'Новый', str(row['Телефон']), str(row.Email).toLowerCase(),
           str(row.Telegram), str(row['Telegram URL']), str(row.LinkedIn), str(row.GitHub),
           ids.sources.get(row['Source ID']),
-          salary !== null && salary >= 0 && salary <= 10_000_000 ? salary : null,
+          encryptSalary(salary !== null && salary >= 0 && salary <= 10_000_000 ? Math.round(salary) : null),
           recruiterId,
           ids.responsibles.get(row['HR Responsible ID']) || recruiterId,
           ids.responsibles.get(row['Tech Interviewer ID']) || recruiterId,

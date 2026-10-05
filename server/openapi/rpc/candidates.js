@@ -54,7 +54,11 @@ const candidateProps = {
   'GitHub': { type: 'string' },
   'Source ID': { type: 'string', description: 'ID источника или пустая строка.' },
   'Источник': { type: 'string', description: 'Название источника или пустая строка.' },
-  'Зарплатные ожидания': { type: ['integer', 'string'], description: 'Сумма в тенге; пустая строка — не указано.' },
+  'Зарплатные ожидания': {
+    type: ['integer', 'string'],
+    description: 'Сумма в тенге; пустая строка — не указано. Только в полной карточке и только пользователю с доступом к ЗП (scope salary); иначе поля нет. Хранится зашифрованной.'
+  },
+  salaryUnreadable: { type: 'boolean', description: 'ЗП ожидания есть, но не расшифровывается (сменился ключ шифрования).' },
   'Responsible ID': { type: 'string', format: 'uuid', description: 'ID рекрутера.' },
   'Ответственный': { type: 'string', description: 'ФИО рекрутера.' },
   'HR Responsible ID': { type: 'string', format: 'uuid' },
@@ -261,6 +265,7 @@ const bootstrapResult = {
         'ФИО': { type: 'string' },
         stages: { type: 'array', items: { type: 'string', enum: PIPELINE_STATUSES } },
         isAdmin: { type: 'boolean' },
+        scopes: { type: 'array', items: { type: 'string' }, description: 'Доступ к данным: salary — ЗП ожидания' },
         accessStatus: { type: 'string', enum: ['active', 'pending', 'disabled'] }
       }
     },
@@ -377,7 +382,10 @@ export default {
         linkedin: { type: 'string', description: 'URL или ник (дополняется до https://www.linkedin.com/in/...).' },
         github: { type: 'string', description: 'URL или ник (дополняется до https://github.com/...).' },
         sourceId: { type: ['string', 'null'], format: 'uuid', description: 'ID источника; пусто — без источника.' },
-        salary: { type: ['string', 'number', 'null'], description: 'ЗП ожидания в тенге (0…10 000 000); пробелы допускаются, округляется до целого.' },
+        salary: {
+          type: ['string', 'number', 'null'],
+          description: 'ЗП ожидания в тенге (0…10 000 000); пробелы допускаются, округляется до целого. Только с доступом к ЗП (scope salary), иначе 403; не передано — не меняется.'
+        },
         recruiterId: { type: 'string', format: 'uuid', description: 'ID рекрутера (нужен он или responsibleId).' },
         responsibleId: { type: 'string', format: 'uuid', description: 'Устаревший синоним recruiterId.' },
         hrResponsibleId: { type: 'string', format: 'uuid', description: 'ID ответственного HR.' },

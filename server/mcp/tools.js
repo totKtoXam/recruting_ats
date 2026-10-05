@@ -12,6 +12,7 @@ import { rpcHandlers } from '../rpc.js';
 import * as candidates from '../services/candidates.js';
 import { createCandidateDraft } from '../services/drafts.js';
 import { toPublicUser } from '../services/mappers.js';
+import { SCOPE_KEYS } from '../lib/scopes.js';
 import { createUploadLink, takeUpload } from './uploads.js';
 
 const PIPELINE = APP_CONFIG.PIPELINE_STATUSES;
@@ -110,7 +111,10 @@ function candidateFull(c) {
     middleName: c['Отчество'] || '',
     linkedin: c['LinkedIn'] || '',
     github: c['GitHub'] || '',
-    salary: c['Зарплатные ожидания'] === '' ? null : c['Зарплатные ожидания'],
+    // ЗП ожидания — только при доступе (scope «salary»), иначе поля нет.
+    ...('Зарплатные ожидания' in c
+      ? { salary: c['Зарплатные ожидания'] === '' ? null : c['Зарплатные ожидания'] }
+      : {}),
     hrResponsible: person(c['HR Responsible ID'], c['Ответственный HR']),
     techInterviewer: person(c['Tech Interviewer ID'], c['Ответственный проф. интервьювер']),
     rejection: c.rejection || null,
@@ -287,7 +291,7 @@ async function searchCandidates(args) {
 
 async function getCandidate(args, { user }) {
   const candidateId = await resolveCandidateId(args);
-  const details = await candidates.getCandidateDetails(candidateId);
+  const details = await candidates.getCandidateDetails(candidateId, user);
   const result = {
     candidate: candidateFull(details),
     allowedTransitions: await candidates.getAllowedTransitions(candidateId)
@@ -650,7 +654,7 @@ export const mcpTools = [
       telegram: str('Telegram'),
       github: str('GitHub'),
       linkedin: str('LinkedIn'),
-      salary: str('Зарплатные ожидания'),
+      salary: str('Зарплатные ожидания (сохраняются зашифрованными; видны только пользователям с доступом к ЗП)'),
       vacancyId: id('Вакансия'),
       sourceId: id('Источник'),
       responsibleId: id('Рекрутер'),
@@ -686,7 +690,10 @@ export const mcpTools = [
       telegram: str('Telegram'),
       linkedin: str('LinkedIn'),
       github: str('GitHub'),
-      salary: { type: ['number', 'string'], description: 'Зарплатные ожидания' },
+      salary: {
+        type: ['number', 'string'],
+        description: 'Зарплатные ожидания — только если у пользователя есть доступ к ЗП (scope salary), иначе ошибка 403'
+      },
       sourceId: str('Источник (uuid или пустая строка)'),
       links: linksSchema,
       comment: str('Только при создании: первый комментарий'),
@@ -926,7 +933,11 @@ export const mcpTools = [
         stages: arr(str('Этап', { enum: PIPELINE }), 'Этапы, за которые отвечает'),
         isAdmin: bool('Администратор'),
         isActive: bool('Только при создании: открыть доступ в ATS'),
-        telegram: str('Telegram @username')
+        telegram: str('Telegram @username'),
+        scopes: arr(
+          str('Доступ', { enum: SCOPE_KEYS }),
+          'Доступ к данным: salary — видит и меняет ЗП ожидания кандидатов. Не передан — не меняется'
+        )
       },
       ['email', 'lastName', 'firstName']
     ),

@@ -2,6 +2,7 @@
 // получал из Google Sheets. Контракт фронтенда при этом не меняется.
 import { formatDateTime } from '../lib/dates.js';
 import { composeFullName } from '../lib/validation.js';
+import { canViewSalary, decryptSalary } from '../lib/salary.js';
 
 import { APP_CONFIG, withBase } from '../config.js';
 
@@ -171,6 +172,8 @@ export function toPublicUser(row) {
     'Avatar URL': row.avatar_url,
     'IsActive': row.is_active,
     isAdmin: Boolean(row.is_admin),
+    // Доступ к данным по scope (server/lib/scopes.js), например «salary» — ЗП ожидания.
+    scopes: row.scopes || [],
     accessStatus: userAccessStatus(row),
     'Статус доступа': USER_ACCESS_LABELS[userAccessStatus(row)],
     'Последний вход': formatDateTime(row.last_login_at),
@@ -207,8 +210,16 @@ function rejectedByLabel(row) {
   return row.rejected_by_responsible_name || '';
 }
 
-// row — результат CANDIDATE_SELECT; resumeVersions передаются только для полной карточки.
-export function toCandidate(row, resumeVersions) {
+// ЗП ожидания — только в полной карточке и только пользователю со scope «salary»;
+// остальным поле не отдаётся вовсе. salaryUnreadable — значение есть, но ключ шифрования сменился.
+function salaryFields(row, viewer) {
+  if (!viewer || !canViewSalary(viewer)) return {};
+  const amount = decryptSalary(row.salary_expectation_enc);
+  return { 'Зарплатные ожидания': amount ?? '', salaryUnreadable: amount === undefined };
+}
+
+// row — результат CANDIDATE_SELECT; resumeVersions и viewer передаются только для полной карточки.
+export function toCandidate(row, resumeVersions, viewer = null) {
   const fullName = composeFullName(row.last_name, row.first_name, row.middle_name);
   const archived = Boolean(row.archived_at);
   const latestResumeUrl = row.latest_resume_external_url || fileUrl(row.latest_resume_file_id);
@@ -232,7 +243,7 @@ export function toCandidate(row, resumeVersions) {
     'GitHub': row.github,
     'Source ID': row.source_id || '',
     'Источник': row.source_name || '',
-    'Зарплатные ожидания': row.salary_expectation ?? '',
+    ...salaryFields(row, viewer),
     'Responsible ID': row.recruiter_id,
     'Ответственный': row.recruiter_name || '',
     'HR Responsible ID': row.hr_responsible_id,

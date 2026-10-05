@@ -464,7 +464,7 @@ const userTable=createServerTable({
   columns:[
     {label:'ФИО',sort:'name',filter:{key:'name',type:'text'},render:item=>{
       const name=item['ФИО']&&item['ФИО']!==item.Email?escapeHtml(item['ФИО']):'<span class="muted">Имя не указано</span>';
-      return '<div class="user-name-cell">'+name+(item.isAdmin?'<span class="mini-chip">Админ</span>':'')+stateBadge(item)+'</div>';
+      return '<div class="user-name-cell">'+name+(item.isAdmin?'<span class="mini-chip">Админ</span>':'')+((item.scopes||[]).includes('salary')?'<span class="mini-chip" title="Доступ к ЗП ожиданиям">ЗП</span>':'')+stateBadge(item)+'</div>';
     }},
     {label:'Email',sort:'email',filter:{key:'email',type:'text'},render:item=>escapeHtml(item.Email)},
     {label:'Telegram',width:'150px',render:item=>item.telegram
@@ -1714,6 +1714,7 @@ function resetUserForm(){
   el('userActive').checked=true;
   el('userNewAccessField').hidden=false;
   el('userAdmin').checked=false;
+  el('userScopeSalary').checked=false;
   el('userFormTitle').textContent='Новый пользователь';
   el('userLifecycleNote').innerHTML='';
   el('userMeta').hidden=true;
@@ -1741,6 +1742,7 @@ function editUser(user){
   // Доступ переключается в списке; в форме — только для нового пользователя.
   el('userNewAccessField').hidden=true;
   el('userAdmin').checked=!!user.isAdmin;
+  el('userScopeSalary').checked=(user.scopes||[]).includes('salary');
   el('userFormTitle').textContent=user['ФИО']||user.Email;
   el('userLifecycleNote').innerHTML=lifecycleNote(user);
   setUserFormReadOnly(user.state==='deleted');
@@ -1775,6 +1777,12 @@ async function reopenUser(id){
 }
 
 async function afterUserChange(user){
+  // Свой доступ к ЗП изменился — загруженные карточки перечитываются при открытии.
+  if(user&&isCurrentUser(user['User ID'])){
+    const salaryChanged=canViewSalary()!==(user.scopes||[]).includes('salary');
+    state.currentUser={...state.currentUser,scopes:user.scopes||[]};
+    if(salaryChanged)[...state.candidates,...state.archivedCandidates].forEach(c=>{delete c._detailsLoaded;delete c['Зарплатные ожидания']});
+  }
   await loadServerTable('users');
   // Ответственные для форм кандидатов и список для упоминаний.
   refreshReferences().catch(()=>{});
@@ -1804,6 +1812,7 @@ async function saveUserForm(button){
       stages:[...document.querySelectorAll('.user-stage:checked')].map(x=>x.value),
       isActive:el('userActive').checked,
       isAdmin:el('userAdmin').checked,
+      scopes:el('userScopeSalary').checked?['salary']:[],
       telegram:value('userTelegram').trim()
     });
     if(!id){

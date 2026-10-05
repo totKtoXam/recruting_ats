@@ -514,6 +514,10 @@ const ADMIN_ROUTES={
 };
 
 function isAdminUser(){return !!(state.currentUser&&state.currentUser.isAdmin)}
+// Доступ к ЗП ожиданиям кандидатов выдаёт администратор (scope «salary»).
+function canViewSalary(){return !!(state.currentUser&&(state.currentUser.scopes||[]).includes('salary'))}
+// Поле ЗП в форме: с доступом и только если карточка загружена с ЗП (иначе сохранение затёрло бы сумму).
+function salaryEditable(){return canViewSalary()&&(!currentCandidate||'Зарплатные ожидания' in currentCandidate)}
 
 function initRouter(){
   window.addEventListener('hashchange',applyRoute);
@@ -2354,6 +2358,10 @@ function openCandidate(candidate){
   el('candidateGithub').value=candidate?candidate['GitHub']||'':'';
   el('candidateLinkedin').value=candidate?candidate['LinkedIn']||'':'';
   el('candidateSalary').value=candidate?formatMoney(candidate['Зарплатные ожидания']):'';
+  el('candidateSalaryField').hidden=!salaryEditable();
+  el('candidateSalaryHint').textContent=candidate&&candidate.salaryUnreadable
+    ?'Сохранённое значение не расшифровано (сменился ключ шифрования). Максимум 10 000 000'
+    :'Максимум 10 000 000';
   if(!currentCandidateDraft)setRich('candidateComment','');
   renderCandidateComments(candidate);
   el('candidateTitle').textContent=isNew?'Новый кандидат':fullNameOf(candidate);
@@ -2641,7 +2649,7 @@ function buildOptimisticCandidate(payload,resumeFile,existing,tempId){
     'LinkedIn':normalizeLinkedinClient(payload.linkedin),
     'Source ID':payload.sourceId,
     'Источник':source?source['Название']:'',
-    'Зарплатные ожидания':String(payload.salary||'').replace(/\D/g,''),
+    ...(payload.salary!==undefined?{'Зарплатные ожидания':String(payload.salary||'').replace(/\D/g,'')}:{}),
     'Responsible ID':payload.recruiterId,
     'Ответственный':recruiter?fullNameOf(recruiter):'',
     'HR Responsible ID':payload.hrResponsibleId,
@@ -2662,7 +2670,7 @@ function buildOptimisticCandidate(payload,resumeFile,existing,tempId){
 async function saveCandidateForm(button){
   if(!validateEmailField(el('candidateEmail')))return;
 
-  const salary=Number(String(value('candidateSalary')).replace(/\D/g,''))||0;
+  const salary=salaryEditable()?Number(String(value('candidateSalary')).replace(/\D/g,''))||0:0;
   if(salary>10000000){
     UiKit.showFieldErrors([{field:'candidateSalary',message:'Не больше 10 000 000.'}]);
     return;
@@ -2722,7 +2730,8 @@ async function saveCandidateForm(button){
       telegram:value('candidateTelegram'),
       github:value('candidateGithub'),
       linkedin:value('candidateLinkedin'),
-      salary:value('candidateSalary'),
+      // Без доступа к ЗП поле не передаётся: сервер оставит прежнее значение (или из черновика).
+      ...(salaryEditable()?{salary:value('candidateSalary')}:{}),
       sourceId:value('candidateSource'),
       recruiterId:value('candidateRecruiter'),
       hrResponsibleId:value('candidateHrResponsible'),

@@ -8,6 +8,7 @@ import { formatDateTime } from '../lib/dates.js';
 import { composeFullName } from '../lib/validation.js';
 import { userDisplayName } from './mappers.js';
 import { getUnreadCount } from './notifications.js';
+import { entryDisplays } from './audit.js';
 
 export const DASHBOARD_PERIODS = Object.freeze([7, 30, 90]);
 // Кандидат «без движения», если стоит на текущем этапе дольше этого срока.
@@ -376,8 +377,7 @@ async function queryActivity(user, limit) {
     action: row.action,
     field: row.field,
     fieldLabel: row.field_label,
-    oldDisplay: row.old_display,
-    newDisplay: row.new_display,
+    ...entryDisplays(row, user),
     actorName: row.actor_name || 'Система',
     entityLabel: row.entity_label || '',
     createdAt: new Date(row.created_at).toISOString()

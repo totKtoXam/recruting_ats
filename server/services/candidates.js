@@ -28,6 +28,7 @@ import { lockActiveDraft, markDraftUsed, tryLockActiveDraft } from './drafts.js'
 import { insertComment } from './comments.js';
 import { diffCandidate, notifyCandidateEvent } from './notifications.js';
 import { recordChanges, recordEvent } from './audit.js';
+import { decryptSalary, decryptSalaryText, encryptSalary, requireSalaryAccess } from '../lib/salary.js';
 
 const personName = alias =>
   `concat_ws(' ', NULLIF(${alias}.last_name, ''), NULLIF(${alias}.first_name, ''), NULLIF(${alias}.middle_name, ''))`;
@@ -108,18 +109,19 @@ export async function getResumeVersions(candidateId, executor = db) {
   return rows.map(toResumeVersion);
 }
 
-async function loadCandidateDto(candidateId, executor = db) {
+// Полная карточка; viewer — кто смотрит (ЗП ожидания — только со scope «salary»).
+async function loadCandidateDto(candidateId, executor = db, viewer = null) {
   const row = await executor.one(CANDIDATE_SELECT + ' WHERE c.id = $1', [candidateId]);
 
   if (!row) {
     return null;
   }
 
-  return toCandidate(row, await getResumeVersions(candidateId, executor));
+  return toCandidate(row, await getResumeVersions(candidateId, executor), viewer);
 }
 
-export async function getCandidateDetails(candidateId) {
-  const candidate = isUuid(candidateId) ? await loadCandidateDto(candidateId) : null;
+export async function getCandidateDetails(candidateId, viewer = null) {
+  const candidate = isUuid(candidateId) ? await loadCandidateDto(candidateId, db, viewer) : null;
 
   if (!candidate) {
     fail('Кандидат не найден.', 404);
@@ -257,6 +259,20 @@ function validateCandidatePayload(payload) {
 
 // Значение из payload, если поле передано, иначе текущее значение кандидата.
 const pick = (payload, key, fallback) => (payload[key] !== undefined ? payload[key] : fallback);
+
+// Шифротекст меняется при каждом шифровании (случайный IV): прежний сохраняется, если сумма
+// не изменилась, иначе журнал изменений и уведомления видели бы правку ЗП при каждом сохранении.
+function keepOrEncryptSalary(amount, storedEnc) {
+  return storedEnc && decryptSalary(storedEnc) === amount ? storedEnc : encryptSalary(amount);
+}
+
+// ЗП ожидания из черновика — свободный текст Intake/MCP; берутся цифры, если сумма в пределах.
+function draftSalary(draft) {
+  const plain = draft && draft.data && draft.data.salaryEnc ? decryptSalaryText(draft.data.salaryEnc) : null;
+  const digits = String(plain || '').replace(/\D/g, '');
+  const amount = digits ? Number(digits) : null;
+  return amount !== null && amount <= 10_000_000 ? amount : null;
+}
 
 function normalizeLinks(links) {
   const result = links
@@ -403,7 +419,11 @@ export async function saveCandidate(payload, changedBy) {
       const linkedin = normalizeProfileUrl(pick(payload, 'linkedin', existing.linkedin), 'linkedin');
       const github = normalizeProfileUrl(pick(payload, 'github', existing.github), 'github');
       const links = Array.isArray(payload.links) ? normalizeLinks(payload.links) : existing.links || [];
-      const salary = normalizeMoney(pick(payload, 'salary', existing.salary_expectation));
+      // ЗП ожидания меняет только пользователь со scope «salary». Без него поле не передаётся:
+      // остаётся прежнее значение, у нового кандидата — значение из черновика (Intake, MCP).
+      const salaryProvided = payload.salary !== undefined;
+      if (salaryProvided) requireSalaryAccess(changedBy);
+      const salary = salaryProvided ? normalizeMoney(payload.salary) : null;
 
       if (salary !== null && salary > 10_000_000) {
         fail('ЗП ожидания не может превышать 10 000 000.');
@@ -426,9 +446,15 @@ export async function saveCandidate(payload, changedBy) {
         fail('Резюме обязательно.');
       }
 
+      const salaryEnc = salaryProvided
+        ? keepOrEncryptSalary(salary, existing.salary_expectation_enc)
+        : isNew
+          ? encryptSalary(draftSalary(draft))
+          : existing.salary_expectation_enc;
+
       const values = [
         candidateId, lastName, firstName, middleName, vacancyId, phone, email,
-        telegram.display, telegram.url, linkedin, github, source ? source.id : null, salary,
+        telegram.display, telegram.url, linkedin, github, source ? source.id : null, salaryEnc,
         recruiter.id, hrResponsible.id, techInterviewer.id, folderId,
         JSON.stringify(links)
       ];
@@ -437,7 +463,7 @@ export async function saveCandidate(payload, changedBy) {
         ? await tx.one(
             `INSERT INTO candidates
                (id, last_name, first_name, middle_name, vacancy_id, phone, email,
-                telegram, telegram_url, linkedin, github, source_id, salary_expectation,
+                telegram, telegram_url, linkedin, github, source_id, salary_expectation_enc,
                 recruiter_id, hr_responsible_id, tech_interviewer_id, drive_folder_id,
                 links, status)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, 'Новый')
@@ -448,7 +474,7 @@ export async function saveCandidate(payload, changedBy) {
             `UPDATE candidates SET
                last_name = $2, first_name = $3, middle_name = $4, vacancy_id = $5, phone = $6,
                email = $7, telegram = $8, telegram_url = $9, linkedin = $10, github = $11,
-               source_id = $12, salary_expectation = $13, recruiter_id = $14,
+               source_id = $12, salary_expectation_enc = $13, recruiter_id = $14,
                hr_responsible_id = $15, tech_interviewer_id = $16,
                drive_folder_id = COALESCE($17, drive_folder_id),
                links = $18, updated_at = now()
@@ -516,7 +542,7 @@ export async function saveCandidate(payload, changedBy) {
 
       return {
         ok: true,
-        candidate: await loadCandidateDto(candidateId, tx)
+        candidate: await loadCandidateDto(candidateId, tx, changedBy)
       };
     });
   } catch (error) {
@@ -545,7 +571,7 @@ export async function archiveCandidate(candidateId, actor) {
     }
   });
 
-  const candidate = await loadCandidateDto(candidateId);
+  const candidate = await loadCandidateDto(candidateId, db, actor);
 
   if (!candidate) {
     fail('Кандидат не найден.', 404);
@@ -574,7 +600,7 @@ export async function unarchiveCandidate(candidateId, actor) {
     await recordEvent(tx, { entityType: 'candidate', entityId: candidateId, action: 'unarchive', actor });
   });
 
-  return { ok: true, candidate: await loadCandidateDto(candidateId) };
+  return { ok: true, candidate: await loadCandidateDto(candidateId, db, actor) };
 }
 
 export async function getAllowedTransitions(candidateId) {

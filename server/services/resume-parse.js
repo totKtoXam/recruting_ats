@@ -11,6 +11,7 @@ import { isFirstName, looksLikePatronymic, looksLikeSurname, skeleton, titleCase
 import { normalizeKzPhone, normalizeProfileUrl, normalizeTelegram, validateEmail } from '../lib/validation.js';
 import { decodeResumeUpload } from './files.js';
 import { findSimilarCandidates } from './similar.js';
+import { canViewSalary } from '../lib/salary.js';
 
 export const FORMAT_LABELS = {
   hh: 'hh.ru / hh.kz',
@@ -747,7 +748,8 @@ export function computeHints(result, vacancies, sources) {
 }
 
 // RPC: разбирает файл { name, mimeType, base64 } и ничего не сохраняет.
-export async function parseResume(input) {
+// viewer без scope «salary» не получает ЗП из резюме: поле в его форме скрыто.
+export async function parseResume(input, viewer = null) {
   const upload = decodeResumeUpload(input);
   const extension = upload.name.split('.').pop().toLowerCase();
 
@@ -760,6 +762,10 @@ export async function parseResume(input) {
   }
 
   const result = parseResumeDocument(document, upload.name);
+  if (result.status === 'ok' && !canViewSalary(viewer)) {
+    delete result.fields.salary;
+    result.suggestions = result.suggestions.filter(item => item.field !== 'salary');
+  }
   result.fileHash = createHash('sha256').update(upload.buffer).digest('hex');
   if (result.status !== 'ok') return result;
 

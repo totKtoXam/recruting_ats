@@ -76,20 +76,20 @@ export const rpcHandlers = {
   // Полная сводка в прежнем формате (MCP-инструмент get_dashboard).
   getDashboardData: (input, { user }) => dashboard.getDashboardData(input, user),
 
-  getCandidateDetails: id => candidates.getCandidateDetails(id),
+  getCandidateDetails: (id, { user }) => candidates.getCandidateDetails(id, user),
   saveCandidate: (payload, { user }) => candidates.saveCandidate(payload, user),
   archiveCandidate: (id, { user }) => candidates.archiveCandidate(id, user),
   unarchiveCandidate: (id, { user }) => candidates.unarchiveCandidate(id, user),
   getAllowedTransitions: id => candidates.getAllowedTransitions(id),
   getCandidateTransitionStatusLog: id => candidates.getCandidateTransitionStatusLog(id),
-  getCandidateDraft: token => drafts.getCandidateDraft(token),
+  getCandidateDraft: (token, { user }) => drafts.getCandidateDraft(token, user),
   // Автозаполнение карточки из файла резюме: разбирает файл, ничего не сохраняет.
-  parseResume: input => resumeParse.parseResume(input),
+  parseResume: (input, { user }) => resumeParse.parseResume(input, user),
   // Похожие кандидаты по ФИО (нечётко) и контактам (точно) — предупреждение о дубле при заполнении формы.
   findSimilarCandidates: input => similar.findSimilarCandidates(input),
 
   getInterviews: id => interviews.getInterviews(id),
-  getInterviewContext: input => interviews.getInterviewContext(input),
+  getInterviewContext: (input, { user }) => interviews.getInterviewContext(input, user),
   transitionCandidate: (input, { user }) => interviews.transitionCandidate(input, user),
   updateInterview: (input, { user }) => interviews.updateInterview(input, user),
 

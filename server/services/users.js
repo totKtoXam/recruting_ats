@@ -13,6 +13,7 @@ import {
 import { toPublicUser, toResponsible } from './mappers.js';
 import { runtime } from './settings.js';
 import { recordChanges, recordEvent } from './audit.js';
+import { normalizeScopes } from '../lib/scopes.js';
 
 export const ACCESS_DENIED_MESSAGE =
   'Доступ для этого Google Account не выдан или отключён. Обратитесь к администратору ATS.';
@@ -217,6 +218,8 @@ export async function saveUser(input = {}, actor) {
   const middleName = normalizeNamePart(input.middleName);
   const stages = normalizeStages(input.stages);
   const isAdmin = input.isAdmin === true;
+  // Доступ к данным по scope (ЗП ожидания); не передан — не меняется.
+  const scopes = input.scopes === undefined ? undefined : normalizeScopes(input.scopes);
   // Ник, указанный администратором, — не подтверждён; подтверждение — привязкой через бота.
   const telegram = input.telegram === undefined ? undefined : normalizeTelegramUsername(input.telegram);
 
@@ -244,13 +247,13 @@ export async function saveUser(input = {}, actor) {
       const created = await tx.one(
         `INSERT INTO users
            (email, full_name, last_name, first_name, middle_name, stages,
-            is_active, is_admin, access_granted_at, access_granted_by, telegram_username)
+            is_active, is_admin, access_granted_at, access_granted_by, telegram_username, scopes)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
-                 CASE WHEN $7 THEN now() END, CASE WHEN $7 THEN $9::uuid END, $10)
+                 CASE WHEN $7 THEN now() END, CASE WHEN $7 THEN $9::uuid END, $10, $11)
          RETURNING *`,
         [
           email, composeFullName(lastName, firstName, middleName), lastName, firstName,
-          middleName, stages, isActive, isAdmin, actor.id, telegram || ''
+          middleName, stages, isActive, isAdmin, actor.id, telegram || '', scopes || []
         ]
       );
 
@@ -305,12 +308,13 @@ export async function saveUser(input = {}, actor) {
          access_granted_by = CASE WHEN $9 THEN $10::uuid ELSE access_granted_by END,
          telegram_username = CASE WHEN $11 THEN $12 ELSE telegram_username END,
          telegram_chat_id = CASE WHEN $11 THEN NULL ELSE telegram_chat_id END,
-         telegram_verified_at = CASE WHEN $11 THEN NULL ELSE telegram_verified_at END
+         telegram_verified_at = CASE WHEN $11 THEN NULL ELSE telegram_verified_at END,
+         scopes = COALESCE($13::text[], scopes)
        WHERE id = $1 RETURNING *`,
       [
         id, email, lastName, firstName, middleName,
         composeFullName(lastName, firstName, middleName), stages, isAdmin,
-        grantAccess, actor.id, telegramChanged, telegram || ''
+        grantAccess, actor.id, telegramChanged, telegram || '', scopes ?? null
       ]
     );
 

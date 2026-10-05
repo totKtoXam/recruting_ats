@@ -10,6 +10,15 @@ import { richToText } from '../lib/richtext.js';
 import { isUuid } from '../lib/validation.js';
 import { formatDateTime } from '../lib/dates.js';
 import { userDisplayName } from './mappers.js';
+import {
+  SALARY_UNREADABLE,
+  canViewSalary,
+  decryptSalary,
+  decryptSalaryText,
+  encryptSalaryText,
+  requireSalaryAccess
+} from '../lib/salary.js';
+import { SCOPES } from '../lib/scopes.js';
 
 // ---------- Отображение значений ----------
 
@@ -22,6 +31,10 @@ const DISPLAY = {
   money: value =>
     value === null || value === undefined || value === '' ? EMPTY : Number(value).toLocaleString('ru-RU').replace(/\u00a0/g, ' '),
   bool: value => (value ? 'Да' : 'Нет'),
+  scopes: value =>
+    Array.isArray(value) && value.length
+      ? value.map(key => (SCOPES.find(scope => scope.key === key) || { label: key }).label).join(', ')
+      : EMPTY,
   list: value => (Array.isArray(value) && value.length ? value.join(', ') : EMPTY),
   links: value =>
     Array.isArray(value) && value.length
@@ -42,6 +55,20 @@ const DISPLAY = {
     if (!value) return EMPTY;
     if (value.icon_png) return 'Своя картинка';
     return value.icon_key ? `Значок «${value.icon_key}»` : 'Автоматически';
+  }
+};
+
+// Поля, доступные по scope (field.secret): значение хранится зашифрованным, подписи в журнале
+// («было → стало») тоже шифруются и расшифровываются только для пользователя со scope.
+const HIDDEN = 'скрыто';
+const SECRETS = {
+  salary: {
+    canView: canViewSalary,
+    require: requireSalaryAccess,
+    plain: value => decryptSalary(value && value.salary_expectation_enc),
+    display: amount => (amount === undefined ? SALARY_UNREADABLE : DISPLAY.money(amount)),
+    sealText: encryptSalaryText,
+    openText: stored => (stored ? decryptSalaryText(stored) ?? SALARY_UNREADABLE : '')
   }
 };
 
@@ -80,7 +107,7 @@ export const AUDIT_ENTITIES = {
       f('linkedin', 'LinkedIn'),
       f('github', 'GitHub'),
       f('source_id', 'Источник', 'text', { ref: 'source' }),
-      f('salary_expectation', 'ЗП ожидания', 'money'),
+      { ...f('salary_expectation', 'ЗП ожидания', 'money'), columns: ['salary_expectation_enc'], secret: 'salary' },
       f('links', 'Иные ссылки', 'links'),
       f('recruiter_id', 'Рекрутер', 'text', { ref: 'user' }),
       f('hr_responsible_id', 'Ответственный HR', 'text', { ref: 'user' }),
@@ -137,7 +164,8 @@ export const AUDIT_ENTITIES = {
       f('email', 'Email'),
       { ...f('telegram_username', 'Telegram'), columns: ['telegram_username'] },
       f('stages', 'Этапы', 'list'),
-      f('is_admin', 'Администратор', 'bool')
+      f('is_admin', 'Администратор', 'bool'),
+      f('scopes', 'Доступ к данным', 'scopes')
     ]
   }
 };
@@ -167,7 +195,15 @@ function snapshot(field, row) {
 
 const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
+// Шифротекст каждый раз разный — секретные поля сравниваются по расшифрованному значению.
+const sameValue = (field, a, b) =>
+  field.secret ? SECRETS[field.secret].plain(a) === SECRETS[field.secret].plain(b) : same(a, b);
+
 async function displayValue(executor, field, value) {
+  if (field.secret) {
+    const secret = SECRETS[field.secret];
+    return secret.sealText(secret.display(secret.plain(value)));
+  }
   const main = value ? value[field.columns[0]] : null;
   if (field.ref) return refDisplay(executor, field.ref, main);
   if (field.display === 'icon') return DISPLAY.icon(value);
@@ -207,7 +243,7 @@ export async function recordChanges(executor, entityType, before, after, actor) 
   for (const field of entity.fields) {
     const oldValue = snapshot(field, before);
     const newValue = snapshot(field, after);
-    if (same(oldValue, newValue)) continue;
+    if (sameValue(field, oldValue, newValue)) continue;
 
     await insertEntry(executor, {
       entityType,
@@ -245,6 +281,16 @@ const ACTION_LABELS = {
   revert: 'Возврат значения'
 };
 
+// Подписи «было → стало» для пользователя: у полей по scope — расшифрованные или «скрыто».
+export function entryDisplays(row, user) {
+  const entity = AUDIT_ENTITIES[row.entity_type];
+  const field = entity && entity.fields.find(item => item.key === row.field);
+  const secret = field && field.secret ? SECRETS[field.secret] : null;
+  if (!secret) return { oldDisplay: row.old_display, newDisplay: row.new_display };
+  if (!secret.canView(user)) return { oldDisplay: HIDDEN, newDisplay: HIDDEN };
+  return { oldDisplay: secret.openText(row.old_display), newDisplay: secret.openText(row.new_display) };
+}
+
 function toEntry(row, extra = {}) {
   return {
     id: row.id,
@@ -279,11 +325,13 @@ export async function getHistory(input = {}, user) {
   const fields = Object.fromEntries(entity.fields.map(field => [field.key, field]));
   const entries = rows.map(row => {
     const field = fields[row.field];
+    const visible = !(field && field.secret) || SECRETS[field.secret].canView(user);
     const revertable =
-      Boolean(current) && !current.deleted_at && field && field.revertable &&
+      visible && Boolean(current) && !current.deleted_at && field && field.revertable &&
       (row.action === 'update' || row.action === 'revert') && row.old_value !== null;
     return toEntry(row, {
-      canRevert: Boolean(revertable && !same(snapshot(field, current), row.old_value))
+      ...entryDisplays(row, user),
+      canRevert: Boolean(revertable && !sameValue(field, snapshot(field, current), row.old_value))
     });
   });
 
@@ -319,6 +367,9 @@ export async function getHistory(input = {}, user) {
 
 // ---------- Откат ----------
 
+// Колонки text[] (остальные массивы — jsonb).
+const TEXT_ARRAY_COLUMNS = ['stages', 'scopes'];
+
 // Проверка ссылки перед откатом: запись должна существовать и не лежать в корзине.
 async function assertRefAvailable(tx, field, value) {
   const id = value && value[field.columns[0]];
@@ -343,13 +394,14 @@ export async function revertChange(input = {}, actor, { afterRevert } = {}) {
     if (!field || !field.revertable || !['update', 'revert'].includes(entry.action) || entry.old_value === null) {
       fail('Это изменение нельзя вернуть.');
     }
+    if (field.secret) SECRETS[field.secret].require(actor);
 
     const before = await tx.one(`SELECT * FROM ${entity.table} WHERE id = $1 FOR UPDATE`, [entry.entity_id]);
     if (!before) fail(`${entity.label}: запись не найдена.`, 404);
     if (before.deleted_at) fail(`${entity.label} в корзине — сначала восстановите запись.`);
 
     const target = entry.old_value;
-    if (same(snapshot(field, before), target)) fail('Поле уже содержит это значение.');
+    if (sameValue(field, snapshot(field, before), target)) fail('Поле уже содержит это значение.');
     await assertRefAvailable(tx, field, target);
 
     if (entry.entity_type === 'user' && field.key === 'is_admin' && before.is_admin && !target.is_admin) {
@@ -367,7 +419,7 @@ export async function revertChange(input = {}, actor, { afterRevert } = {}) {
       let value = target[column] ?? null;
       if (field.bytea && field.bytea.includes(column) && value) value = Buffer.from(value, 'base64');
       else if (value !== null && typeof value === 'object' && !Array.isArray(value)) value = JSON.stringify(value);
-      else if (Array.isArray(value) && column !== 'stages') value = JSON.stringify(value);
+      else if (Array.isArray(value) && !TEXT_ARRAY_COLUMNS.includes(column)) value = JSON.stringify(value);
       params.push(value);
       sets.push(`${column} = $${params.length}`);
     }

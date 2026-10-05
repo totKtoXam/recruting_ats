@@ -178,6 +178,7 @@ const USER_PROPS = {
   'Avatar URL': { type: 'string', description: 'URL аватара из Google; пустая строка — нет' },
   'IsActive': { type: 'boolean', description: 'Доступ в ATS открыт' },
   isAdmin: { type: 'boolean', description: 'Права администратора' },
+  scopes: { type: 'array', items: { type: 'string', enum: ['salary'] }, description: 'Доступ к данным: salary — ЗП ожидания кандидатов' },
   accessStatus: { type: 'string', enum: ['active', 'pending', 'disabled'], description: 'active — доступ открыт, pending — ещё не выдавался, disabled — выдан и отозван' },
   'Статус доступа': { type: 'string', enum: ['Доступ открыт', 'Ожидает доступа', 'Доступ отключён'], description: 'Подпись статуса доступа' },
   'Последний вход': dateTime('Последний вход'),
@@ -426,7 +427,12 @@ export default {
         stages: { type: 'array', items: { type: 'string', enum: PIPELINE_STAGES }, description: 'Этапы, за которые отвечает пользователь' },
         isAdmin: { type: 'boolean', default: false, description: 'Права администратора (только значение true включает)' },
         isActive: { type: 'boolean', default: false, description: 'Только при создании: сразу открыть доступ' },
-        telegram: { type: 'string', description: 'Ник Telegram; пустая строка — очистить, отсутствует — не менять' }
+        telegram: { type: 'string', description: 'Ник Telegram; пустая строка — очистить, отсутствует — не менять' },
+        scopes: {
+          type: 'array',
+          items: { type: 'string', enum: ['salary'] },
+          description: 'Доступ к данным: salary — видит и меняет ЗП ожидания кандидатов; отсутствует — не менять'
+        }
       }
     },
     example: {
