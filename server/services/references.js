@@ -13,6 +13,7 @@ import {
 } from './mappers.js';
 import { getResponsibles } from './users.js';
 import { recordChanges, recordEvent } from './audit.js';
+import { keepPreviousAttachments, resolveAttachments } from './attachments.js';
 
 const TEMPLATE_SELECT = `
   SELECT t.*,
@@ -331,14 +332,19 @@ export async function saveInterviewTemplate(input = {}, actor) {
     fail('Добавьте хотя бы один вопрос.');
   }
 
-  const params = [name, JSON.stringify(questions), JSON.stringify(tags)];
-
   const saved = await transaction(async tx => {
     const before = id ? await tx.one('SELECT * FROM interview_templates WHERE id = $1 FOR UPDATE', [id]) : null;
 
     if (id && !before) {
       fail('Шаблон не найден.', 404);
     }
+
+    // Вопрос без files (клиент вложения не передаёт) сохраняет прежние вложения вопроса с тем же текстом.
+    const withFiles = await resolveAttachments(
+      tx,
+      keepPreviousAttachments(questions, before ? normalizeTemplateQuestions(before.questions) : [], question => question.text)
+    );
+    const params = [name, JSON.stringify(withFiles), JSON.stringify(tags)];
 
     const row = before
       ? await tx.one(

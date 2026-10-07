@@ -1195,6 +1195,7 @@ function stageQuestionsHtml(template){
       ((question.answers||[]).length
         ?'<span class="stage-question-answers">'+question.answers.map(answer=>'<span>'+escapeHtml(answer)+'</span>').join('')+'</span>'
         :'')+
+      attachmentLinksHtml(question.files)+
     '</li>'
   ).join('')+'</ol>';
 }
@@ -1285,6 +1286,8 @@ function questionBlock(question,readOnly){
         '<button class="icon-btn icon-btn-sm" type="button" data-tip="Добавить вероятный ответ" aria-label="Добавить вероятный ответ" onclick="addAnswerItem(this.previousElementSibling)">'+icon('plus','icon-sm')+'</button>'+
       '</div>')+
     '</div>'+
+    // Материалы к вопросу (задание, схема, код): интервьюер видит их в окне перехода.
+    '<div class="question-files">'+(readOnly?attachmentLinksHtml(item.files):attachmentEditorHtml(item.files,{label:'Прикрепить файл к вопросу'}))+'</div>'+
   '</div>';
 }
 
@@ -1333,7 +1336,7 @@ function collectTemplateQuestions(){
     const pending=add?add.value.trim():'';
     const answers=[...block.querySelectorAll('.answer-item')].map(item=>item.dataset.value);
     if(pending&&!answers.includes(pending))answers.push(pending);
-    return {text:block.querySelector('.template-question').value.trim(),answers};
+    return {text:block.querySelector('.template-question').value.trim(),answers,files:collectAttachments(block.querySelector('.question-files'))};
   }).filter(question=>question.text);
 }
 
@@ -1499,6 +1502,7 @@ async function saveTemplateForm(button){
 
   if(!UiKit.showFieldErrors(name?[]:[{field:'templateName',message:'Укажите название шаблона.'}]))return;
   if(!questions.length){showToast('Добавьте хотя бы один вопрос.','error');return}
+  if(attachmentsUploading(el('templateQuestionsList')))return;
   const tags=collectTemplateTags();
 
   await runUiTask({button,formId:'templateForm',label:'Сохранение…'},async()=>{

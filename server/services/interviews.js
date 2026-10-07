@@ -4,7 +4,7 @@ import { fail } from '../lib/errors.js';
 import { clean, composeFullName, isUuid, optionalUuid, toBoolean } from '../lib/validation.js';
 import { richFromInput, richToText } from '../lib/richtext.js';
 import { insertComment } from './comments.js';
-import { toInterview } from './mappers.js';
+import { normalizeAttachmentRefs, toInterview } from './mappers.js';
 import { notifyCandidateEvent } from './notifications.js';
 import { getTemplatesFor } from './references.js';
 import {
@@ -13,6 +13,7 @@ import {
   loadCandidateDto
 } from './candidates.js';
 import { recordChanges, recordEvent } from './audit.js';
+import { keepPreviousAttachments, resolveAttachments } from './attachments.js';
 
 const REJECTED = APP_CONFIG.REJECTED_STATUS;
 
@@ -87,26 +88,31 @@ export async function isStageRequired(executor, vacancyId, stage) {
   return Boolean(row && row.required);
 }
 
-// Ответ — форматированный текст (HTML после очистки). Пропущенный вопрос (skipped: true) —
-// вопрос не задавался: текста ответа нет, но обязательный шаблон это не блокирует.
-// Свой вопрос интервьюера (custom: true) — не из шаблона, идёт после вопросов шаблона.
+// Ответ — форматированный текст (HTML после очистки) и вложения (files). Пропущенный вопрос
+// (skipped: true) — вопрос не задавался: ни текста, ни файлов нет, но обязательный шаблон это
+// не блокирует. Свой вопрос интервьюера (custom: true) — не из шаблона, идёт после вопросов шаблона.
+// files есть, только если передан массив: «не передан» при изменении оставляет прежние вложения.
 export function normalizeAnswers(answers) {
   return Array.isArray(answers)
     ? answers
         .map(item => {
           const answer = richFromInput(item && item.answer);
-          const skipped = Boolean(item && item.skipped) && !answer;
+          const files = item && Array.isArray(item.files) ? normalizeAttachmentRefs(item.files) : undefined;
+          const skipped = Boolean(item && item.skipped) && !answer && !(files && files.length);
           const custom = toBoolean(item && item.custom);
           return {
             question: clean(item && item.question),
             answer,
+            ...(files ? { files } : {}),
             ...(skipped ? { skipped: true } : {}),
             ...(custom ? { custom: true } : {})
           };
         })
-        .filter(item => item.question || item.answer)
+        .filter(item => item.question || item.answer || (item.files && item.files.length))
     : [];
 }
+
+const hasAnswer = answer => Boolean(answer.answer || (answer.files && answer.files.length));
 
 // Результат этапа, на который переводят кандидата: вопросы шаблона этого этапа
 // и ответственный за этот этап (HR — HR screening, проф. интервьювер — Проф. интервью,
@@ -139,7 +145,7 @@ async function saveStageInterview(tx, candidate, fromStatus, toStatus, input, re
     }
   }
 
-  const answers = normalizeAnswers(input.answers);
+  const answers = await resolveAttachments(tx, normalizeAnswers(input.answers));
 
   if (template && template.required) {
     if (!template.questions.length) {
@@ -148,7 +154,7 @@ async function saveStageInterview(tx, candidate, fromStatus, toStatus, input, re
 
     const incomplete = template.questions.some((question, index) => {
       const answer = answers[index];
-      return !answer || answer.question !== question.text || (!answer.answer && !answer.skipped);
+      return !answer || answer.question !== question.text || (!hasAnswer(answer) && !answer.skipped);
     });
 
     if (incomplete) {
@@ -405,16 +411,20 @@ export async function updateInterview(input, actor) {
       fail(`Этап «${before.to_status}» обязательный — укажите результат интервью/этапа.`);
     }
 
+    // Ответ без files (клиент вложения не передаёт) сохраняет прежние вложения ответа на тот же вопрос.
+    const answers = Array.isArray(input.answers)
+      ? await resolveAttachments(
+          tx,
+          keepPreviousAttachments(normalizeAnswers(input.answers), before.answers, answer => answer.question)
+        )
+      : null;
+
     const saved = await tx.one(
       `UPDATE interviews
        SET answers = COALESCE($2::jsonb, answers), result = $3, updated_at = now()
        WHERE id = $1 AND deleted_at IS NULL
        RETURNING *`,
-      [
-        id,
-        Array.isArray(input.answers) ? JSON.stringify(normalizeAnswers(input.answers)) : null,
-        result
-      ]
+      [id, answers ? JSON.stringify(answers) : null, result]
     );
 
     if (!saved) {

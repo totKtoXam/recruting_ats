@@ -12,7 +12,9 @@ import { escapeHtml } from './html.js';
 // Внешние ссылки (импорт) допускаются только со схемой http(s).
 const safeExternalUrl = url => (/^https?:\/\//i.test(String(url || '')) ? url : '');
 
-const INLINE_MIME = new Set(['application/pdf']);
+// Открываются в браузере; остальное скачивается. SVG и HTML сюда не входят: со своего домена
+// они могли бы выполнить скрипт.
+const INLINE_MIME = new Set(['application/pdf', 'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'audio/mpeg', 'audio/mp4', 'video/mp4']);
 
 function contentDisposition(fileName, mimeType) {
   const type = INLINE_MIME.has(mimeType) ? 'inline' : 'attachment';
@@ -79,6 +81,7 @@ export function filesRouter() {
       res.set({
         'Content-Type': mimeType,
         'Content-Disposition': contentDisposition(file.original_name, mimeType),
+        'X-Content-Type-Options': 'nosniff',
         'Cache-Control': 'private, no-store'
       });
 

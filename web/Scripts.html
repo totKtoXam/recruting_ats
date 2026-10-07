@@ -3234,7 +3234,8 @@ function renderTransitionQuestions(){
       questions.map((q,index)=>{
         const text=typeof q==='string'?q:q.text;
         const answers=typeof q==='string'?[]:(q.answers||[]);
-        return answerQuestionHtml(index,text,{textareaClass:'transition-answer',answers});
+        const questionFiles=typeof q==='string'?[]:(q.files||[]);
+        return answerQuestionHtml(index,text,{textareaClass:'transition-answer',answers,questionFiles});
       }).join('')
     :'';
   mountAnswerEditors(root);
@@ -3242,16 +3243,19 @@ function renderTransitionQuestions(){
 
 // Вопрос с полем ответа: вероятные ответы подставляются чипами, «Пропустить» помечает,
 // что вопрос не задавался — ответ не требуется даже в обязательном шаблоне.
-function answerQuestionHtml(index,text,{textareaClass,answers=[],placeholder='Ответ кандидата',custom=false}={}){
+// questionFiles — материалы вопроса из шаблона, files — уже приложенные к ответу файлы.
+function answerQuestionHtml(index,text,{textareaClass,answers=[],placeholder='Ответ кандидата',custom=false,questionFiles=[],files=[]}={}){
   return '<div class="qa interview-question"><div class="question-number">'+(index+1)+'</div><div class="interview-question-body">'+
     '<div class="question-head"><strong>'+escapeHtml(text)+(custom?customQuestionTag():'')+'</strong>'+
       '<button type="button" class="skip-answer" data-tip="Вопрос не задавался — ответ не нужен" aria-pressed="false" onclick="toggleSkipAnswer(this)">Пропустить</button></div>'+
+    attachmentLinksHtml(questionFiles,'Материалы:')+
     (answers.length
       ? '<div class="answer-suggestions"><span class="answer-suggestions-label">Вероятные ответы:</span>'+answers.map(answer=>
           '<button type="button" class="suggestion-chip" data-tip="Подставить вероятный ответ" onclick="applySuggestedAnswer(this)" data-answer="'+escapeHtml(answer)+'">'+escapeHtml(answer)+'</button>'
         ).join('')+'</div>'
       : '')+
     '<div class="answer-editor-host"><textarea class="'+textareaClass+'" data-rich data-question="'+escapeHtml(text)+'"'+(custom?' data-custom="1"':'')+' placeholder="'+escapeHtml(placeholder)+'"></textarea></div>'+
+    '<div class="answer-files">'+attachmentEditorHtml(files,{label:'Прикрепить файл к ответу'})+'</div>'+
     '<div class="answer-skipped" hidden>'+icon('minus','icon-sm')+'<span>Ответ пропущен — вопрос не задавался.</span></div>'+
   '</div></div>';
 }
@@ -3270,6 +3274,7 @@ function setAnswerSkipped(block,skipped){
   block.classList.toggle('is-skipped',skipped);
   textarea.dataset.skipped=skipped?'1':'';
   block.querySelector('.answer-editor-host').hidden=skipped;
+  block.querySelector('.answer-files').hidden=skipped;
   block.querySelector('.answer-skipped').hidden=!skipped;
   button.textContent=skipped?'Ответить':'Пропустить';
   button.dataset.tip=skipped?'Вернуть поле ответа':'Вопрос не задавался — ответ не нужен';
@@ -3286,16 +3291,130 @@ function toggleSkipAnswer(button){
   }
 }
 
-// Ответы из формы: пропущенные — без текста, с признаком skipped; свои вопросы — с признаком custom.
+// Ответы из формы: пропущенные — без текста и файлов, с признаком skipped; свои вопросы — с признаком custom.
 function collectAnswers(selector){
   return [...document.querySelectorAll(selector)].map(textarea=>{
     const skipped=textarea.dataset.skipped==='1';
-    return {question:textarea.dataset.question,answer:skipped?'':textarea.value.trim(),skipped,...(textarea.dataset.custom==='1'?{custom:true}:{})};
+    const files=skipped?[]:collectAttachments(textarea.closest('.interview-question').querySelector('.answer-files'));
+    return {question:textarea.dataset.question,answer:skipped?'':textarea.value.trim(),files,skipped,...(textarea.dataset.custom==='1'?{custom:true}:{})};
   });
+}
+
+// Ответ дан: есть текст или файл.
+function answerGiven(textarea){
+  return !!richText(textarea.value.trim())||collectAttachments(textarea.closest('.interview-question').querySelector('.answer-files')).length>0;
 }
 
 function customQuestionTag(){
   return ' <span class="custom-question-tag" data-tip="Вопрос интервьюера, не из шаблона">свой вопрос</span>';
+}
+
+// ---------- Вложения вопросов и ответов ----------
+// Файл загружается сразу после выбора (uploadAttachment), в форме остаётся чип со ссылкой { id, name, … }.
+// Сохранение формы передаёт только эти ссылки. Форматы и размер проверяет и сервер.
+const ATTACHMENT_EXTENSIONS=['pdf','doc','docx','xls','xlsx','ppt','pptx','odt','ods','rtf','txt','md','csv','json','png','jpg','jpeg','gif','webp','zip','mp3','m4a','mp4'];
+const MAX_ATTACHMENT_BYTES=10*1024*1024;
+const MAX_ATTACHMENTS=10;
+
+function fmtFileSize(bytes){
+  const size=Number(bytes);
+  if(!Number.isFinite(size)||size<=0)return '';
+  if(size<1024)return size+' Б';
+  if(size<1024*1024)return Math.ceil(size/1024)+' КБ';
+  return (size/1024/1024).toFixed(1).replace('.',',')+' МБ';
+}
+
+// Чип файла: ссылка на скачивание; в редактируемом списке — с крестиком и данными для сохранения.
+function attachmentChipHtml(file,editable){
+  const size=fmtFileSize(file.size);
+  return '<span class="attachment-chip"'+(editable?' data-file="'+escapeHtml(JSON.stringify({id:file.id,name:file.name,mimeType:file.mimeType,size:file.size,url:file.url}))+'"':'')+'>'+
+    '<a href="'+escapeHtml(file.url||'#')+'" target="_blank" rel="noopener" data-tip="'+escapeHtml('Открыть «'+file.name+'»')+'">'+
+      icon('paperclip','icon-sm')+'<span class="attachment-name">'+escapeHtml(file.name)+'</span>'+
+      (size?'<span class="attachment-size">'+escapeHtml(size)+'</span>':'')+
+    '</a>'+
+    (editable?iconBtn('close','Убрать файл','removeAttachment(this)','icon-btn-sm'):'')+
+  '</span>';
+}
+
+// Только просмотр: вопрос в окне перехода, история интервью, вопросы этапа вакансии.
+function attachmentLinksHtml(files,label){
+  if(!files||!files.length)return '';
+  return '<div class="attachment-list is-readonly">'+(label?'<span class="attachment-label">'+escapeHtml(label)+'</span>':'')+
+    files.map(file=>attachmentChipHtml(file,false)).join('')+'</div>';
+}
+
+function attachmentEditorHtml(files,{label='Прикрепить файл'}={}){
+  return '<div class="attachment-editor">'+
+    '<div class="attachment-list">'+(files||[]).map(file=>attachmentChipHtml(file,true)).join('')+'</div>'+
+    '<label class="attach-button" data-tip="PDF, документы, таблицы, изображения, архивы — до 10 МБ, не больше '+MAX_ATTACHMENTS+' файлов">'+
+      icon('paperclip','icon-sm')+'<span>'+escapeHtml(label)+'</span>'+
+      '<input type="file" multiple accept="'+ATTACHMENT_EXTENSIONS.map(ext=>'.'+ext).join(',')+'" onchange="uploadAttachments(this)">'+
+    '</label>'+
+  '</div>';
+}
+
+function markAttachmentsDirty(editor){
+  const drawer=editor&&editor.closest('.drawer');
+  if(drawer&&window.Drawer)Drawer.markDirty(drawer.id);
+}
+
+function readFileBase64(file){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(String(reader.result).split(',')[1]||'');
+    reader.onerror=()=>reject(new Error('Не удалось прочитать файл «'+file.name+'».'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function uploadAttachments(input){
+  const editor=input.closest('.attachment-editor');
+  const list=editor.querySelector('.attachment-list');
+  const files=[...input.files];
+  input.value='';
+  for(const file of files){
+    const ext=file.name.includes('.')?file.name.split('.').pop().toLowerCase():'';
+    if(!ATTACHMENT_EXTENSIONS.includes(ext)){showToast('Формат файла «'+file.name+'» не поддерживается.','error');continue}
+    if(file.size>MAX_ATTACHMENT_BYTES){showToast('Файл «'+file.name+'» больше 10 МБ.','error');continue}
+    if(!file.size){showToast('Файл «'+file.name+'» пустой.','error');continue}
+    if(list.querySelectorAll('.attachment-chip').length>=MAX_ATTACHMENTS){showToast('Не больше '+MAX_ATTACHMENTS+' файлов.','error');break}
+    const pending=document.createElement('span');
+    pending.className='attachment-chip is-uploading';
+    pending.innerHTML=icon('paperclip','icon-sm')+'<span class="attachment-name">'+escapeHtml(file.name)+'</span><span class="attachment-size">загрузка…</span>';
+    list.appendChild(pending);
+    try{
+      const {file:saved}=await rpc('uploadAttachment',{name:file.name,mimeType:file.type,base64:await readFileBase64(file)});
+      pending.outerHTML=attachmentChipHtml(saved,true);
+      markAttachmentsDirty(editor);
+    }catch(error){
+      pending.remove();
+      showToast(error.message||'Не удалось загрузить файл.','error');
+    }
+  }
+}
+
+function removeAttachment(button){
+  const editor=button.closest('.attachment-editor');
+  button.closest('.attachment-chip').remove();
+  markAttachmentsDirty(editor);
+}
+
+// Ссылки на файлы из редактора (без загружаемых сейчас).
+function collectAttachments(root){
+  const list=root&&root.querySelector('.attachment-editor .attachment-list');
+  return list?[...list.querySelectorAll('.attachment-chip[data-file]')].map(chip=>{
+    const file=JSON.parse(chip.dataset.file);
+    return {id:file.id,name:file.name,mimeType:file.mimeType,size:file.size};
+  }):[];
+}
+
+// Пока файл загружается, форму не сохраняем — иначе он не попадёт в ответ.
+function attachmentsUploading(root){
+  if(root&&root.querySelector('.attachment-chip.is-uploading')){
+    showToast('Дождитесь окончания загрузки файлов.','error');
+    return true;
+  }
+  return false;
 }
 
 // ---------- Свои вопросы при переходе ----------
@@ -3308,6 +3427,7 @@ function customQuestionHtml(){
       iconBtn('trash','Убрать вопрос','removeCustomQuestion(this)','icon-btn-sm icon-btn-danger')+
     '</div>'+
     '<div class="answer-editor-host"><textarea class="transition-custom-answer" data-rich placeholder="Ответ кандидата"></textarea></div>'+
+    '<div class="answer-files">'+attachmentEditorHtml([],{label:'Прикрепить файл к ответу'})+'</div>'+
   '</div></div>';
 }
 
@@ -3341,18 +3461,20 @@ function collectCustomAnswers(){
     const textarea=block.querySelector('.transition-custom-answer');
     const question=input.value.trim();
     const answer=richText(textarea.value)?textarea.value.trim():'';
-    if(!question&&!answer)return null;
+    const files=collectAttachments(block.querySelector('.answer-files'));
+    if(!question&&!answer&&!files.length)return null;
     if(!question)errors.push({field:input,message:'Введите вопрос.'});
-    else if(!answer)errors.push({field:textarea,message:'Добавьте ответ или уберите вопрос.'});
-    return {question,answer,custom:true};
+    else if(!answer&&!files.length)errors.push({field:textarea,message:'Добавьте ответ или файл — или уберите вопрос.'});
+    return {question,answer,files,custom:true};
   }).filter(Boolean);
   return UiKit.showFieldErrors(errors)?answers:null;
 }
 
 function answerDisplayHtml(answer){
-  return answer&&answer.skipped
-    ?'<span class="answer-skipped-note">'+icon('minus','icon-sm')+'Ответ пропущен — вопрос не задавался</span>'
-    :richHtml(answer?answer.answer:'');
+  if(answer&&answer.skipped)return '<span class="answer-skipped-note">'+icon('minus','icon-sm')+'Ответ пропущен — вопрос не задавался</span>';
+  const files=answer&&answer.files||[];
+  // Ответ только файлом — без «—» вместо текста.
+  return (answer&&answer.answer||!files.length?richHtml(answer?answer.answer:''):'')+attachmentLinksHtml(files);
 }
 
 function applySuggestedAnswer(chip){
@@ -3373,6 +3495,7 @@ function syncSuggestionState(textarea){
 async function submitTransition(button){
   if(!pendingTransition)return;
 
+  if(attachmentsUploading(el('transitionForm')))return;
   await runUiTask({button,formId:'transitionForm',label:'Сохранение…'},async()=>{
     const answers=collectAnswers('.transition-answer');
 
@@ -3386,16 +3509,16 @@ async function submitTransition(button){
 
     if(template&&template.required){
       const missingAnswers=[...document.querySelectorAll('.transition-answer')]
-        .filter(node=>node.dataset.skipped!=='1'&&!richText(node.value.trim()))
-        .map(node=>({field:node,message:'Ответ обязателен для этого шаблона.'}));
+        .filter(node=>node.dataset.skipped!=='1'&&!answerGiven(node))
+        .map(node=>({field:node,message:'Ответ обязателен для этого шаблона — текстом или файлом.'}));
       if(!UiKit.showFieldErrors(missingAnswers))return;
     }
 
     const customAnswers=collectCustomAnswers();
     if(!customAnswers)return;
 
-    // Необязательный шаблон без единого ответа считается пропущенным.
-    const answered=answers.some(item=>richText(item.answer));
+    // Необязательный шаблон без единого ответа (текста или файла) считается пропущенным.
+    const answered=answers.some(item=>richText(item.answer)||item.files.length);
     const useTemplate=!!template&&(template.required||answered);
 
     const payload={
@@ -3615,13 +3738,14 @@ function editInterview(id){
   // Вероятные ответы — из шаблона, по которому заполнялся результат.
   const template=(state.templates||[]).find(item=>item['Template ID']===editingInterview['Template ID'])||
     state.interviewTemplates.find(item=>item['Template ID']===editingInterview['Template ID']);
-  const suggestions=question=>{
+  const templateQuestion=question=>{
     const item=template?(template.questions||[]).find(q=>(typeof q==='string'?q:q.text)===question):null;
-    return item&&typeof item!=='string'?(item.answers||[]):[];
+    return item&&typeof item!=='string'?item:{};
   };
-  el('editInterviewQuestions').innerHTML=(editingInterview.answers||[]).map((a,index)=>
-    answerQuestionHtml(index,a.question,{textareaClass:'edit-answer',answers:a.custom?[]:suggestions(a.question),custom:!!a.custom})
-  ).join('');
+  el('editInterviewQuestions').innerHTML=(editingInterview.answers||[]).map((a,index)=>{
+    const item=a.custom?{}:templateQuestion(a.question);
+    return answerQuestionHtml(index,a.question,{textareaClass:'edit-answer',answers:item.answers||[],questionFiles:item.files||[],files:a.files||[],custom:!!a.custom});
+  }).join('');
   mountAnswerEditors(el('editInterviewQuestions'));
   el('editInterviewQuestions').querySelectorAll('.interview-question').forEach((block,index)=>{
     const answer=editingInterview.answers[index]||{};
@@ -3640,6 +3764,7 @@ function closeInterviewEdit(){el('interviewEditModal').classList.remove('open');
 async function saveInterviewEdit(button){
   if(!editingInterview)return;
   if(editingInterview.resultRequired&&!richText(value('editInterviewResult'))){UiKit.showFieldErrors([{field:'editInterviewResult',message:'Этап обязательный — опишите итог.'}]);return}
+  if(attachmentsUploading(el('interviewEditForm')))return;
   await runUiTask({button,formId:'interviewEditForm',label:'Сохранение…'},async()=>{
     const payload={
       id:editingInterview['Interview ID'],

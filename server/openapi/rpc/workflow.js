@@ -27,11 +27,32 @@ const lifecycleProps = {
   daysUntilPurge: { type: ['integer', 'null'], description: 'Дней до окончательного удаления; null — запись не в корзине.' }
 };
 
+// Вложение вопроса или ответа (результат uploadAttachment).
+const attachmentSchema = {
+  type: 'object',
+  properties: {
+    id: uuid('ID файла.'),
+    name: { type: 'string', description: 'Имя файла.' },
+    mimeType: { type: 'string' },
+    size: { type: ['integer', 'null'], description: 'Размер в байтах.' },
+    url: { type: 'string', description: 'Ссылка на скачивание (GET /files/{id}, нужна сессия).' }
+  }
+};
+
+// Вложения во входных данных: важен только id из uploadAttachment, остальное сервер берёт из БД.
+const attachmentRefs = description => ({
+  type: 'array',
+  maxItems: 10,
+  description,
+  items: { type: 'object', required: ['id'], properties: { id: uuid('ID файла из uploadAttachment.') } }
+});
+
 const answerItem = {
   type: 'object',
   properties: {
     question: { type: 'string', description: 'Текст вопроса.' },
     answer: { type: 'string', description: 'Ответ (HTML); пустая строка, если вопрос пропущен.' },
+    files: { type: 'array', items: attachmentSchema, description: 'Вложения ответа; нет ключа — вложений нет.' },
     skipped: { type: 'boolean', description: 'Есть только у пропущенного вопроса (true).' },
     custom: { type: 'boolean', description: 'Есть только у своего вопроса интервьюера — не из шаблона (true).' }
   }
@@ -90,7 +111,8 @@ const templateSchema = {
         type: 'object',
         properties: {
           text: { type: 'string', description: 'Текст вопроса.' },
-          answers: { type: 'array', items: { type: 'string' }, description: 'Предпочтительные/вероятные ответы.' }
+          answers: { type: 'array', items: { type: 'string' }, description: 'Предпочтительные/вероятные ответы.' },
+          files: { type: 'array', items: attachmentSchema, description: 'Вложения вопроса; нет ключа — вложений нет.' }
         }
       }
     },
@@ -243,7 +265,8 @@ export default {
                 properties: {
                   question: { type: 'string', description: 'Текст вопроса (должен совпадать с текстом в шаблоне).' },
                   answer: richText('Ответ.'),
-                  skipped: { type: 'boolean', description: 'Вопрос не задавался (учитывается, только если answer пуст).' },
+                  files: attachmentRefs('Вложения ответа. На вопросе обязательного шаблона ответ с файлом, но без текста, считается данным.'),
+                  skipped: { type: 'boolean', description: 'Вопрос не задавался (учитывается, только если answer пуст и файлов нет).' },
                   custom: { type: 'boolean', description: 'Свой вопрос интервьюера, не из шаблона.' }
                 }
               }
@@ -315,6 +338,7 @@ export default {
             properties: {
               question: { type: 'string' },
               answer: richText('Ответ.'),
+              files: attachmentRefs('Вложения ответа; ключ не передан — остаются прежние вложения ответа на этот вопрос, [] — убрать.'),
               skipped: { type: 'boolean' }
             }
           }
@@ -331,6 +355,34 @@ export default {
       properties: {
         ok: { type: 'boolean', const: true },
         interview: interviewSchema
+      }
+    }
+  },
+
+  uploadAttachment: {
+    tag: 'Интервью и этапы',
+    summary: 'Загрузить вложение для вопроса шаблона или ответа интервью',
+    description:
+      'Загружает файл в Google Drive (папка «_ATS_Вложения») и возвращает ссылку. Затем `id` передаётся в `files` вопроса ' +
+      '(`saveInterviewTemplate`) или ответа (`transitionCandidate`, `updateInterview`). Файл, на который за 48 часов ' +
+      'не сослалось ни одно сохранение, удаляется. Доступно любому пользователю.\n\n' +
+      'Форматы: pdf, doc(x), xls(x), ppt(x), odt, ods, rtf, txt, md, csv, json, png, jpg, gif, webp, zip, mp3, m4a, mp4; до 10 МБ. ' +
+      'Тип файла определяется по расширению.\n\nОшибки: 400 — файл не передан, пустой, неверный формат или размер.',
+    args: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Имя файла с расширением.' },
+        mimeType: { type: 'string', description: 'Не используется: тип определяется по расширению.' },
+        base64: { type: 'string', description: 'Содержимое в base64 (допускается префикс data:...;base64,).' }
+      },
+      required: ['name', 'base64']
+    },
+    example: { name: 'task.pdf', mimeType: 'application/pdf', base64: 'JVBERi0xLjQK...' },
+    result: {
+      type: 'object',
+      properties: {
+        ok: { type: 'boolean', const: true },
+        file: attachmentSchema
       }
     }
   },

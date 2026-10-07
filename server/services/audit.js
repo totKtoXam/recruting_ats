@@ -25,6 +25,10 @@ import { SCOPES } from '../lib/scopes.js';
 const EMPTY = '—';
 const truncate = (text, max = 300) => (text.length > max ? text.slice(0, max - 1) + '…' : text);
 
+// Вложения вопроса или ответа в подписи журнала: « [файлы: a.pdf, b.png]».
+const filesNote = item =>
+  item && Array.isArray(item.files) && item.files.length ? ` [файлы: ${item.files.map(file => file.name).join(', ')}]` : '';
+
 const DISPLAY = {
   text: value => (value === null || value === undefined || value === '' ? EMPTY : String(value)),
   html: value => truncate(richToText(value || '').replace(/\s+/g, ' ').trim()) || EMPTY,
@@ -44,12 +48,16 @@ const DISPLAY = {
   questions: value => {
     const items = Array.isArray(value) ? value : [];
     if (!items.length) return EMPTY;
-    return truncate(`${items.length} вопр.: ` + items.map(item => (typeof item === 'string' ? item : item.text)).join('; '));
+    return truncate(`${items.length} вопр.: ` + items.map(item => (typeof item === 'string' ? item : item.text + filesNote(item))).join('; '));
   },
   answers: value => {
     const items = Array.isArray(value) ? value : [];
     if (!items.length) return EMPTY;
-    return truncate(items.map(item => `${item.question}: ${richToText(item.answer || '') || (item.skipped ? 'пропущен' : EMPTY)}`).join('; '));
+    return truncate(
+      items
+        .map(item => `${item.question}: ${richToText(item.answer || '') || (item.skipped ? 'пропущен' : EMPTY)}${filesNote(item)}`)
+        .join('; ')
+    );
   },
   icon: value => {
     if (!value) return EMPTY;

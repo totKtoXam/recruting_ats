@@ -33,6 +33,11 @@ export const MCP_INSTRUCTIONS = `Recruiting ATS — система подбор�
 const CONFIRM = ' Изменяет данные: перед вызовом покажи пользователю превью и получи подтверждение.';
 
 const candidateUrl = id => `${config.publicUrl}/#/candidate/${encodeURIComponent(id)}`;
+// Вложения вопроса или ответа: id (чтобы оставить файл при сохранении), имя и полная ссылка.
+const filesOut = files =>
+  Array.isArray(files) && files.length
+    ? { files: files.map(file => ({ id: file.id, name: file.name, url: new URL(file.url, config.publicUrl).href })) }
+    : {};
 
 // ---------- JSON Schema ----------
 
@@ -67,13 +72,18 @@ const fileInput = {
 };
 
 const linksSchema = arr(obj({ name: str('Название'), url: str('http(s)-ссылка') }, ['name', 'url']), 'Иные ссылки');
+const filesInput = arr(
+  obj({ id: id('ID файла из files') }, ['id']),
+  'Вложения: id уже приложенных файлов. Не передан — вложения не меняются, [] — убрать все. Загрузить новый файл через MCP нельзя.'
+);
 const answersSchema = arr(
   obj(
     {
       question: str('Текст вопроса точно как в шаблоне (у своего вопроса — любой)'),
       answer: str('Ответ (текст или HTML)'),
       skipped: bool('Вопрос не задавался (ответ пустой)'),
-      custom: bool('Свой вопрос интервьюера, не из шаблона')
+      custom: bool('Свой вопрос интервьюера, не из шаблона'),
+      files: filesInput
     },
     ['question']
   ),
@@ -144,6 +154,7 @@ function interviewOut(i) {
     answers: (i.answers || []).map(answer => ({
       question: answer.question,
       answer: text(answer.answer),
+      ...filesOut(answer.files),
       ...(answer.skipped ? { skipped: true } : {}),
       ...(answer.custom ? { custom: true } : {})
     })),
@@ -183,7 +194,7 @@ function templateOut(t) {
     number: t['№'],
     name: t['Название'],
     tags: (t.tags || []).map(tag => tag.name),
-    questions: t.questions || []
+    questions: (t.questions || []).map(question => ({ text: question.text, answers: question.answers, ...filesOut(question.files) }))
   };
 }
 
@@ -889,7 +900,10 @@ export const mcpTools = [
       {
         id: id('ID шаблона'),
         name: str('Название'),
-        questions: arr(obj({ text: str('Вопрос'), answers: arr(str('Ответ'), 'Предпочтительные ответы') }, ['text']), 'Вопросы (минимум один)'),
+        questions: arr(
+          obj({ text: str('Вопрос'), answers: arr(str('Ответ'), 'Предпочтительные ответы'), files: filesInput }, ['text']),
+          'Вопросы (минимум один)'
+        ),
         tags: arr(obj({ name: str('Тег (до 40 символов)'), color: str('Цвет', { enum: ['blue', 'green', 'amber', 'red', 'purple', 'teal', 'pink', 'gray'] }) }, ['name']), 'Теги (до 10)')
       },
       ['name', 'questions']

@@ -1829,6 +1829,41 @@ input[type=radio]:focus-visible{outline:2px solid var(--primary-ring);outline-of
 .template-row-main small{color:var(--faint);font-size:12px}
 .template-row .button{height:24px;padding:0 6px;font-size:12px}
 
+/* Вложения: материалы вопроса шаблона и файлы ответа интервью. */
+.attachment-editor{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+.attachment-list{display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-width:0}
+.attachment-list:empty{display:none}
+.attachment-list.is-readonly{margin:4px 0 2px}
+.attachment-label{margin-right:2px;color:var(--faint);font-size:12px}
+.attachment-chip{
+  display:inline-flex;align-items:center;gap:2px;max-width:100%;min-width:0;height:24px;
+  padding:0 2px 0 8px;border:1px solid var(--line);border-radius:var(--radius-sm);
+  background:var(--surface);font-size:12px
+}
+.attachment-chip>a{display:inline-flex;align-items:center;gap:4px;min-width:0;color:var(--text-2);text-decoration:none}
+.attachment-chip>a:hover .attachment-name{color:var(--primary);text-decoration:underline}
+.attachment-chip>a:focus-visible{outline:2px solid var(--primary-ring);outline-offset:2px;border-radius:2px}
+.attachment-chip:not(:has(.icon-btn)){padding-right:8px}
+.attachment-chip .icon{flex:0 0 auto;color:var(--muted)}
+.attachment-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:260px}
+.attachment-size{flex:0 0 auto;color:var(--faint)}
+.attachment-chip .icon-btn{width:20px;height:20px;color:var(--faint)}
+.attachment-chip .icon-btn:hover{color:var(--text)}
+.attachment-chip.is-uploading{padding-right:8px;border-style:dashed;color:var(--muted)}
+.attach-button{
+  position:relative;display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 8px;
+  border:1px dashed var(--line-strong);border-radius:var(--radius-sm);
+  color:var(--muted);font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap
+}
+.attach-button:hover{border-color:var(--primary);color:var(--primary);background:var(--primary-tint)}
+.attach-button:focus-within{outline:2px solid var(--primary-ring);outline-offset:1px}
+/* Поле выбора файла скрыто визуально, но доступно с клавиатуры через подпись. */
+.attach-button input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.answer-files{margin-top:4px}
+.answer-files[hidden]{display:none}
+.question-files{margin:2px 0 0 30px}
+.qa .attachment-list.is-readonly{margin-top:4px}
+
 /* Question editor (шаблон вопросов): каждый вопрос — карточка; текст вопроса
    и вероятные ответы переносятся целиком, без обрезки. */
 .question-list{display:flex;flex-direction:column;gap:8px}

@@ -6,6 +6,7 @@ import { trashFile } from '../lib/drive.js';
 import { clean, normalizeNamePart } from '../lib/validation.js';
 import { UploadTracker, decodeResumeUpload, insertFile, uploadDraftResume } from './files.js';
 import { fileUrl } from './mappers.js';
+import { cleanupUnlinkedAttachments } from './attachments.js';
 import { canViewSalary, decryptSalaryText, encryptSalaryText } from '../lib/salary.js';
 
 // ЗП ожидания в черновике хранится зашифрованной (salaryEnc) и отдаётся форме
@@ -167,6 +168,10 @@ export function cleanupDraftsIfDue() {
   cleanupExpiredCandidateDrafts()
     .then(({ removed }) => removed && console.log(`Draft cleanup: removed ${removed}`))
     .catch(error => console.error('Draft cleanup failed:', error.message))
+    // Вложения, загруженные в форму, которую так и не сохранили.
+    .then(() => cleanupUnlinkedAttachments())
+    .then(({ removed }) => removed && console.log(`Attachment cleanup: removed ${removed}`))
+    .catch(error => console.error('Attachment cleanup failed:', error.message))
     .finally(() => {
       cleanupInProgress = false;
     });

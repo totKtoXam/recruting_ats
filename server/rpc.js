@@ -1,5 +1,6 @@
 // Реестр RPC-методов, которые раньше вызывались через google.script.run.
 // Имена и формат ответов сохранены, поэтому фронтенд работает без изменений.
+import * as attachments from './services/attachments.js';
 import * as candidates from './services/candidates.js';
 import * as audit from './services/audit.js';
 import * as comments from './services/comments.js';
@@ -92,6 +93,8 @@ export const rpcHandlers = {
   getInterviewContext: (input, { user }) => interviews.getInterviewContext(input, user),
   transitionCandidate: (input, { user }) => interviews.transitionCandidate(input, user),
   updateInterview: (input, { user }) => interviews.updateInterview(input, user),
+  // Вложение к вопросу шаблона или к ответу интервью: файл загружается сразу, форма сохраняет { id }.
+  uploadAttachment: (input, { user }) => attachments.uploadAttachment(input, user),
 
   // Жизненный цикл любой записи: { type: candidate|vacancy|source|template|vacancy_preset|interview|user, id }.
   archiveEntity: (input, { user }) => lifecycle.archive(input, user),

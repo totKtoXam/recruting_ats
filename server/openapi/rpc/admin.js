@@ -139,7 +139,15 @@ const TEMPLATE_QUESTION = {
   type: 'object',
   properties: {
     text: { type: 'string', description: 'Текст вопроса' },
-    answers: { type: 'array', items: { type: 'string' }, description: 'Вероятные (предпочтительные) ответы' }
+    answers: { type: 'array', items: { type: 'string' }, description: 'Вероятные (предпочтительные) ответы' },
+    files: {
+      type: 'array',
+      maxItems: 10,
+      description:
+        'Вложения вопроса: [{ id }] из uploadAttachment (в ответе — ещё name, mimeType, size, url). ' +
+        'При сохранении ключ не передан — остаются прежние вложения вопроса с тем же текстом, [] — убрать.',
+      items: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } }
+    }
   }
 };
 

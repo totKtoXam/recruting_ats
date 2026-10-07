@@ -1,7 +1,7 @@
 // Преобразование строк PostgreSQL в DTO с ключами, которые UI исторически
 // получал из Google Sheets. Контракт фронтенда при этом не меняется.
 import { formatDateTime } from '../lib/dates.js';
-import { composeFullName } from '../lib/validation.js';
+import { composeFullName, isUuid } from '../lib/validation.js';
 import { canViewSalary, decryptSalary } from '../lib/salary.js';
 
 import { APP_CONFIG, withBase } from '../config.js';
@@ -23,6 +23,32 @@ export function lifecycleFields(row) {
 
 export const fileUrl = fileId => (fileId ? withBase(`/files/${fileId}`) : '');
 export const candidateFolderUrl = candidateId => withBase(`/candidates/${candidateId}/files`);
+
+// Вложения вопроса шаблона или ответа интервью: [{ id, name, mimeType, size }] — ссылки на таблицу files.
+// Имя, тип и размер сервер берёт из БД при сохранении (resolveAttachments), ссылка строится при выдаче.
+export function normalizeAttachmentRefs(files) {
+  const seen = new Set();
+  const result = [];
+  for (const file of Array.isArray(files) ? files : []) {
+    const id = String((file && file.id) ?? '').trim().toLowerCase();
+    if (!isUuid(id) || seen.has(id)) continue;
+    seen.add(id);
+    const size = file.size === null || file.size === undefined || file.size === '' ? null : Number(file.size);
+    result.push({
+      id,
+      name: String(file.name ?? '').trim() || 'Файл',
+      mimeType: String(file.mimeType ?? '').trim() || 'application/octet-stream',
+      size: Number.isFinite(size) ? size : null
+    });
+  }
+  return result.slice(0, APP_CONFIG.MAX_ATTACHMENTS);
+}
+
+export const attachmentOut = file => ({ ...file, url: fileUrl(file.id) });
+
+// Ссылки на файлы у вопросов и ответов — для выдачи клиенту.
+const withAttachmentUrls = items =>
+  items.map(item => (item && Array.isArray(item.files) && item.files.length ? { ...item, files: item.files.map(attachmentOut) } : item));
 
 function softDeleteFields(row) {
   return {
@@ -96,8 +122,9 @@ export function userDisplayName(row) {
   return composeFullName(row.last_name, row.first_name, row.middle_name) || row.full_name || row.email || '';
 }
 
-// Вопрос шаблона: { text, answers } — текст и список вероятных ответов.
-// Старый формат (строка) приводится к объекту.
+// Вопрос шаблона: { text, answers, files? } — текст, список вероятных ответов и вложения.
+// Старый формат (строка) приводится к объекту. files есть, только если передан массив:
+// так сохранение отличает «вложения не переданы» (оставить прежние) от «убрать все».
 export function normalizeTemplateQuestions(questions) {
   return (Array.isArray(questions) ? questions : [])
     .map(question => {
@@ -110,7 +137,7 @@ export function normalizeTemplateQuestions(questions) {
             .filter(Boolean)
         )
       ];
-      return { text, answers };
+      return { text, answers, ...(Array.isArray(item.files) ? { files: normalizeAttachmentRefs(item.files) } : {}) };
     })
     .filter(question => question.text);
 }
@@ -133,7 +160,7 @@ export function normalizeTemplateTags(tags) {
 }
 
 export function toTemplate(row) {
-  const questions = normalizeTemplateQuestions(row.questions);
+  const questions = withAttachmentUrls(normalizeTemplateQuestions(row.questions));
 
   return {
     'Template ID': row.id,
@@ -285,7 +312,7 @@ export function toCandidate(row, resumeVersions, viewer = null) {
 }
 
 export function toInterview(row) {
-  const answers = row.answers || [];
+  const answers = withAttachmentUrls(row.answers || []);
 
   return {
     'Interview ID': row.id,

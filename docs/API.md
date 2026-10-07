@@ -383,7 +383,8 @@ Cookie: ats.sid=...
 | `getInterviews` | id кандидата | История результатов интервью |
 | `getInterviewContext` | объект | Шаблон и контекст для перехода |
 | `transitionCandidate` | объект | Переход статуса: `{ candidateId, toStatus, interview }` — результат этапа, на который переводят (`interview.answers` — ответы на вопросы шаблона по порядку, затем свои вопросы интервьюера с `custom: true`); `{ candidateId, toStatus: 'Отказано', rejection: { byType: 'candidate' \| 'responsible', responsibleId, reason, comment } }` — отказ; `{ candidateId, toStatus, comment }` — возврат из «Отказано» на этап отказа |
-| `updateInterview` | объект | Редактирование результата интервью (ответы и результат — HTML, санитизируется на сервере). Ответ — `{ question, answer, skipped }`; `skipped: true` — вопрос не задавался (допускается и в обязательном шаблоне) |
+| `updateInterview` | объект | Редактирование результата интервью (ответы и результат — HTML, санитизируется на сервере). Ответ — `{ question, answer, files?, skipped }`; `skipped: true` — вопрос не задавался (допускается и в обязательном шаблоне); `files` — вложения `[{ id }]` из `uploadAttachment`, ключ не передан — вложения ответа на этот вопрос не меняются |
+| `uploadAttachment` | `{ name, mimeType?, base64 }` | Вложение к вопросу шаблона или ответу интервью (pdf, документы, таблицы, изображения, zip, mp3/mp4 — до 10 МБ). Возвращает `{ ok, file: { id, name, mimeType, size, url } }`; `id` передаётся в `files`. Файл без ссылок удаляется через 48 часов |
 
 **Архив и корзина** (для `type`: `candidate`, `vacancy`, `vacancy_preset`, `source`, `template`, `interview`, `user`)
 
@@ -440,7 +441,7 @@ Cookie: ats.sid=...
 | `setVacancyStatus` | `{ id, status }` | Переход статуса вакансии; допустимые переходы — `vacancyStatusTransitions` в `getReferenceData` |
 | `saveVacancyPreset` | `{ id?, name, templates?, fromVacancyId? }` | Шаблон вакансии — готовые этапы (название уникально, иначе `409`). `templates` — как у `saveVacancy`; `fromVacancyId` без `templates` — взять этапы из вакансии. Шаблон в корзине не меняется |
 | `saveSource` | `{ id?, name }` | Источник |
-| `saveInterviewTemplate` | объект | Шаблон интервью; `questions` — массив `{ text, answers }` (answers — предпочтительные ответы) |
+| `saveInterviewTemplate` | объект | Шаблон интервью; `questions` — массив `{ text, answers, files? }` (answers — предпочтительные ответы, files — материалы вопроса `[{ id }]` из `uploadAttachment`; ключ не передан — остаются прежние вложения вопроса с тем же текстом) |
 | `saveUser` | `{ id?, email, lastName, firstName, middleName, stages, isActive, isAdmin, telegram? }` | Пользователь. Непустой `stages` делает его ответственным за этапы. `isActive` учитывается только при создании. **Только администраторы** |
 | `setUserAccess` | `{ id, isActive }` | Открыть/закрыть доступ в ATS. **Только администраторы**; нельзя себе и последнему администратору |
 
