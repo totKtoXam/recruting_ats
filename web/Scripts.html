@@ -3346,7 +3346,7 @@ function attachmentLinksHtml(files,label){
 function attachmentEditorHtml(files,{label='Прикрепить файл'}={}){
   return '<div class="attachment-editor">'+
     '<div class="attachment-list">'+(files||[]).map(file=>attachmentChipHtml(file,true)).join('')+'</div>'+
-    '<label class="attach-button" data-tip="PDF, документы, таблицы, изображения, архивы — до 10 МБ, не больше '+MAX_ATTACHMENTS+' файлов">'+
+    '<label class="attach-button" data-tip="Или перетащите файлы на вопрос. PDF, документы, таблицы, изображения, архивы — до 10 МБ, не больше '+MAX_ATTACHMENTS+' файлов">'+
       icon('paperclip','icon-sm')+'<span>'+escapeHtml(label)+'</span>'+
       '<input type="file" multiple accept="'+ATTACHMENT_EXTENSIONS.map(ext=>'.'+ext).join(',')+'" onchange="uploadAttachments(this)">'+
     '</label>'+
@@ -3367,11 +3367,14 @@ function readFileBase64(file){
   });
 }
 
-async function uploadAttachments(input){
-  const editor=input.closest('.attachment-editor');
-  const list=editor.querySelector('.attachment-list');
+function uploadAttachments(input){
   const files=[...input.files];
   input.value='';
+  return uploadAttachmentFiles(input.closest('.attachment-editor'),files);
+}
+
+async function uploadAttachmentFiles(editor,files){
+  const list=editor.querySelector('.attachment-list');
   for(const file of files){
     const ext=file.name.includes('.')?file.name.split('.').pop().toLowerCase():'';
     if(!ATTACHMENT_EXTENSIONS.includes(ext)){showToast('Формат файла «'+file.name+'» не поддерживается.','error');continue}
@@ -3398,6 +3401,56 @@ function removeAttachment(button){
   button.closest('.attachment-chip').remove();
   markAttachmentsDirty(editor);
 }
+
+// Перетаскивание: файл, брошенный на вопрос шаблона, прикрепляется к вопросу, на вопрос в окне
+// перехода или редактирования результата — к ответу. Обработчики на document в фазе перехвата:
+// поле ответа (RichEditor) само файлы не принимает, а вопросы перерисовываются целиком.
+const ATTACH_DROP_ZONES='.question-block, .interview-question';
+const ATTACH_DROP_FORMS='#templateDrawer, #transitionModal, #interviewEditModal';
+let attachDropZone=null;
+
+function draggingAttachmentFiles(event){return !!(event.dataTransfer&&[...event.dataTransfer.types].includes('Files'))}
+
+// Зона принимает файлы, только если в ней есть видимый редактор вложений (не просмотр и не пропущенный ответ).
+function attachDropTarget(target){
+  const zone=target instanceof Element?target.closest(ATTACH_DROP_ZONES):null;
+  const editor=zone&&zone.querySelector('.attachment-editor');
+  return editor&&!editor.closest('[hidden]')?{zone,editor}:null;
+}
+
+function setAttachDropZone(zone){
+  if(attachDropZone===zone)return;
+  if(attachDropZone)attachDropZone.classList.remove('is-file-dragover');
+  attachDropZone=zone;
+  if(zone){
+    zone.dataset.dropText=zone.classList.contains('question-block')?'Отпустите — файл прикрепится к вопросу':'Отпустите — файл прикрепится к ответу';
+    zone.classList.add('is-file-dragover');
+  }
+}
+
+document.addEventListener('dragover',event=>{
+  if(!draggingAttachmentFiles(event)||!(event.target instanceof Element)||!event.target.closest(ATTACH_DROP_FORMS))return;
+  // Мимо вопроса файл не принимается, но и не открывается браузером вместо формы.
+  event.preventDefault();
+  const drop=attachDropTarget(event.target);
+  event.dataTransfer.dropEffect=drop?'copy':'none';
+  setAttachDropZone(drop?drop.zone:null);
+},true);
+
+document.addEventListener('dragleave',event=>{
+  if(attachDropZone&&(!event.relatedTarget||!attachDropZone.contains(event.relatedTarget)))setAttachDropZone(null);
+},true);
+
+document.addEventListener('drop',event=>{
+  setAttachDropZone(null);
+  if(!draggingAttachmentFiles(event)||!(event.target instanceof Element)||!event.target.closest(ATTACH_DROP_FORMS))return;
+  event.preventDefault();
+  event.stopPropagation();
+  const drop=attachDropTarget(event.target);
+  if(drop)uploadAttachmentFiles(drop.editor,[...event.dataTransfer.files]);
+},true);
+
+document.addEventListener('dragend',()=>setAttachDropZone(null),true);
 
 // Ссылки на файлы из редактора (без загружаемых сейчас).
 function collectAttachments(root){

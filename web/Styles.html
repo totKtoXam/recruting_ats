@@ -1860,6 +1860,13 @@ input[type=radio]:focus-visible{outline:2px solid var(--primary-ring);outline-of
 /* Поле выбора файла скрыто визуально, но доступно с клавиатуры через подпись. */
 .attach-button input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
 .answer-files{margin-top:4px}
+/* Файл перетаскивают на вопрос: вся карточка вопроса подсвечивается и подсказывает, куда он прикрепится. */
+:is(.question-block,.interview-question).is-file-dragover{position:relative;outline:2px dashed var(--primary);outline-offset:-2px}
+:is(.question-block,.interview-question).is-file-dragover::after{
+  content:attr(data-drop-text);position:absolute;inset:0;z-index:2;display:grid;place-items:center;
+  border-radius:inherit;background:color-mix(in srgb,var(--primary) 12%,var(--surface));
+  color:var(--primary);font-size:13px;font-weight:600;pointer-events:none
+}
 .answer-files[hidden]{display:none}
 .question-files{margin:2px 0 0 30px}
 .qa .attachment-list.is-readonly{margin-top:4px}
